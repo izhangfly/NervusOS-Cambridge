@@ -1,0 +1,73 @@
+[Unit]
+# The unit name [must] be nervud.service.
+#
+# Every Package component's transient unit has BindsTo=nervud.service (owner-death:
+# when nervud dies its components stop). Renaming it makes StartTransientUnit fail with
+# "Unit nervud.service not found", and no component can start.
+# The constant is nervudUnit in nervud's internal/service/supervise.go.
+Description=Nervus OS kernel daemon
+Documentation=https://github.com/nervus-os/nervud
+
+# D-Bus is a hard dependency: nervud starts every Package component through systemd's
+# D-Bus StartTransientUnit. No D-Bus means no components at all.
+After=dbus.service
+Requires=dbus.service
+
+# Package installs and records live under /var/lib, so that mount must be in place first.
+After=local-fs.target
+RequiresMountsFor=/var/lib/nervus
+
+[Service]
+Type=exec
+ExecStart=/usr/libexec/nervus/nervud
+
+# root is required, not a shortcut:
+#   - it creates /etc/passwd entries (EnsureAppUser)
+#   - it starts sandboxed processes as any app UID
+#   - the admin channel's AdminUID comes from geteuid; as non-root, nervusctl can't connect
+User=root
+Group=root
+
+# CAP_SYS_NICE: sets SCHED_FIFO/SCHED_RR for real-time components.
+#
+# Without it nervud [exits] in production mode (dev machines can degrade with
+# -dev-allow-sched-degrade). That fail-closed is deliberate: a robot control stack that can't get real-time
+# priority shows up as occasional control jitter, which is much harder to track down than failing to start.
+AmbientCapabilities=CAP_SYS_NICE
+CapabilityBoundingSet=CAP_SYS_NICE CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER CAP_SETUID CAP_SETGID CAP_SYS_ADMIN
+
+# /run/nervus: home of the two UDS sockets.
+#
+# 0755 plus sticky (01755): /run is tmpfs and doesn't support chattr +i, so the equivalent protection is
+# a sticky parent: non-root processes can't create or unlink entries in it, so the sockets
+# can't be deleted or replaced. Preflight checks this exact value.
+RuntimeDirectory=nervus
+RuntimeDirectoryMode=1755
+
+# nervud itself is [not sandboxed].
+#
+# It chowns to any app UID, writes /etc/passwd and has PID 1 start processes over D-Bus;
+# ProtectSystem=strict and friends would block all of that. Isolation comes from the transient unit
+# of [each component it starts] (those units have NoNewPrivileges + ProtectSystem=strict +
+# SystemCallFilter=@system-service), not from nervud itself.
+
+# Restart on crash. Components stop with it through BindsTo, and the new nervud's boot scan starts them again.
+Restart=on-failure
+RestartSec=2s
+
+# Logs go to the journal.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nervud
+
+# nervud is exempt from journald rate limiting.
+#
+# The default is 10000 messages per service per 30 seconds, and anything over is [silently dropped]: when you look,
+# there's just a gap and nothing says anything was lost. Not acceptable for the TCB: the kernel floods the log exactly when something is wrong.
+#
+# [Only nervud gets this exemption]; rate limiting isn't switched off globally, or one noisy component could flush all 500 MB
+# in minutes and push everyone else's history out. The global limits are in journald-nervus.conf.
+LogRateLimitIntervalSec=0
+
+[Install]
+WantedBy=multi-user.target

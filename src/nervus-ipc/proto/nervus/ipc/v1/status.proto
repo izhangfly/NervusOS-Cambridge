@@ -1,0 +1,206 @@
+// Nervus IPC v1: generic result semantics
+//
+// This file defines the "failure categories" stable across all Interfaces and the shape of Success/Failure outcomes.
+// Architectural basis: the nervud architecture document §10.4, §10.12; the NRCP document §19.
+//
+// Compatibility rules (§10.12, written here because they constrain every change to this file):
+//   - published field numbers and enum values never change meaning or type, and are never reused;
+//   - on deletion, the number and name go into reserved, and the gap isn't filled;
+//   - new fields must have safe default semantics, and old receivers may ignore unknown fields.
+
+syntax = "proto3";
+
+package nervus.ipc.v1;
+
+option go_package = "github.com/nervus-os/nervus-ipc/protocol/ipcv1;ipcv1";
+
+// The GitHub organisation is nervus-os, but **hyphens are illegal in Java package names**: JLS §3.8 says
+// every package name segment must be a legal identifier, allowing only letters, digits, _ and $. So the hyphen is dropped here.
+//
+// When publishing to Maven Central later, the groupId can be io.github.nervus-os: the groupId is a
+// Maven coordinate, not a Java package name, so it allows hyphens, and the two needn't be the same.
+option java_package = "io.github.nervusos.ipc.v1";
+option java_multiple_files = true;
+
+// The outer class name is specified explicitly. With java_multiple_files=true every message gets its own file, but there's still
+// an outer class holding the descriptor, whose default name is derived from the file name (status.proto → Status).
+// Adding a Proto suffix everywhere permanently avoids compile conflicts where "the outer class has the same name as a message/enum".
+option java_outer_classname = "StatusProto";
+
+// StatusCode is IPC v1's cross-interface RPC **result category**.
+//
+// It answers "which category of failure", not "why did the robot fail":
+//
+//	position A (this enum): stable across all Interfaces; the SDK decides retry/report/disconnect from it
+//	position B (typed error_detail): evolves with each Interface schema and answers the domain cause
+//
+// Robot causes such as SAFETY_LATCHED, STALE_EPOCH and LOCOMOTION_NOT_READY can **only** go in
+// position B (NRCP §19). Values must not be added to this enum just because of new hardware capabilities: that would give every
+// OEM a motive to extend the global enum, until nobody could enumerate the set of failures an SDK must handle.
+// When a new cross-interface generic category is really needed, it goes through an IPC protocol major evolution, not a private addition by a business schema.
+//
+// Which layer discovers an error does **not** decide whether it belongs in A or B: Resource/Lease/Safety/epoch are
+// held by nervud anyway, so nervud can produce typed causes before dispatching; Providers can also return causes after
+// a fail-closed re-check. There's only one criterion for the layering: whether the caller needs it to take
+// robot/interface-specific action.
+enum StatusCode {
+  // Never a legal result.
+  //
+  // proto3's enum default is 0, so "forgot to fill it in", "the field was trimmed" and "from an unknown newer version"
+  // all land here. Receivers must fail closed, and never treat it as success just because it "isn't a known
+  // failure code". That's exactly why OK/ACCEPTED use non-zero numbers.
+  STATUS_CODE_UNSPECIFIED = 0;
+
+  // --- Success codes: may only appear in a Success outcome ---
+
+  // The call completed; payload is the method-specific response (may be empty).
+  STATUS_CODE_OK = 1;
+
+  // The system has reliably received the creation request, which does **not** mean final success (§10.9).
+  //
+  // Only allowed for methods the Method Registry marks produces_operation=true, and
+  // the Operation Manager must first register the operation_id, caller, Resource, origin
+  // method/schema and cancellation boundary before nervud can produce this success response.
+  // An external Service can't conjure an Operation just by returning ACCEPTED.
+  //
+  // [v2+] Rewrite v1 may expose no produces_operation methods at all.
+  STATUS_CODE_ACCEPTED = 2;
+
+  // --- Failure codes: may only appear in a Failure outcome ---
+
+  // The method arguments themselves are illegal (missing fields, out of range, unknown enum, malformed).
+  //
+  // Note the boundary with RESOURCE_EXHAUSTED (§10.11): a payload exceeding the method's quota is
+  // a quota problem, which returns RESOURCE_EXHAUSTED and must not reach the business handler; only illegal field
+  // content itself is INVALID_ARGUMENT.
+  STATUS_CODE_INVALID_ARGUMENT = 3;
+
+  // The connection identity doesn't hold: the handshake didn't complete, SO_PEERCRED can't be mapped to a registered Package,
+  // or the declared Component ID doesn't match the launch record.
+  STATUS_CODE_UNAUTHENTICATED = 4;
+
+  // Identity holds but has no right: the manifest doesn't declare it, Policy refuses it, or the permission was revoked.
+  //
+  // **Only nervud may produce it.** Providers may not create this code themselves: permission decisions are the kernel's job,
+  // and a Provider returning it is always normalised to INTERNAL and written to Audit (NRCP §19).
+  STATUS_CODE_PERMISSION_DENIED = 5;
+
+  // The target doesn't exist (within the caller-visible projection): unknown endpoint_id/method_id/subscription_id,
+  // or the Selector matched no caller-visible Resource.
+  //
+  // "Caller-visible" is the key: hidden Resources must look like they don't exist, and must not be enumerable through
+  // differences between NOT_FOUND and other codes (§10.5).
+  STATUS_CODE_NOT_FOUND = 6;
+
+  // A precondition isn't met: the state machine doesn't allow it, the Resource is occupied, no Lease is held,
+  // Safety has latched, or interface versions don't intersect.
+  //
+  // This code on its own **carries no information**; it almost always needs a typed error_detail to tell
+  // the caller what to do (the mapping table in NRCP §19).
+  STATUS_CODE_FAILED_PRECONDITION = 7;
+
+  // Quota exhausted: concurrency, byte rate, queue budget, method payload quota (§10.11).
+  // Belongs to the "may succeed if retried later" kind, the opposite of INVALID_ARGUMENT.
+  STATUS_CODE_RESOURCE_EXHAUSTED = 8;
+
+  // The deadline passed. timeout_ms=0 means use the method default, and does **not** mean never time out.
+  STATUS_CODE_DEADLINE_EXCEEDED = 9;
+
+  // Cancelled. Note Cancel is best effort: this code means the work was stopped,
+  // and does **not** mean motor actions, file commits or external side effects that already happened were rolled back (§10.7).
+  STATUS_CODE_CANCELLED = 10;
+
+  // Currently unavailable: the Provider/ROS/MCU or the binding link is down, or the Service is restarting.
+  // When the SDK disconnects, every pending call completes with this code (§10.12).
+  STATUS_CODE_UNAVAILABLE = 11;
+
+  // A kernel internal error, or the Service broke the Provider Contract (returning a malformed detail,
+  // an illegal outcome combination, or inventing a decision it has no right to).
+  //
+  // An opaque end point for the caller: the full root cause only goes to the controlled Audit, without leaking
+  // internal paths, other Packages, call stacks or permission policy details over the wire (§10.12).
+  STATUS_CODE_INTERNAL = 12;
+}
+
+// Success is the only success branch.
+//
+// Invariant (receivers **must** check; oneof only guarantees the branches are exclusive, not their values):
+//
+//	code ∈ {OK, ACCEPTED}
+//
+// A business failure must not pretend to be a Success with the failure stuffed into the payload: that would completely defeat
+// the SDK's error handling and hide the failure from Audit (§10.4, NRCP §19).
+message Success {
+  StatusCode code = 1;
+
+  // The serialised bytes of the method-specific Protobuf response; may be empty.
+  //
+  // **No google.protobuf.Any, and no client-supplied type URL**:
+  // the type is decided uniquely by endpoint_id + the selected interface_version + method_id,
+  // and the receiver decodes with generated code. Letting the sender report a type would let it choose the receiver's parser.
+  bytes payload = 2;
+}
+
+// Failure is the only failure branch.
+//
+// Invariant (receivers must check):
+//
+//	code ∉ {UNSPECIFIED, OK, ACCEPTED}
+//
+// Any illegal combination fails closed as a protocol violation / INTERNAL.
+message Failure {
+  StatusCode code = 1;
+
+  // Only for people to read, and **never used in program decisions**.
+  //
+  // Service/Provider free text must never be passed through as is: nervud may only generate it from audited templates and
+  // sanitised structured fields, with a length limit (enforced by nervud's implementation; the schema
+  // can't express it). Programs must not switch on this field, nor branch localisation on it.
+  string public_message = 2;
+
+  // The optional typed detailed cause, as serialised Protobuf bytes.
+  //
+  // The type is decided by the **outer message type**, not described by this field itself:
+  //   ordinary Response/DispatchResult → decided by interface_version + method_id
+  //   ResolveEndpointResult        → ResolveEndpointErrorDetail
+  //   other *Results                → the fixed detail type of each message type
+  //
+  // nervud must decode the detail a Service submits by the authoritative method schema, check
+  // that the (code, reason) mapping is allowed, field lengths and enum ranges, drop unknown fields and **re-encode** it
+  // before forwarding; the Service's raw bytes must never be passed straight to the caller (§10.7).
+  bytes error_detail = 3;
+}
+
+// ResolveEndpointErrorDetail is the fixed detail type when ResolveEndpointResult fails.
+//
+// It belongs to the control plane rather than an Interface, so it's defined in the IPC schema;
+// interface causes like BaseMotionErrorDetail are defined in each interface schema.
+message ResolveEndpointErrorDetail {
+  ResolveEndpointReason reason = 1;
+}
+
+// The mapping of ResolveEndpointReason values to generic codes is fixed (NRCP §19):
+//
+//	INTERFACE_NOT_FOUND  → NOT_FOUND
+//	VERSION_MISMATCH     → FAILED_PRECONDITION
+//	RESOURCE_NOT_FOUND   → NOT_FOUND
+//	RESOURCE_AMBIGUOUS   → FAILED_PRECONDITION
+//
+// All of it is based on the caller-visible projection: hidden Resources don't count as candidates and take no part in
+// the AMBIGUOUS decision, otherwise callers could probe hardware they can't see by "whether it became AMBIGUOUS"
+// (§10.5).
+enum ResolveEndpointReason {
+  RESOLVE_ENDPOINT_REASON_UNSPECIFIED = 0;
+
+  // The logical Interface doesn't exist in the caller-visible projection.
+  RESOLVE_ENDPOINT_REASON_INTERFACE_NOT_FOUND = 1;
+
+  // The Interface exists, but the requested version range doesn't intersect what this machine supports.
+  RESOLVE_ENDPOINT_REASON_VERSION_MISMATCH = 2;
+
+  // The Selector is legal, but matched no caller-visible Resource.
+  RESOLVE_ENDPOINT_REASON_RESOURCE_NOT_FOUND = 3;
+
+  // The Selector is legal and matched several caller-visible candidates, with no unique selection rule.
+  RESOLVE_ENDPOINT_REASON_RESOURCE_AMBIGUOUS = 4;
+}

@@ -1,0 +1,168 @@
+// Nervus standard interface · BaseMotion@1  [REWRITE-v1 / experimental]
+//
+// interface_id = nervus.interface.motion.base, major = 1, experimental.
+//   Feature     = nervus.feature.motion.base
+//   Permission  = perm.motion.control
+//   Resource    = nervus.resource.motion.base (role such as main)
+//
+// Robot dogs use this standard interface: body velocity → gait (NRCP §17.2), the motion main line of demo 26.
+//
+// Ownership note: this file is where A2 (the BaseMotion proto) landed. It was committed with A3 because A3 required
+//   "A2 also back-fills this Method Registry option"; the mechanism follows A3's method_registry.proto,
+//   and this file's BaseMotionMethod enum is the back-filled result.
+//
+// Semantic boundaries (NRCP §17.2; read the original):
+//   - SetVelocity is a **short-lived velocity target layer** in the body frame, not a high-level intent of
+//     "get ready and start moving by yourself"; it **doesn't implicitly perform** long posture changes such as standing up.
+//   - Standing / getting up / sitting down belong to a separate Posture interface/Operation (not this interface).
+//   - Differential-drive vehicles may not support linear_y, but must report it explicitly in MotionState.supports_linear_y.
+//   - When a legged Provider's preconditions aren't met (sitting / mid posture change) it returns FAILED_PRECONDITION +
+//     BaseMotionReason.LOCOMOTION_NOT_READY, and must not cram a slow stand-up into SetVelocity.
+//   - Stop() is an ordinary controlled stop and **doesn't replace** SafetyHalt (SafetyHalt isn't controlled by App Permissions
+//     and isn't in this interface).
+//
+// Units and frames: linear = m/s, angular = rad/s, both in the **body frame**.
+//   linear_x positive towards the body's front; linear_y positive towards the body's left; angular_z positive counter-clockwise.
+//
+// [REWRITE-v1] experimental: destructive changes allowed before v2; once formally frozen, §10.12 applies.
+
+syntax = "proto3";
+
+package nervus.interface.basemotion.v1;
+
+import "nervus/ipc/v1/method_registry.proto";
+
+option go_package = "github.com/nervus-os/nervus-ipc/protocol/interface/basemotionv1;basemotionv1";
+
+// Java package names can't contain hyphens or the reserved word "interface", so the "iface" segment is used (see
+// the same note in manipulator.proto).
+option java_package = "io.github.nervusos.iface.basemotion.v1";
+option java_multiple_files = true;
+option java_outer_classname = "BaseMotionProto";
+
+// =============================================================================
+// method_id enum + Method Registry metadata
+// =============================================================================
+
+// Each BaseMotionMethod enum value is the wire method_id. Each value carries
+// (nervus.ipc.v1.method_meta), sharing the same mechanism as Manipulator.
+enum BaseMotionMethod {
+  BASE_MOTION_METHOD_UNSPECIFIED = 0;
+
+  // Body velocity target (a short command, not an operation). Drives actuators → needs a lease.
+  // Success is answered with an empty ACCEPTED success (reliably received, not finally stopped).
+  BASE_MOTION_METHOD_SET_VELOCITY = 1 [(nervus.ipc.v1.method_meta) = {
+    method_id: 1
+    required_permission: "perm.motion.control"
+    risk_class: RISK_CLASS_PHYSICAL_CONTROL
+    requires_control_lease: true
+    returns_operation: false
+    needs_user_confirmation: false
+    request_type: "nervus.interface.basemotion.v1.SetVelocityRequest"
+    response_type: ""
+    error_detail_type: "nervus.interface.basemotion.v1.BaseMotionErrorDetail"
+  }];
+
+  // Ordinary controlled stop (not SafetyHalt). Needs a lease; a short command.
+  BASE_MOTION_METHOD_STOP = 2 [(nervus.ipc.v1.method_meta) = {
+    method_id: 2
+    required_permission: "perm.motion.control"
+    risk_class: RISK_CLASS_PHYSICAL_CONTROL
+    requires_control_lease: true
+    returns_operation: false
+    needs_user_confirmation: false
+    request_type: "nervus.interface.basemotion.v1.StopRequest"
+    response_type: ""
+    error_detail_type: "nervus.interface.basemotion.v1.BaseMotionErrorDetail"
+  }];
+
+  // Read-only motion state.
+  BASE_MOTION_METHOD_GET_MOTION_STATE = 3 [(nervus.ipc.v1.method_meta) = {
+    method_id: 3
+    risk_class: RISK_CLASS_NORMAL
+    requires_control_lease: false
+    returns_operation: false
+    needs_user_confirmation: false
+    request_type: "nervus.interface.basemotion.v1.GetMotionStateRequest"
+    response_type: "nervus.interface.basemotion.v1.MotionState"
+    error_detail_type: "nervus.interface.basemotion.v1.BaseMotionErrorDetail"
+  }];
+
+  // Motion state event stream (subscription).
+  BASE_MOTION_METHOD_SUBSCRIBE_MOTION_STATE = 4 [(nervus.ipc.v1.method_meta) = {
+    method_id: 4
+    risk_class: RISK_CLASS_NORMAL
+    requires_control_lease: false
+    returns_operation: false
+    needs_user_confirmation: false
+    request_type: "nervus.interface.basemotion.v1.SubscribeMotionStateRequest"
+    response_type: "nervus.interface.basemotion.v1.MotionState"
+    error_detail_type: "nervus.interface.basemotion.v1.BaseMotionErrorDetail"
+  }];
+}
+
+// =============================================================================
+// Messages
+// =============================================================================
+
+// SetVelocityRequest: a velocity target in the body frame. Trusted fields such as sequence/deadline/epoch
+// are attached by nervud's ExecutionContext; the App **doesn't** fill them in (NRCP §10.3).
+message SetVelocityRequest {
+  double linear_x = 1;   // m/s, positive towards the body's front
+  double linear_y = 2;   // m/s, positive towards the body's left (ignored by differential drives that don't support it, reported in state)
+  double angular_z = 3;  // rad/s, positive counter-clockwise
+}
+
+message StopRequest {}
+message GetMotionStateRequest {}
+message SubscribeMotionStateRequest {}
+
+// Readiness: motion readiness. *_UNSPECIFIED=0 fails closed.
+enum Readiness {
+  READINESS_UNSPECIFIED = 0;
+  READINESS_READY = 1;
+  READINESS_NOT_READY = 2;
+  READINESS_TRANSITIONING = 3;
+  READINESS_FAULT = 4;
+}
+
+// VelocityLimits: velocity ceilings (for the SDK/UI to constrain input).
+message VelocityLimits {
+  double max_linear = 1;   // m/s
+  double max_angular = 2;  // rad/s
+}
+
+// MotionState: the state payload of GetMotionState / SubscribeMotionState (the §17.2 minimum set).
+message MotionState {
+  Readiness readiness = 1;
+  bool supports_linear_x = 2;
+  bool supports_linear_y = 3;   // differential drives report false here
+  bool supports_angular_z = 4;
+  VelocityLimits velocity_limits = 5;
+  uint64 active_motion_epoch = 6;
+}
+
+// =============================================================================
+// Error detail (NRCP §19 "position B")
+// =============================================================================
+
+// BaseMotionReason: the typed error_detail reason for BaseMotion failures.
+//
+// Note: safety.proto has a separate BASE_MOTION_ERROR_REASON_* placeholder enum (a temporary placeholder
+// A1 landed). Once this interface formally lands, BaseMotion's reasons follow this file; safety.proto's
+// placeholder migrates separately under the compatibility rules and isn't changed in this WP (to avoid breaking A1's committed artefacts).
+//
+// Business failures always use the Failure outcome and are never hidden in a Success payload. Every value has *_UNSPECIFIED=0.
+enum BaseMotionReason {
+  BASE_MOTION_REASON_UNSPECIFIED = 0;
+  BASE_MOTION_REASON_LOCOMOTION_NOT_READY = 1;
+  BASE_MOTION_REASON_SAFETY_LATCHED = 2;
+  BASE_MOTION_REASON_STALE_EPOCH = 3;
+  BASE_MOTION_REASON_CONTROL_NOT_HELD = 4;
+  BASE_MOTION_REASON_RESOURCE_UNAVAILABLE = 5;
+  BASE_MOTION_REASON_RESOURCE_FAULT = 6;
+}
+
+message BaseMotionErrorDetail {
+  BaseMotionReason reason = 1;
+}

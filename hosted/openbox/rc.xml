@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<openbox_config xmlns="http://openbox.org/3.4/rc">
+  <focus>
+    <focusNew>yes</focusNew>
+    <focusLast>yes</focusLast>
+    <followMouse>no</followMouse>
+    <underMouse>no</underMouse>
+    <raiseOnFocus>no</raiseOnFocus>
+  </focus>
+  <placement>
+    <policy>Smart</policy>
+    <center>yes</center>
+  </placement>
+  <theme>
+    <name>Clearlooks</name>
+    <keepBorder>no</keepBorder>
+    <animateIconify>no</animateIconify>
+  </theme>
+  <desktops>
+    <number>1</number>
+    <firstdesk>1</firstdesk>
+    <popupTime>0</popupTime>
+  </desktops>
+  <margins>
+    <top>0</top>
+    <left>0</left>
+    <right>80</right>
+    <bottom>0</bottom>
+  </margins>
+  <applications>
+    <application class="*" type="normal">
+      <decor>no</decor>
+      <maximized>yes</maximized>
+    </application>
+    <application class="*" title="Nervus Navigation">
+      <decor>no</decor>
+      <maximized>no</maximized>
+      <position force="yes">
+        <x>-0</x>
+        <y>0</y>
+        <monitor>1</monitor>
+      </position>
+      <size>
+        <width>80</width>
+        <height>100%</height>
+      </size>
+      <desktop>all</desktop>
+      <layer>above</layer>
+      <focus>no</focus>
+      <skip_taskbar>yes</skip_taskbar>
+      <skip_pager>yes</skip_pager>
+    </application>
+  </applications>
+  <keyboard>
+    <chainQuitKey>C-g</chainQuitKey>
+    <keybind key="A-Tab">
+      <action name="NextWindow"/>
+    </keybind>
+    <!-- Hosted mode: Ctrl+Alt+Q quits NervusOS and returns to Ubuntu -->
+    <keybind key="C-A-q">
+      <action name="Execute">
+        <command>/usr/local/bin/nervus-session stop</command>
+      </action>
+    </keybind>
+  </keyboard>
+</openbox_config>

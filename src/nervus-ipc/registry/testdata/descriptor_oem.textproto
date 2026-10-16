@@ -1,0 +1,47 @@
+# Sample OEM private Provider Descriptor (A4 §5, extensibility acceptance)
+#
+# The robot dog package of a fictional OEM, "Acme". It declares:
+#   - a **non-standard** private interface com.acme.dog.interface.raw_gait@1
+#   - a **custom permission** bound to its own signature, com.acme.dog.permission.raw_gait
+#   - a private resource type com.acme.dog.resource.gait_engine
+# All under the com.acme.dog.* namespace (red line #3: namespace isolation + Custom Permissions
+# bound to signatures). Once this signed package is installed, Apps can Resolve/call raw_gait, **with nervud unchanged**.
+#
+# The text format corresponds to nervus.ipc.v1.ProviderDescriptor.
+
+package_id: "com.acme.dog"
+
+interfaces {
+  interface_id: "com.acme.dog.interface.raw_gait"
+  interface_versions {
+    major: 1
+    schema_hash: "0123456789abcdef0123456789abcdef"
+  }
+  # Points at the OEM custom permission defined in permissions below, bound to Acme's signing identity.
+  required_permission: "com.acme.dog.permission.raw_gait"
+  resource_risk_floor: RISK_CLASS_PHYSICAL_CONTROL
+  compatible_resource_types: "com.acme.dog.resource.gait_engine"
+  default_resource_type: "com.acme.dog.resource.gait_engine"
+  default_resource_role: "gait.main"
+}
+
+resources {
+  stable_role: "gait.main"
+  resource_type: "com.acme.dog.resource.gait_engine"
+  access_mode: RESOURCE_ACCESS_MODE_EXCLUSIVE_CONTROL
+  risk_class: RISK_CLASS_PHYSICAL_CONTROL
+}
+
+permissions {
+  id: "com.acme.dog.permission.raw_gait"
+  # Physically dangerous → needs explicit user consent; an OEM can't set it to NORMAL to grant it silently (nervud checks).
+  grant_mode: GRANT_MODE_USER_CONSENT
+  risk_class: RISK_CLASS_PHYSICAL_CONTROL
+  minimum_trust: PERMISSION_TRUST_FLOOR_OEM
+  required_signer_role: "oem-release"
+  group: "motion"
+  display_name { en: "Raw gait control" }
+  description {
+    en: "Allows sending low-level gait phase parameters directly, bypassing the standard velocity abstraction."
+  }
+}

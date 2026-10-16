@@ -1,0 +1,121 @@
+// Sample OEM private interface: com.acme.dog.interface.raw_gait@1  [REWRITE-v1 / experimental]
+//
+// This is WP-A4's **extensibility acceptance sample** (A4 §5). It exists only to prove one thing:
+//
+//	an OEM (the fictional Acme) that wants to add a private interface **not in the standard interfaces** to its robot dog
+//	(raw_gait, sending gait phase parameters directly) only needs to:
+//	  1. write this one .proto in its own namespace com.acme.*,
+//	  2. attach method_meta using nervus's frozen Method Registry mechanism (method_registry.proto),
+//	  3. declare the interface + its custom permission in the Provider Descriptor.
+//	**Not one line of nervud Go changes**; once the signed package is installed, Apps can Resolve and call it.
+//	This is living proof of section 3 of `00`: "adding an interface doesn't change the kernel".
+//
+// Note this file is **not** in the nervus.* namespace: it's OEM-private, and the proto package, interface ID,
+// custom permission ID and resource type all sit under com.acme.dog.* (a red line in `00`: namespace isolation,
+// custom permissions bound to signatures). It **only** imports nervus's generic mechanism files and doesn't depend
+// on any nervus interface in reverse: the mechanism is shared, the semantics are private.
+//
+// [REWRITE-v1] experimental: fields/method_ids may change destructively before they're frozen.
+
+syntax = "proto3";
+
+// The OEM private namespace, completely isolated from the standard nervus.* interfaces.
+package com.acme.dog.v1;
+
+// Reuses nervus's frozen generic mechanisms: the RiskClass enum + the method_meta option.
+// The OEM doesn't reinvent this mechanism, only uses it: "mechanism in the kernel/protocol, semantics in the package".
+import "nervus/ipc/v1/method_registry.proto";
+
+option go_package = "github.com/nervus-os/nervus-ipc/protocol/oem/acme/dog/v1;dogv1";
+
+option java_package = "com.acme.dog.v1";
+option java_multiple_files = true;
+option java_outer_classname = "RawGaitProto";
+
+// =============================================================================
+// method_id enum + method_meta (the data-driven core: metadata lives in the proto)
+// =============================================================================
+
+// RawGaitMethod is the raw_gait interface's method directory. Every enum value carries (nervus.ipc.v1.method_meta).
+// nervud/SDK/Agents extract these MethodMetas from the generated EnumValueOptions, getting this OEM interface's
+// method-level permission/risk/confirmation requirements. **The extraction logic is exactly the same as for standard interfaces, and the kernel doesn't know
+// the name "acme"**. Convention: enum value number == method_id.
+enum RawGaitMethod {
+  RAW_GAIT_METHOD_UNSPECIFIED = 0;
+
+  // Read-only: read the current gait phase and the set of supported gaits. No side effects, no lease, no confirmation.
+  RAW_GAIT_METHOD_GET_GAIT_STATE = 1 [(nervus.ipc.v1.method_meta) = {
+    method_id: 1
+    risk_class: RISK_CLASS_NORMAL
+    requires_control_lease: false
+    returns_operation: false
+    needs_user_confirmation: false
+    is_read_only: true
+    is_motion: false
+    request_type: "com.acme.dog.v1.GetGaitStateRequest"
+    response_type: "com.acme.dog.v1.GaitState"
+    error_detail_type: "com.acme.dog.v1.RawGaitErrorDetail"
+  }];
+
+  // Physical control: send raw gait phase parameters directly (bypassing standard BaseMotion's velocity abstraction).
+  // This is a dangerous action: it drives actuators, needs an OEM custom permission, needs a lease, and Agent calls need a system confirmation dialog.
+  // required_permission points at a custom permission in this package's namespace (defined in the Descriptor and bound to the signature).
+  RAW_GAIT_METHOD_SET_RAW_GAIT = 2 [(nervus.ipc.v1.method_meta) = {
+    method_id: 2
+    required_permission: "com.acme.dog.permission.raw_gait"
+    risk_class: RISK_CLASS_PHYSICAL_CONTROL
+    requires_control_lease: true
+    returns_operation: false
+    needs_user_confirmation: true
+    is_read_only: false
+    is_motion: true
+    request_type: "com.acme.dog.v1.SetRawGaitRequest"
+    response_type: "com.acme.dog.v1.SetRawGaitResponse"
+    error_detail_type: "com.acme.dog.v1.RawGaitErrorDetail"
+  }];
+}
+
+// =============================================================================
+// Messages (units/coordinate frames go in comments, NRCP §17.1)
+// =============================================================================
+
+// Supported gait types (OEM-private semantics that don't exist in the standard interfaces).
+enum GaitType {
+  GAIT_TYPE_UNSPECIFIED = 0;
+  GAIT_TYPE_TROT = 1;   // diagonal trot
+  GAIT_TYPE_WALK = 2;   // slow walk
+  GAIT_TYPE_BOUND = 3;  // front and rear legs leap together
+}
+
+message GetGaitStateRequest {}
+
+message GaitState {
+  GaitType active_gait = 1;
+  double phase = 2;                     // current phase, radians, [0, 2π)
+  repeated GaitType supported_gaits = 3;
+}
+
+// Raw gait command: bypass the standard velocity abstraction and give phase offset and step frequency directly. This kind of "bare control" is exactly
+// what only an OEM would expose and the standard interfaces deliberately don't provide; the sample's point is that it's non-standard.
+message SetRawGaitRequest {
+  GaitType gait = 1;
+  double stride_frequency_hz = 2;       // step frequency, Hz
+  double phase_offset_rad = 3;          // phase offset, rad
+  // sequence/deadline/epoch are attached by nervud's ExecutionContext; the App doesn't fill them in (NRCP §10.3).
+}
+
+message SetRawGaitResponse {}
+
+// Error detail (NRCP §19, position B). OEM-private detailed causes use their own typed detail,
+// without polluting the generic StatusCode.
+enum RawGaitReason {
+  RAW_GAIT_REASON_UNSPECIFIED = 0;
+  RAW_GAIT_REASON_SAFETY_LATCHED = 1;
+  RAW_GAIT_REASON_CONTROL_NOT_HELD = 2;
+  RAW_GAIT_REASON_UNSUPPORTED_GAIT = 3;
+  RAW_GAIT_REASON_PHASE_OUT_OF_RANGE = 4;
+}
+
+message RawGaitErrorDetail {
+  RawGaitReason reason = 1;
+}

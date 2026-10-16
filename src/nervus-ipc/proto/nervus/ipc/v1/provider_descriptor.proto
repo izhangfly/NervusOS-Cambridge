@@ -1,0 +1,289 @@
+// Nervus IPC v1: the Provider Descriptor (data-driven interface contract)  [REWRITE-v1 / experimental]
+//
+// [KERNEL: NOT WIRED] nervud doesn't yet register interfaces/resources/permissions data-driven from signed Descriptors;
+// the three tables are still hard-coded at compile time: endpoint.DefaultInterfaceCatalog (1 entry),
+// resource.DefaultRegistry (1 entry), permission.DefaultCatalog (7 placeholders).
+// This file is the cure that replaces them; only once wired does "adding a robot = installing a signed Provider package"
+// really hold. The validation helper is already in registry.ValidateOEMNamespace.
+//
+// This file freezes the wire structure in which a Provider declares "what I implement/manage" in its signed Manifest
+// (the wire form of NRCP §7.2/§7.3), and is WP-A4's main deliverable.
+//
+// Its only reason to exist is **eliminating hard-coding** (`00` red line #4, §3):
+//
+//	The counter-example today: nervud's endpoint.DefaultInterfaceCatalog() writes "interface → required permission"
+//	                           as a compile-time Go constant table that only knows nervus.interface.motion.base.
+//	                           An OEM wanting to add an interface would have to change nervud and recompile the kernel, violating the first principle of extensibility.
+//
+//	After this file: interface → permission/risk/required Resource type is registered data-driven from **verified signed Descriptors**
+//	                into the endpoint directory (see "data-driven wiring" at the end of the file; handed to B2).
+//	                Adding a robot = installing a signed Provider package, with not one line of nervud changed.
+//
+// Key red lines (written into the schema comments for implementers and reviewers to uphold together):
+//   1. A Descriptor is only the Provider's **declaration**, not a decision. nervud must verify independently:
+//      signature/origin, whether that trust profile may implement the interface, whether physical Resources meet
+//      the minimum protection level, whether Custom Permissions are bound to the definer's signature (NRCP §7.3).
+//   2. **Authority lives only in nervud** (`00` red line #2): OEMs only declare, and nervud decides by intersection.
+//      OEMs **can't** lower dangerous system permissions or crown themselves system/HUMAN/SAFETY.
+//   3. **Namespace isolation** (`00` red lines, NRCP §4.4/§9.2): OEM private interfaces/permissions/resource types
+//      must be in the definer's own namespace (com.acme.*), and Custom Permissions are bound to the signing identity.
+//
+// This file itself does **not** define decision logic, only the shape of the "facts" a Provider can state;
+// validation and decisions are in nervud. RiskClass is reused from method_registry.proto (risk levels consistent in all three places).
+//
+// [REWRITE-v1] experimental; compatibility rules as in method_registry.proto (§10.12).
+
+syntax = "proto3";
+
+package nervus.ipc.v1;
+
+// RiskClass is reused from the mechanism layer file (A3's method_registry.proto), so the three risk levels agree.
+import "nervus/ipc/v1/method_registry.proto";
+
+option go_package = "github.com/nervus-os/nervus-ipc/protocol/ipcv1;ipcv1";
+
+option java_package = "io.github.nervusos.ipc.v1";
+option java_multiple_files = true;
+option java_outer_classname = "ProviderDescriptorProto";
+
+// =============================================================================
+// Top level: ProviderDescriptor
+// =============================================================================
+
+// ProviderDescriptor is a Provider package's complete declaration to nervud in its Manifest
+// (NRCP §7.2). It's submitted with the signed Manifest at install/RegisterEndpoint, and after verification nervud
+// fills the endpoint interface directory, the Resource registry and the permission directory **data-driven** from it.
+//
+// There's no "authorisation" field here: the Provider declares what it **intends** to implement/manage,
+// and whether it may, and with what permissions, is all decided independently by nervud (red line #2).
+message ProviderDescriptor {
+  // The definer's Package ID. Standard Providers use the platform namespace; OEMs use their own reversed-domain
+  // namespace (such as com.acme.dog). Every OEM private id below must fall inside this namespace,
+  // and nervud checks prefix ownership (red line #3).
+  string package_id = 1;
+
+  // The interfaces this Provider implements. Fed into the endpoint interface directory (replacing hard-coding; see the end of the file).
+  repeated ProvidedInterface interfaces = 2;
+
+  // The physical/logical resources this Provider manages. Fed into the Resource registry (B2).
+  repeated ManagedResource resources = 3;
+
+  // The permissions this Provider defines. OEM private permissions must be in its own package namespace;
+  // platform-signed Providers may also declare perm.* platform permissions, so new standard capabilities don't need kernel code changes.
+  // Whether it's entitled to declare in the platform namespace can only be decided by nervud from the verified trust/signer.
+  repeated DefinedPermission permissions = 4;
+}
+
+// =============================================================================
+// ProvidedInterface: an implemented interface + interface-level bar
+// =============================================================================
+
+// ProvidedInterface declares "this Provider implements some versions of an interface, and what permission serving it needs".
+// required_permission is exactly the item that replaces DefaultInterfaceCatalog's hard-coding: the Resolve-stage
+// interface-level permission bar, registered data-driven into the endpoint directory from here.
+message ProvidedInterface {
+  // The logical interface ID. Standard interfaces are nervus.interface.*; OEM private interfaces must be under the definer's namespace
+  // (com.acme.*), and nervud checks that the prefix matches the package_id namespace (red line #3).
+  string interface_id = 1;
+
+  // 2 and 3 were v1's versions/schema_hash pair, removed with v2.
+  //
+  // They could only express "several majors happen to share the same hash", while each major should have its own
+  // contract identity. Per-major binding is in interface_versions (field 9).
+  //
+  // Numbers and names go into reserved rather than being left empty: field numbers are never reused once published, otherwise a process with old
+  // generated code would decode new fields with old semantics, and neither side would report an error.
+  reserved 2, 3;
+  reserved "versions", "schema_hash";
+
+  // The interface-level permission bar: the permission ID needed to Resolve this interface.
+  //   Standard interfaces → point at a platform permission (such as perm.motion.control, which a platform-signed Descriptor can define).
+  //   OEM private interfaces → point at a custom permission declared by a DefinedPermission in this Descriptor
+  //                            (such as com.acme.dog.permission.raw_gait), bound to the definer's signature.
+  // **This is the value fed into the endpoint directory, replacing DefaultInterfaceCatalog's hard-coding.**
+  // Finer method-level permissions stack on MethodMeta.required_permission (method_registry.proto).
+  string required_permission = 4;
+
+  // The risk floor of the Resource this interface is bound to: nervud checks that the bound ManagedResource's
+  // risk_class isn't below it, so a physically dangerous interface can't be bound to a resource that claims to be harmless
+  // (one of the inputs to NRCP §7.3's minimum protection level check).
+  RiskClass resource_risk_floor = 5;
+
+  // The Resource types this interface may bind. An empty set means it's a non-Resource interface,
+  // and RegisterEndpoint.resource_handle must be empty.
+  repeated string compatible_resource_types = 6;
+
+  // An optional interface-level default Selector. Both must be empty or both non-empty; a non-empty type must be in
+  // compatible_resource_types. That way an empty Selector's meaning is decided by the interface's data,
+  // no longer hard-coded globally by the kernel as motion.base/main.
+  string default_resource_type = 7;
+  string default_resource_role = 8;
+
+  // Per-major contract binding. There must be at least one, otherwise this interface declaration has no verifiable identity at all.
+  repeated ProvidedInterfaceVersion interface_versions = 9;
+}
+
+message ProvidedInterfaceVersion {
+  uint32 major = 1;
+
+  // This major's contract identity. It's what RegisterEndpoint.interface_schema_hash is compared against,
+  // and how nervud decides "are several Providers talking about the same interface".
+  //
+  // Where the value comes from depends on whether methods below is empty:
+  //   methods empty      → must equal the hash of the matching bundle in InterfaceSchemaBundleSet
+  //   methods non-empty  → must equal registry.MethodsHash(methods)
+  bytes schema_hash = 2;
+  // When methods is non-empty, this major is a **metadata interface**: it only declares the methods' ids, permissions, risk and
+  // Transfer budgets, carries no protobuf message types, and **needs no** schema bundle.
+  //
+  // # Why this path exists
+  //
+  // Capability interfaces' payloads often aren't protobuf in the first place: camera frames, microphone samples and lidar point clouds all go through
+  // the Transfer data plane as opaque bytes. Inventing a set of Request/Response messages for them that will never be used
+  // only means "adding a capability" brings one more .proto to maintain, generate and keep aligned between several parties.
+  //
+  // What the kernel really needs to know has only ever been three things: who is calling (identity), is it allowed (permission), and how big a pipe
+  // can be opened (Transfer budget). All three are in MethodMeta, regardless of message shape.
+  //
+  // # What it doesn't relax
+  //
+  // schema_hash is still the contract identity, just computed from the method metadata instead. So
+  // sameInterfaceContract still holds: for two Providers to implement the same standard interface, the
+  // method_ids, required_permissions, risk_classes and transfer budgets they declare must be byte for byte identical,
+  // or the kernel refuses the second. The "vendors are interchangeable" property is fully kept.
+  //
+  // A metadata interface's methods **must not** declare request_type / response_type / error_detail_type:
+  // there's no schema bundle to resolve them, so declaring them can't be checked.
+  repeated MethodMeta methods = 3;
+
+  // The events this major can be subscribed to. The same rule as methods: declared inline, included in the contract hash.
+  //
+  // Events and methods are two independent numbering spaces (in the same interface, method 1 and event 1 have nothing
+  // to do with each other), so they're two fields rather than one merged table.
+  //
+  // A metadata interface's events likewise **must not** declare payload_type (there's no schema to resolve it).
+  repeated EventMeta events = 4;
+}
+
+// =============================================================================
+// ManagedResource: a managed resource
+// =============================================================================
+
+// ManagedResource declares a resource this Provider manages (NRCP §7.2/§8). Fed into the Resource
+// registry, for ResolveEndpoint's Selector to match. Whether registration is allowed (especially for physically dangerous resources)
+// is decided by nervud by trust profile; ordinary Apps may not register physically dangerous Resources (red line #1).
+message ManagedResource {
+  // The stable role name, such as "arm.left" / "base.main". Used by ResolveEndpoint's role selector.
+  string stable_role = 1;
+
+  // The resource type. Standard ones are nervus.resource.*; OEM private types are under the definer's namespace.
+  string resource_type = 2;
+
+  // The access mode (exclusive control / shared observation …). See ResourceAccessMode.
+  ResourceAccessMode access_mode = 3;
+
+  // The resource risk level. nervud uses it to check the minimum protection level and decide Lease/arbitration strength.
+  RiskClass risk_class = 4;
+
+  // The resource's semantic labels, matched by ResourceSelector.labels.
+  //
+  // Why they exist: stable_role is a product of **board configuration** (whether the front camera on this board is called
+  // cam.front or camera0), and Apps shouldn't depend on it. Labels let an App say "I want the front camera"
+  // rather than "I want cam.front", so a different board needs no App change.
+  //
+  // Namespaces follow the same rules as interfaces/permissions: platform standard labels are nervus.* (such as nervus.camera.facing),
+  // and OEM private labels must be in the definer's package namespace. nervud checks this when building the Catalog.
+  map<string, string> labels = 5;
+}
+
+// ResourceAccessMode is a resource's access semantics. An enum rather than a free string: the access mode drives
+// control arbitration (who can hold it at once) and is a **closed vocabulary** defined by the platform; OEMs can't invent their own arbitration
+// semantics (that's a mechanism change, not a data-driven addition). Unknown values fail closed as the strictest (exclusive).
+enum ResourceAccessMode {
+  // Fail closed: unknown is treated as the strictest.
+  RESOURCE_ACCESS_MODE_UNSPECIFIED = 0;
+
+  // Exclusive control: at most one ControlLease holder at a time (the default for actuator resources).
+  RESOURCE_ACCESS_MODE_EXCLUSIVE_CONTROL = 1;
+
+  // Shared observation: many parties can subscribe read-only, with no control (sensor state resources).
+  RESOURCE_ACCESS_MODE_SHARED_OBSERVE = 2;
+}
+
+// =============================================================================
+// DefinedPermission: data-driven permission definitions
+// =============================================================================
+
+// DefinedPermission is one permission definition a Provider carries (NRCP §9.2). OEMs use their own
+// package namespace; platform Providers may use perm.*. It's only a **declaration**: this permission
+// exists, what it's called, how dangerous it is, how it's granted. Whether it's accepted, whether the definer may occupy that namespace and whether it may
+// use a given grant_mode are all decided by nervud from signatures and platform baselines; ordinary Providers
+// can't get platform permissions by writing perm.*, nor lower dangerous system permissions.
+message DefinedPermission {
+  // The permission ID. Private IDs must be strictly within the definer's package namespace
+  // (such as com.acme.dog.permission.raw_gait); perm.* is reserved for platform-signed Providers verified and authorised
+  // by nervud. Both kinds of definition are bound to the definer's signing identity (NRCP §4.4).
+  string id = 1;
+
+  // The grant mode. An enum rather than a free string: this is a security-related **closed platform vocabulary**
+  // (§9.2), and OEMs can't invent new grant modes; unknown values fail closed as "refuse to grant".
+  GrantMode grant_mode = 2;
+
+  // The permission's risk level, deciding the strength of the grant UI and whether explicit user consent is needed.
+  RiskClass risk_class = 3;
+
+  // Display name (for the grant UI). English is required; zh_cn is optional.
+  LocalizedText display_name = 4;
+
+  // Permission description (for the grant UI). English is required; zh_cn is optional.
+  LocalizedText description = 5;
+
+  // The minimum trust bar the Provider declares. nervud takes max(declared value, the platform baseline for the risk level),
+  // so Providers can only tighten permission strength, never lower it.
+  PermissionTrustFloor minimum_trust = 6;
+
+  // An optional signing role bar, such as platform-release. The role comes from nervud's signature verification,
+  // not self-reported by the manifest or the Provider at run time.
+  string required_signer_role = 7;
+
+  // Only for grouping and batch display in the grant UI; must not be the only input to kernel revocation or security policy.
+  string group = 8;
+}
+
+enum PermissionTrustFloor {
+  PERMISSION_TRUST_FLOOR_UNSPECIFIED = 0;
+  PERMISSION_TRUST_FLOOR_ORDINARY = 1;
+  PERMISSION_TRUST_FLOOR_OEM = 2;
+  PERMISSION_TRUST_FLOOR_PLATFORM = 3;
+}
+
+// GrantMode is how a permission is granted (NRCP §9.2). A closed platform vocabulary from which nervud decides the grant
+// path; custom permissions declared by OEMs can only choose one of these too, and nervud checks whether their risk fits
+// the chosen mode (for example, a physically dangerous permission can't choose silent normal granting).
+enum GrantMode {
+  // Fail closed: unknown grant modes always refuse to grant.
+  GRANT_MODE_UNSPECIFIED = 0;
+
+  // Normal: granted on install with no user interaction (low risk).
+  GRANT_MODE_NORMAL = 1;
+
+  // Needs user consent: a system-held confirmation dialog at run time, with the user granting explicitly (privacy/physical).
+  GRANT_MODE_USER_CONSENT = 2;
+
+  // Signature level: only granted to Packages with the same signature as the definer (an OEM's own Apps using its own permissions).
+  GRANT_MODE_SIGNATURE = 3;
+
+  // Privileged: only privileged Packages signed by the platform/OEM (NRCP §9).
+  GRANT_MODE_PRIVILEGED = 4;
+
+  // System only: only system components; ordinary/OEM Apps can never get it.
+  // OEMs can't use it to crown their own permissions with a system identity; nervud refuses the overreaching declaration (red line #2).
+  GRANT_MODE_SYSTEM_ONLY = 5;
+}
+
+// LocalizedText is user-facing text that needs localisation (NRCP §9.2).
+// Grant/install UIs pick by locale. en is required and zh_cn optional; when zh_cn is missing the UI falls back to en.
+message LocalizedText {
+  string zh_cn = 1;
+  string en = 2;
+}

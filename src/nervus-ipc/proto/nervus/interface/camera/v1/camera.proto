@@ -1,0 +1,482 @@
+// Nervus standard interfaces · Camera@1 / CameraConfig@1  [REWRITE-v1 / experimental]
+//
+//   nervus.interface.camera@1         the capture surface, bound to nervus.resource.camera (SHARED_OBSERVE)
+//   nervus.interface.camera.config@1  the configuration surface, bound to nervus.resource.camera.config (EXCLUSIVE_CONTROL)
+//   Permission = perm.camera.capture (capture) / perm.camera.configure (configuration)
+//
+// # Why two interfaces rather than one
+//
+// "Watching the picture" and "changing parameters" have opposite resource semantics: the former is **shared by many**: navigation, recording and AI
+// detection can all watch the same stream at once; the latter **must be exclusive**: with two processes changing exposure at once, who wins
+// depends on timing, and the picture jumps between the two values.
+//
+// The kernel issues leases **per resource**, and an endpoint binds one resource. Putting both into one interface
+// would make SetExposure request a lease on "a resource this endpoint isn't bound to";
+// that path doesn't exist in the kernel, and forcing it would only create a back door around the exclusive semantics.
+//
+// Split apart, an App that only wants to watch the picture never needs to touch leases, and so is never refused
+// because someone else is adjusting parameters.
+//
+// # Frames don't travel over this protocol
+//
+// The control plane only **connects the pipe**: OpenStream returns a TransferHandle, the caller uses it
+// to attach to the data plane UDS, and then frames flow through the shared memory ring with nervud not on the data path.
+//
+// **There's deliberately no FrameReady event.** The ring has its own eventfd wake-up, and pushing a "new frame" on the control plane too
+// would move once-per-frame traffic back onto the control plane, which is exactly why the shared memory data plane exists. Control plane
+// events are kept for things that don't happen per frame: the stream state changed, the device went away.
+//
+// # How vendors plug in
+//
+// Vendors **don't implement this interface**; they implement a private interface in their own namespace
+// (something like vendor.camerad.source@1), which nervus.camerad converts into this interface. That way:
+//   - standard semantics (facing=front) are declared by the platform, and vendors can't crown themselves;
+//   - vendors can have any private capability (structured light, ToF depth) through their own interface, without polluting the standard;
+//   - the data plane still goes direct: nervus.camerad hands the vendor's TransferHandle on to the App,
+//     and frames aren't copied once more through camerad.
+//
+// [REWRITE-v1] experimental: destructive changes allowed before v2; once formally frozen, §10.12 applies.
+
+syntax = "proto3";
+
+package nervus.interface.camera.v1;
+
+import "nervus/ipc/v1/method_registry.proto";
+import "nervus/ipc/v1/transfer.proto";
+
+option go_package = "github.com/nervus-os/nervus-ipc/protocol/interface/camerav1;camerav1";
+
+// Java package names can't contain hyphens or the reserved word "interface", so the "iface" segment is used.
+option java_package = "io.github.nervusos.iface.camera.v1";
+option java_multiple_files = true;
+option java_outer_classname = "CameraProto";
+
+// =============================================================================
+// The capture surface: nervus.interface.camera@1
+// =============================================================================
+
+// Each CameraMethod enum value is the wire method_id.
+enum CameraMethod {
+  CAMERA_METHOD_UNSPECIFIED = 0;
+
+  // Describe what this camera can provide: resolutions, pixel formats, frame rates.
+  //
+  // **Ask before opening**: resolution and pixel format aren't the App's to decide; whatever the board has is
+  // what you get. Hard-coding 1920x1080 and retrying when OpenStream fails turns device discovery
+  // into guesswork.
+  CAMERA_METHOD_DESCRIBE_STREAM = 1 [(nervus.ipc.v1.method_meta) = {
+    method_id: 1
+    risk_class: RISK_CLASS_NORMAL
+    requires_control_lease: false
+    returns_operation: false
+    needs_user_confirmation: false
+    request_type: "nervus.interface.camera.v1.DescribeStreamRequest"
+    response_type: "nervus.interface.camera.v1.StreamDescription"
+    error_detail_type: "nervus.interface.camera.v1.CameraErrorDetail"
+  }];
+
+  // Open one stream and return the data plane credential.
+  //
+  // risk_class = PRIVACY_SENSITIVE: this is the moment **the camera starts filming you**. It doesn't drive
+  // actuators, so it isn't PHYSICAL_CONTROL; but it's more sensitive than any read-only method,
+  // and classifying it as NORMAL would leave permission decisions and user prompts without a basis.
+  //
+  // transfer only allows SHARED_MEMORY_RING: video frames over FRAMED_RELAY would mean
+  // nervud copying every frame, and one 1080p30 stream is ~180 MB/s through the kernel.
+  CAMERA_METHOD_OPEN_STREAM = 2 [(nervus.ipc.v1.method_meta) = {
+    method_id: 2
+    required_permission: "perm.camera.capture"
+    risk_class: RISK_CLASS_PRIVACY_SENSITIVE
+    requires_control_lease: false
+    returns_operation: false
+    needs_user_confirmation: false
+    request_type: "nervus.interface.camera.v1.OpenStreamRequest"
+    response_type: "nervus.interface.camera.v1.OpenStreamResponse"
+    error_detail_type: "nervus.interface.camera.v1.CameraErrorDetail"
+    // All three budgets **must be non-zero**: 0 here means "not declared", not "unlimited",
+    // and the registry refuses a transfer policy left empty. They're absolute ceilings;
+    // nervud still tightens BeginTransfer's requested values to them, and the actual allocation follows the requested values.
+    //
+    //   max_packet_bytes      16 MiB: covers a single 4K NV12 frame (about 12.4 MB).
+    //                         It's also the ceiling on the ring's slot size; setting it too high would let one stream
+    //                         pin hundreds of MB of physical memory.
+    //   max_bytes_per_second  512 MiB/s: 4K30 NV12 is about 373 MB/s, leaving headroom.
+    //   max_streams           4: the limit on concurrent consumers of one camera.
+    transfer: {
+      direction: TRANSFER_DIRECTION_PROVIDER_TO_CALLER
+      max_streams: 4
+      max_packet_bytes: 16777216
+      max_bytes_per_second: 536870912
+      allowed_modes: [TRANSFER_MODE_SHARED_MEMORY_RING]
+    }
+  }];
+
+  // Close one stream.
+  //
+  // **It's required; disconnect cleanup alone isn't enough**: disconnect cleanup covers crashes, not normal closes. A
+  // long-running App that finished with the camera but could only release it by killing itself would make an ordinary action like "close the preview"
+  // impossible.
+  CAMERA_METHOD_CLOSE_STREAM = 3 [(nervus.ipc.v1.method_meta) = {
+    method_id: 3
+    required_permission: "perm.camera.capture"
+    risk_class: RISK_CLASS_NORMAL
+    requires_control_lease: false
+    returns_operation: false
+    needs_user_confirmation: false
+    request_type: "nervus.interface.camera.v1.CloseStreamRequest"
+    response_type: ""
+    error_detail_type: "nervus.interface.camera.v1.CameraErrorDetail"
+  }];
+}
+
+// Each CameraEvent enum value is the wire event_id.
+//
+// event_id and method_id are **two unrelated numbering spaces**: this interface's event 1 and
+// method 1 have nothing to do with each other.
+//
+// # Both events are dispatched per stream
+//
+// One camera can have several streams open at once (one for navigation, one for recording, one for detection),
+// while subscriptions are set up per endpoint, and endpoints are per camera, not per stream.
+// Without separating instances, A subscribing to cam.front would get the state changes of B's stream:
+// when it opened, how long it ran, when it dropped.
+//
+// So both events declare scoped: when subscribing, Subscribe.scope is the stream_id, and ownership is
+// registered in advance with nervud by camerad in OpenStream using BindEventScope(54).
+// Subscribing to a stream that isn't yours is refused outright.
+enum CameraEvent {
+  CAMERA_EVENT_UNSPECIFIED = 0;
+
+  // Stream state changes: frames started, stopped, the device went away.
+  //
+  // STATE: subscribers only care about **the current state**. Merging intermediate states loses nothing:
+  // after STREAMING→STOPPED→STREAMING twice in a row, what really matters is the last value.
+  CAMERA_EVENT_STREAM_STATE_CHANGED = 1 [(nervus.ipc.v1.event_meta) = {
+    event_id: 1
+    required_permission: "perm.camera.capture"
+    risk_class: RISK_CLASS_NORMAL
+    delivery_class: DELIVERY_CLASS_STATE
+    payload_type: "nervus.interface.camera.v1.StreamState"
+    scoped: true
+    max_events_per_second: 20
+  }];
+
+  // Device-level errors: USB disconnects, kernel buffer overflows, sensor timeouts.
+  //
+  // RELIABLE: these events **can't be merged or dropped**. "The last second's error was merged into this second's"
+  // would lose the scene of the first failure for troubleshooting; and dropping a disconnect notification would leave the App waiting for a frame
+  // that never comes.
+  CAMERA_EVENT_DEVICE_ERROR = 2 [(nervus.ipc.v1.event_meta) = {
+    event_id: 2
+    required_permission: "perm.camera.capture"
+    risk_class: RISK_CLASS_NORMAL
+    delivery_class: DELIVERY_CLASS_RELIABLE
+    payload_type: "nervus.interface.camera.v1.CameraDeviceError"
+    scoped: true
+    max_events_per_second: 10
+  }];
+}
+
+// =============================================================================
+// The configuration surface: nervus.interface.camera.config@1
+// =============================================================================
+
+enum CameraConfigMethod {
+  CAMERA_CONFIG_METHOD_UNSPECIFIED = 0;
+
+  // List which controls this camera supports and their value ranges. Read-only; no lease needed.
+  //
+  // **Reads need no lease**: making "see what can be adjusted" also grab exclusivity would force the UI to lock others out
+  // before the user has even decided whether to change anything.
+  CAMERA_CONFIG_METHOD_LIST_CONTROLS = 1 [(nervus.ipc.v1.method_meta) = {
+    method_id: 1
+    required_permission: "perm.camera.configure"
+    risk_class: RISK_CLASS_NORMAL
+    requires_control_lease: false
+    returns_operation: false
+    needs_user_confirmation: false
+    request_type: "nervus.interface.camera.v1.ListControlsRequest"
+    response_type: "nervus.interface.camera.v1.ControlDescriptions"
+    error_detail_type: "nervus.interface.camera.v1.CameraErrorDetail"
+  }];
+
+  // Read the current effective values. Read-only; no lease needed.
+  CAMERA_CONFIG_METHOD_GET_CONTROLS = 2 [(nervus.ipc.v1.method_meta) = {
+    method_id: 2
+    required_permission: "perm.camera.configure"
+    risk_class: RISK_CLASS_NORMAL
+    requires_control_lease: false
+    returns_operation: false
+    needs_user_confirmation: false
+    request_type: "nervus.interface.camera.v1.GetControlsRequest"
+    response_type: "nervus.interface.camera.v1.ControlValues"
+    error_detail_type: "nervus.interface.camera.v1.CameraErrorDetail"
+  }];
+
+  // Change parameters. **Needs an exclusive lease.**
+  //
+  // Without a lease, the result of two processes adjusting exposure at once depends on whose packet arrives later, and the picture jumps between the two
+  // values, a problem almost impossible to reproduce in the field. The lease turns "who is adjusting" into a fact that can be
+  // queried, pre-empted and audited.
+  CAMERA_CONFIG_METHOD_SET_CONTROLS = 3 [(nervus.ipc.v1.method_meta) = {
+    method_id: 3
+    required_permission: "perm.camera.configure"
+    risk_class: RISK_CLASS_NORMAL
+    requires_control_lease: true
+    returns_operation: false
+    needs_user_confirmation: false
+    request_type: "nervus.interface.camera.v1.SetControlsRequest"
+    response_type: "nervus.interface.camera.v1.ControlValues"
+    error_detail_type: "nervus.interface.camera.v1.CameraErrorDetail"
+  }];
+}
+
+enum CameraConfigEvent {
+  CAMERA_CONFIG_EVENT_UNSPECIFIED = 0;
+
+  // The effective values changed (possibly from another lease holder, or from device-internal logic such as auto exposure).
+  //
+  // STATE: the UI wants "what is it now", and merging intermediate values loses nothing.
+  CAMERA_CONFIG_EVENT_CONTROLS_CHANGED = 1 [(nervus.ipc.v1.event_meta) = {
+    event_id: 1
+    required_permission: "perm.camera.configure"
+    risk_class: RISK_CLASS_NORMAL
+    delivery_class: DELIVERY_CLASS_STATE
+    payload_type: "nervus.interface.camera.v1.ControlValues"
+    max_events_per_second: 30
+  }];
+}
+
+// =============================================================================
+// Pixel formats and stream descriptions
+// =============================================================================
+
+// PixelFormat: the byte layout of frames in shared memory.
+//
+// Only formats **the platform promises to interpret** are included. Vendors' private formats aren't added here: adding one would mean
+// the platform defining its memory layout, which is the job of the vendor's private interface.
+enum PixelFormat {
+  PIXEL_FORMAT_UNSPECIFIED = 0;
+
+  // Planar YUV 4:2:0, the Y plane followed by interleaved UV. The most common native camera output.
+  PIXEL_FORMAT_NV12 = 1;
+  // Packed YUV 4:2:2. The default output of UVC cameras.
+  PIXEL_FORMAT_YUYV = 2;
+  // MJPEG compressed frames. Each frame's length varies, and the actual length in the slot is what counts.
+  PIXEL_FORMAT_MJPEG = 3;
+  // Packed RGB, 3 bytes per pixel.
+  PIXEL_FORMAT_RGB888 = 4;
+  // 16-bit depth map, with the unit given by StreamDescription.depth_unit_micrometers.
+  PIXEL_FORMAT_DEPTH16 = 5;
+}
+
+// StreamFormat: one available stream configuration.
+message StreamFormat {
+  PixelFormat pixel_format = 1;
+  uint32 width = 2;
+  uint32 height = 3;
+
+  // Frame rates supported at this resolution (frames per second). There can be several, such as [15, 30, 60].
+  repeated uint32 frame_rates = 4;
+
+  // Maximum bytes per frame. Variable-length formats such as MJPEG size their slots by this.
+  uint32 max_frame_bytes = 5;
+}
+
+message DescribeStreamRequest {}
+
+// StreamDescription: this camera's capabilities.
+message StreamDescription {
+  repeated StreamFormat formats = 1;
+
+  // depth_unit_micrometers is how many micrometres each DEPTH16 step represents.
+  // 0 for non-depth streams. Without it, a depth value is just a dimensionless integer.
+  uint32 depth_unit_micrometers = 2;
+}
+
+// =============================================================================
+// Streaming
+// =============================================================================
+
+message OpenStreamRequest {
+  // The desired stream configuration. Must be one of the combinations DescribeStream returned.
+  //
+  // **The Provider doesn't do nearest matching**: requesting 1920x1080 when the device only has 1280x720 returns
+  // FAILED_PRECONDITION + FORMAT_NOT_SUPPORTED, rather than quietly giving a smaller one.
+  // A silent downgrade would make the App parse memory with the wrong size, giving a torn picture with no traceable cause.
+  StreamFormat format = 1;
+
+  // The desired frame rate. Must be in format.frame_rates.
+  uint32 frame_rate = 2;
+}
+
+message OpenStreamResponse {
+  // This stream's handle, used by CloseStream.
+  uint64 stream_id = 1;
+
+  // The data plane credential. The caller uses it to attach at TransferHandle.data_plane_endpoint.
+  //
+  // **This handle is itself the credential**: being able to attach means being entitled to watch this camera. So it must not be
+  // forwarded, logged or written to disk; unlike a file path, it has no second permission check.
+  nervus.ipc.v1.TransferHandle transfer = 2;
+
+  // The configuration actually in effect. It may be **exactly the same** as requested; when it isn't, this method should fail rather than
+  // downgrade. The field is kept so callers can assert that, not for negotiation.
+  StreamFormat format = 3;
+  uint32 frame_rate = 4;
+}
+
+message CloseStreamRequest {
+  uint64 stream_id = 1;
+}
+
+
+// =============================================================================
+// Event payloads
+// =============================================================================
+
+enum StreamPhase {
+  STREAM_PHASE_UNSPECIFIED = 0;
+  // The stream is open but hasn't produced its first frame yet (the device is starting, auto exposure is converging).
+  STREAM_PHASE_STARTING = 1;
+  STREAM_PHASE_STREAMING = 2;
+  // Stopped; OpenStream may be called again.
+  STREAM_PHASE_STOPPED = 3;
+  // Device error; the stream_id is no longer valid, and DescribeStream + OpenStream must be done again.
+  STREAM_PHASE_FAULT = 4;
+}
+
+message StreamState {
+  uint64 stream_id = 1;
+  StreamPhase phase = 2;
+}
+
+enum CameraDeviceErrorKind {
+  CAMERA_DEVICE_ERROR_KIND_UNSPECIFIED = 0;
+  // The device node disappeared (USB unplugged, driver crashed).
+  CAMERA_DEVICE_ERROR_KIND_DISCONNECTED = 1;
+  // Capture buffer overflow: the Provider didn't take frames in time, and the driver dropped some.
+  CAMERA_DEVICE_ERROR_KIND_BUFFER_OVERRUN = 2;
+  // The sensor produced no frame within the expected time.
+  CAMERA_DEVICE_ERROR_KIND_TIMEOUT = 3;
+  // The underlying driver returned an error the Provider can't classify.
+  CAMERA_DEVICE_ERROR_KIND_DRIVER_FAULT = 4;
+}
+
+message CameraDeviceError {
+  uint64 stream_id = 1;
+  CameraDeviceErrorKind kind = 2;
+
+  // Total frames dropped since this stream opened. 0 for kinds other than BUFFER_OVERRUN.
+  uint64 dropped_frames = 3;
+}
+
+// =============================================================================
+// Controls
+// =============================================================================
+
+// ControlKind: the controls the platform recognises.
+//
+// An enum rather than free string keys: string keys would let each vendor use whatever name it likes
+// ("exposure" / "exposure_time" / "ExposureAbsolute"), and Apps couldn't write code that works
+// across devices. Vendor-specific controls go through **the vendor's own interface**, not squeezed in here.
+enum ControlKind {
+  CONTROL_KIND_UNSPECIFIED = 0;
+  CONTROL_KIND_BRIGHTNESS = 1;
+  CONTROL_KIND_CONTRAST = 2;
+  CONTROL_KIND_SATURATION = 3;
+  // Exposure time; see ControlDescription.unit for the unit.
+  CONTROL_KIND_EXPOSURE_TIME = 4;
+  // Auto exposure switch: 0 = manual, 1 = auto.
+  CONTROL_KIND_AUTO_EXPOSURE = 5;
+  CONTROL_KIND_GAIN = 6;
+  // White balance colour temperature (kelvin).
+  CONTROL_KIND_WHITE_BALANCE = 7;
+  CONTROL_KIND_AUTO_WHITE_BALANCE = 8;
+  // Focus; see ControlDescription.unit for the unit.
+  CONTROL_KIND_FOCUS = 9;
+  CONTROL_KIND_AUTO_FOCUS = 10;
+  // Image rotation (degrees): 0 / 90 / 180 / 270.
+  CONTROL_KIND_ROTATION = 11;
+}
+
+// ControlDescription: one control's value range.
+//
+// **The range must come from the Provider**: an App hard-coding a 0-255 brightness range would, on another vendor's device,
+// set a silently truncated value and think it succeeded.
+message ControlDescription {
+  ControlKind kind = 1;
+
+  int64 min = 2;
+  int64 max = 3;
+  // Step size. 0 means continuously adjustable.
+  int64 step = 4;
+  int64 default_value = 5;
+
+  // A human-readable unit label ("us", "K", "deg"). Only for UI display, never used in program decisions.
+  string unit = 6;
+
+  // A read-only control (such as the exposure time reading in auto mode). SetControls returns
+  // FAILED_PRECONDITION + CONTROL_READ_ONLY for it.
+  bool read_only = 7;
+}
+
+message ListControlsRequest {}
+
+message ControlDescriptions {
+  repeated ControlDescription controls = 1;
+}
+
+message ControlValue {
+  ControlKind kind = 1;
+  int64 value = 2;
+}
+
+message GetControlsRequest {
+  // Only read these controls. Empty reads all.
+  repeated ControlKind kinds = 1;
+}
+
+message SetControlsRequest {
+  repeated ControlValue values = 1;
+}
+
+// ControlValues: the current effective values of a set of controls.
+//
+// It's also SetControls' response, and contains **the values read back after setting**, not an echo of the request.
+// The device may align 105 to the step at 100, and echoing the requested value would make the UI show a number that doesn't
+// exist on the device.
+message ControlValues {
+  repeated ControlValue values = 1;
+}
+
+// =============================================================================
+// Error detail
+// =============================================================================
+
+enum CameraReason {
+  CAMERA_REASON_UNSPECIFIED = 0;
+  // The requested resolution/pixel format/frame rate combination isn't supported.
+  CAMERA_REASON_FORMAT_NOT_SUPPORTED = 1;
+  // The device is currently unavailable (not plugged in, disconnected, held exclusively).
+  CAMERA_REASON_DEVICE_UNAVAILABLE = 2;
+  // The number of concurrent streams exceeds the Provider's limit.
+  CAMERA_REASON_TOO_MANY_STREAMS = 3;
+  // The stream_id doesn't exist or is no longer valid.
+  CAMERA_REASON_STREAM_NOT_FOUND = 4;
+  // This control doesn't exist on this device.
+  CAMERA_REASON_CONTROL_NOT_SUPPORTED = 5;
+  // This control is read-only (usually because the matching auto mode is on).
+  CAMERA_REASON_CONTROL_READ_ONLY = 6;
+  // The value is outside the range ControlDescription gives.
+  CAMERA_REASON_CONTROL_OUT_OF_RANGE = 7;
+  // Underlying driver error.
+  CAMERA_REASON_DRIVER_FAULT = 8;
+}
+
+message CameraErrorDetail {
+  CameraReason reason = 1;
+
+  // The control that triggered the failure. Present with the CONTROL_* reasons; UNSPECIFIED otherwise.
+  ControlKind control = 2;
+}

@@ -1,0 +1,345 @@
+// Nervus standard interface · PermissionUi@1  [REWRITE-v1 / experimental]
+//
+// [KERNEL: WIRED] nervud supports every mechanism this interface needs (Request/Response,
+// Dispatch/DispatchResult, endpoint registration and routing). This isn't a built-in interface:
+// nervud doesn't implement it, only routes it.
+//
+// interface_id = nervus.interface.permission.ui, major = 1, experimental.
+//   Implementer = nervus.permissionui (system software, in the nervus-system-software repository,
+//                 signed platform-release)
+//   Permission = perm.pkg.install
+//
+// # Why it's split from permission.admin into two interfaces
+//
+// The two point in opposite directions and have different implementers:
+//
+//   nervus.interface.permission.admin  implemented inside nervud, called by permissionui
+//                                       (changes runtime grant state)
+//   nervus.interface.permission.ui     implemented by permissionui, called by Settings/the desktop
+//                                       (asks for a confirmation to be shown to the user)
+//
+// Merging them into one interface_id would require it to be half-implemented by each of two Providers, while in the Catalog's
+// model one interface_id maps to a set of endpoint candidates, and Resolve couldn't tell which side
+// to route to. The naming follows the camera / camera.config shape: two faces of the same domain.
+//
+// # What gap it fills
+//
+// USER_CONSENT permissions (perm.camera.capture and the like) can get into GrantedPermissions at install time,
+// but at run time AllowedAt requires GrantState == GRANTED, which defaults to NOT_REQUESTED. In other words,
+// once an ordinary app is installed, the sensitive permissions it requested can **never** be obtained: the app can't help itself (the SDK has no
+// API for requesting permissions), and the user has no UI to approve them.
+//
+// This interface fills that question in at install: before installing, it lays out the sensitive permissions the package requests for the user, and
+// whichever the user agrees to are stored directly as GRANTED once the install succeeds.
+//
+// # Why confirmation and installation must happen in the same call
+//
+// This interface **doesn't return the fact "the user agreed"** for the caller to install by itself. If it did, the caller could
+// skip ConfirmInstall entirely and call pkgmanager's INSTALL directly, and the confirmation dialog would be pure decoration.
+//
+// As it is: only permissionui holds perm.permission.admin, and nervud's
+// needs_user_confirmation gate only lets holders of that permission through (internal/protocheck). So
+// installing over IPC **must** go through this interface; it's the only holder of the key to that gate. What the caller gets
+// is the install's final result, and the confirmation in between can't be bypassed.
+//
+// # Boundary: this interface's implementer makes no security decisions
+//
+// The same division of labour as pkgmanager. Signatures, digests, ABI, upgrade decisions and the permission intersection are all in nervud's
+// pkgregistry; permissionui does only two things: shows the permission text the kernel provides to the user,
+// and passes the user's choices on together with the install request. It doesn't even decide whether a permission is USER_CONSENT:
+// nervud filters that by the Catalog definitions when storing (out-of-bounds entries are silently ignored).
+//
+// [REWRITE-v1] experimental: destructive changes allowed before freezing (NRCP §22.6).
+// Compatibility rules (§10.12, effective once frozen): published method_ids and field numbers are never reused;
+// deletions become reserved; new fields need safe defaults; enums start with *_UNSPECIFIED = 0 and fail closed.
+
+syntax = "proto3";
+
+package nervus.interface.permission.v1;
+
+import "nervus/ipc/v1/method_registry.proto";
+
+option go_package = "github.com/nervus-os/nervus-ipc/protocol/interface/permissionv1;permissionv1";
+
+// Hyphens are illegal in Java package names, and "interface" is a Java reserved word, so the "iface" segment is used.
+option java_package = "io.github.nervusos.iface.permission.v1";
+option java_multiple_files = true;
+option java_outer_classname = "PermissionUiProto";
+
+// =============================================================================
+// method_id enum + Method Registry metadata
+// =============================================================================
+
+enum PermissionUiMethod {
+  PERMISSION_UI_METHOD_UNSPECIFIED = 0;
+
+  // Show the install confirmation, and install if the user accepts.
+  //
+  // **A long task**: it contains a pkgmanager INSTALL (itself an operation), and before that
+  // waits for the user to read the permission list and click. Human reaction time belongs to no deadline budget, so
+  // returns_operation = true, answered with ACCEPTED + operation_id.
+  //
+  // needs_user_confirmation = false rather than true: **this method is the confirmation dialog**.
+  // Setting it true would make nervud ask for another confirmation before letting it through, and that confirmation would also have to be
+  // shown by the same component: a loop confirming itself. The real gate is on the INSTALL side, which this method passes through.
+  //
+  // risk_class is CRITICAL_SAFETY, the same as pkgmanager's INSTALL: bringing new executable code into the system
+  // has consequences far more lasting than one motion command.
+  PERMISSION_UI_METHOD_CONFIRM_INSTALL = 1 [(nervus.ipc.v1.method_meta) = {
+    method_id: 1
+    required_permission: "perm.pkg.install"
+    risk_class: RISK_CLASS_CRITICAL_SAFETY
+    requires_control_lease: false
+    returns_operation: true
+    needs_user_confirmation: false
+    is_read_only: false
+    is_motion: false
+    request_type: "nervus.interface.permission.v1.ConfirmInstallRequest"
+    response_type: "nervus.interface.permission.v1.ConfirmInstallResult"
+    error_detail_type: "nervus.interface.permission.v1.PermissionUiErrorDetail"
+  }];
+
+  // Open the permission management UI (for one package, or for all).
+  //
+  // Pure UI navigation that changes no state: the real grant changes are made by permissionui itself through
+  // permission.admin, and the caller can't influence them or get the result. Hence is_read_only.
+  //
+  // It exists because Settings needs a "manage this app's permissions" entry point, and the permission UI can't be squeezed into
+  // Settings: it needs a platform-release signature to reach perm.permission.admin,
+  // while the system software repository uniformly signs platform-systemapp (permissionui is the only exception).
+  PERMISSION_UI_METHOD_OPEN_MANAGER = 2 [(nervus.ipc.v1.method_meta) = {
+    method_id: 2
+    required_permission: "perm.pkg.query"
+    risk_class: RISK_CLASS_NORMAL
+    requires_control_lease: false
+    returns_operation: false
+    needs_user_confirmation: false
+    is_read_only: true
+    is_motion: false
+    request_type: "nervus.interface.permission.v1.OpenManagerRequest"
+    response_type: ""
+    error_detail_type: "nervus.interface.permission.v1.PermissionUiErrorDetail"
+  }];
+
+  // Ask the user for a batch of USER_CONSENT permissions (the caller's own).
+  //
+  // The equivalent of Android's `requestPermissions`. Used together with `permission.self`'s Check:
+  // before calling a method that needs a sensitive permission, the app checks itself first, requests if it doesn't have it, and calls directly if it does.
+  //
+  // # Why required_permission is empty
+  //
+  // **Requesting your own permissions isn't a privilege.** Every app must be able to ask; this path is its only
+  // way to help itself: the runtime state of USER_CONSENT permissions defaults to NOT_REQUESTED, and after installing,
+  // if the user switches one off in permission management, the app could never get it back unless it can request it.
+  //
+  // The gates are elsewhere, not here:
+  //
+  //   whose permissions   always the caller's own (decided by nervud's caller; the request has no
+  //                       package_id field), so it can't request on someone else's behalf
+  //   which can be asked  only ones this package requested in its manifest, approved by the install-time decision, and in
+  //                       the USER_CONSENT tier can succeed; the rest are always refused by permissionui and
+  //                       nervud (SetGrantState has those two prechecks built in)
+  //   granted or not      the user decides. An app making a request can only make the dialog appear, not click OK itself
+  //
+  // In other words, what's let through without a bar is only the act of "showing one dialog to ask the user". Adding a permission
+  // would instead create a loop: if that permission also needed the user's consent, the app would need a permission to request permissions.
+  //
+  // # Why it's a long task
+  //
+  // It waits for the user to read the explanation and click, and human reaction time belongs to no deadline budget. The same
+  // reason as ConfirmInstall.
+  //
+  // needs_user_confirmation = false: **this method is the confirmation dialog**. Setting it true would make
+  // nervud ask for another confirmation before letting it through, and that confirmation would also have to be shown by the same component: a loop
+  // confirming itself.
+  PERMISSION_UI_METHOD_REQUEST_PERMISSION = 3 [(nervus.ipc.v1.method_meta) = {
+    method_id: 3
+    required_permission: ""
+    risk_class: RISK_CLASS_PRIVACY_SENSITIVE
+    requires_control_lease: false
+    returns_operation: true
+    needs_user_confirmation: false
+    is_read_only: false
+    is_motion: false
+    request_type: "nervus.interface.permission.v1.RequestPermissionRequest"
+    response_type: "nervus.interface.permission.v1.RequestPermissionResult"
+    error_detail_type: "nervus.interface.permission.v1.PermissionUiErrorDetail"
+  }];
+}
+
+// =============================================================================
+// Messages
+// =============================================================================
+
+// ConfirmInstallRequest asks to "show the permissions to the user first, then install".
+message ConfirmInstallRequest {
+  // The .nspkg's relative path in the **caller's private data directory**.
+  //
+  // Same meaning as pkgmanager.InstallRequest.nspkg_relpath, for the same reason: an absolute path
+  // would let the caller name any location on the filesystem, while each Provider runs in its own sandbox
+  // (ProtectSystem=strict + its own UID) and can't read elsewhere.
+  //
+  // **But there's one more hand-over problem here**: permissionui and the caller are two different UIDs, and it can't read
+  // the caller's private data directory. So the package must be put somewhere both can reach, the shared area between services
+  // (perm.storage.shared), and this field is a path relative to **the caller's subdirectory** in the shared area.
+  //
+  // It must be a relative path without ".."; permissionui and nervud both check it again.
+  string nspkg_relpath = 1;
+
+  // The package ID that owns the hand-over directory, i.e. the base of the relative path above.
+  //
+  // **Not inferred by permissionui from the caller's identity**: the caller identity is a trusted fact nervud gives in
+  // the ExecutionContext, but the shared area's subdirectory names are package IDs; writing the correspondence between the two into the protocol
+  // is more reliable than having a Provider guess a directory name. permissionui
+  // checks it matches the caller's identity and refuses otherwise (or one package could make the confirmation dialog read an install package another package
+  // prepared, disguising its own install as the other's).
+  string handoff_package_id = 2;
+}
+
+// ConfirmInstallResult is the terminal state of confirm + install (the operation's result).
+message ConfirmInstallResult {
+  // Whether the user accepted this install. When false the two fields below are empty, and **no install happened**.
+  //
+  // The user refusing **isn't an error**: it's a confirmation that completed normally, with the answer "no". It's expressed as OK + accepted
+  // = false rather than a failure code, because a failure code would leave the caller unable to tell "the user said no" from
+  // "the confirmation dialog itself crashed", and those deserve completely different reactions in the UI.
+  bool accepted = 1;
+
+  // The package ID after a successful install. Empty when accepted = false.
+  string package_id = 2;
+
+  // The IDs of the sensitive permissions the user actually agreed to, already stored as GRANTED by nervud.
+  //
+  // It's **a projection of the final facts**, not an echo of the request: the user may tick only some, and nervud
+  // filters again (anything not in the install-time grant set or not USER_CONSENT is ignored).
+  // Callers should go by this field rather than remembering what they showed the user.
+  repeated string consented_permissions = 3;
+}
+
+// OpenManagerRequest asks to open the permission management UI.
+message OpenManagerRequest {
+  // Only show this package's permissions. Empty = open the overview (listing every package with grantable permissions).
+  string package_id = 1;
+}
+
+// RequestPermissionRequest asks to request a batch of permissions from the user.
+//
+// **No package_id field**: the target is always the caller itself. permissionui takes the identity from the
+// caller nervud gives (a trusted fact recognised by SO_PEERCRED), not from what the request says.
+// With that field, any app could request permissions on someone else's behalf, and the package name the user saw in the dialog would be
+// the one being impersonated.
+message RequestPermissionRequest {
+  // The permission IDs to request.
+  //
+  // Several can be requested at once, and the dialog lists them together for the user to decide one by one. Batching rather than one dialog each
+  // is deliberate: a feature often needs both camera and microphone at once, and two dialogs in a row would make the user decide
+  // without knowing how many more are coming, and make them easier to dismiss without thinking.
+  //
+  // An empty list is an error (INVALID_ARGUMENT) rather than a no-op: unlike Check, a dialog with no
+  // entries means nothing to the user, so it can only be a caller bug.
+  repeated string permission_ids = 1;
+
+  // A one-sentence reason for the user, saying why this feature needs these permissions.
+  //
+  // **Given by the app rather than written by the system**: only the app knows which button the user just pressed. All the system can say
+  // is the text of the permission itself (from the Catalog definition, which the dialog always shows), while
+  // "why now" only the app can say.
+  //
+  // It may be empty, but filling it in is strongly recommended. permissionui shows it above the permission list and labels it clearly
+  // as the app's own claimed reason: **it's untrusted content** and mustn't look like a statement from the system.
+  string rationale = 2;
+}
+
+// RequestPermissionResult is the terminal state of one permission request (the operation's result).
+message RequestPermissionResult {
+  // Per-permission results. Sorted by permission ID, independent of the request.
+  //
+  // **One request can partly succeed**: the user may well agree to the camera and refuse the microphone. Callers must
+  // check each one, and not assume everything was granted because "the request succeeded".
+  repeated RequestPermissionOutcome outcomes = 1;
+}
+
+// RequestPermissionOutcome is the result of requesting one permission.
+message RequestPermissionOutcome {
+  string permission_id = 1;
+
+  // Whether it can be used right now, after the request. Same meaning as SelfPermissionState.granted,
+  // and likewise **the only field callers should branch on**.
+  //
+  // It's **the fact read back after storing**, not an echo of the user's click: the user clicked agree, but
+  // SetGrantState can still fail (the package was just uninstalled, the permission was just downgraded). Go by the current state.
+  bool granted = 2;
+
+  // The user's decision, or why this one wasn't asked.
+  PermissionRequestDecision decision = 3;
+}
+
+// PermissionRequestDecision says what happened to one permission in this request.
+enum PermissionRequestDecision {
+  // Fail closed: unknown is treated as "didn't agree".
+  PERMISSION_REQUEST_DECISION_UNSPECIFIED = 0;
+
+  // The user agreed.
+  PERMISSION_REQUEST_DECISION_GRANTED = 1;
+
+  // The user refused in this dialog. It can be requested again next time the user triggers the feature.
+  PERMISSION_REQUEST_DECISION_DENIED = 2;
+
+  // The user had already refused permanently, and **this one didn't appear in the dialog at all**.
+  //
+  // Separating it from DENIED is required: requesting again won't show a dialog or change the result. The caller should
+  // send the user to the permission management UI (OpenManager) rather than retry.
+  PERMISSION_REQUEST_DECISION_DENIED_PERMANENT = 3;
+
+  // Requesting it makes no sense, and it **didn't appear in the dialog**.
+  //
+  // Matches the reasons for SelfPermissionState.requestable = false: this package never requested it,
+  // the install-time decision refused it, or it isn't USER_CONSENT (that tier isn't the user's to decide).
+  //
+  // **Not an error**: one unrequestable permission mixed into a request shouldn't stop the others being asked.
+  PERMISSION_REQUEST_DECISION_NOT_REQUESTABLE = 4;
+}
+
+// =============================================================================
+// Detailed error causes
+// =============================================================================
+
+// PermissionUiErrorDetail is this interface's fixed detail type on failure.
+//
+// Note **the user refusing isn't here**: that's ConfirmInstallResult.accepted = false, a
+// successful call. Every entry in this enum means "this confirmation couldn't run through to the end normally".
+message PermissionUiErrorDetail {
+  PermissionUiReason reason = 1;
+}
+
+enum PermissionUiReason {
+  // Fail closed: unknown reasons are handled most conservatively (no retry).
+  PERMISSION_UI_REASON_UNSPECIFIED = 0;
+
+  // The hand-over path is illegal: it contains "..", is absolute, or handoff_package_id doesn't match the caller's identity.
+  PERMISSION_UI_REASON_HANDOFF_INVALID = 1;
+
+  // There's no such file at the hand-over location, or permissionui can't read it (the caller didn't put the package in the shared area,
+  // or doesn't have perm.storage.shared).
+  PERMISSION_UI_REASON_HANDOFF_NOT_FOUND = 2;
+
+  // The manifest can't be read or has an illegal structure. **The confirmation dialog needs it before showing anything**: to list the
+  // permissions, it first has to know what the package requests. This entry is at a different layer from pkgmanager's
+  // MANIFEST_INVALID: that's the install decision refusing, while this means the question can't even be asked.
+  PERMISSION_UI_REASON_MANIFEST_UNREADABLE = 3;
+
+  // A confirmation is already in progress. Serialising is deliberate: with two confirmation dialogs open at once, the user can't tell
+  // who they're authorising.
+  PERMISSION_UI_REASON_BUSY = 4;
+
+  // No display output is available (no DISPLAY, or window creation failed).
+  //
+  // **It must be an explicit failure, not a silent pass**: when the confirmation dialog can't be shown, the package must never be installed
+  // as if "the user agreed".
+  PERMISSION_UI_REASON_NO_DISPLAY = 5;
+
+  // nervud refused the install itself. The detailed cause is on the pkgmanager side
+  // (PackageManagerErrorDetail), and this enum doesn't copy it: a copy would create a second
+  // source of truth that can drift.
+  PERMISSION_UI_REASON_INSTALL_REJECTED = 6;
+}

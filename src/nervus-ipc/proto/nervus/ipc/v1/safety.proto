@@ -1,0 +1,141 @@
+// Nervus IPC v1: Safety boundary messages  [REWRITE-v1 / experimental]
+//
+// [KERNEL: NOT WIRED] nervud can compile these types but **has no consumer path**: internal/safety's
+// delivery side is NopPath (SendHalt just returns nil) and its reporting side is NopReports (returning a nil
+// channel). That is, stop decisions / latching / epoch increments all run, but stop signals can't be sent out
+// and standstill facts can't come back. How they're carried (a dedicated high-priority Safety Path or Dispatch, §14.5)
+// isn't frozen yet, and is a decision that must be made before wiring.
+//
+// This file freezes the "facts" exchanged across the Safety boundary between (1) the nervud kernel and (2) OEM Providers
+// (NRCP §14.3). NRCP doesn't reimplement Safety Policy here: the decision authority, latching, motion epoch
+// revocation, escalation and re-arm are all in the nervud kernel; this file only expresses the minimal facts the Provider boundary needs to state clearly:
+//
+//	SafetyHalt(epoch, reason, accept_deadline)   nervud → Provider: stop request
+//	HaltAccepted(epoch)                          Provider → nervud: accepted (≠ at standstill)
+//	StopProgress(epoch, phase)                   Provider → nervud: physical stop progress
+//	StandstillConfirmed(epoch, evidence)         Provider → nervud: trustworthy standstill evidence obtained
+//	ProviderFault(epoch, code)                   Provider → nervud: fault
+//
+// How they're carried (a dedicated high-priority Safety Path or Dispatch, §14.5) belongs to the implementation spec and waits for freezing;
+// so this file only defines messages and enums, and does **not** change envelope.proto's oneof or field numbers.
+//
+// [REWRITE-v1] marked experimental: under NRCP §22.6, destructive changes are allowed before freezing, and third parties must not
+// assume this file's fields/enums are stable. buf breaking in CI stays off until formally frozen.
+//
+// Compatibility rules (§10.12, effective once formally frozen): published field numbers and enum values never change meaning or type, and are never reused;
+// deletions become reserved; new fields need safe defaults; every enum starts with *_UNSPECIFIED = 0 and fails closed.
+
+syntax = "proto3";
+
+package nervus.ipc.v1;
+
+option go_package = "github.com/nervus-os/nervus-ipc/protocol/ipcv1;ipcv1";
+
+// Hyphens are illegal in Java package names; see status.proto for why.
+option java_package = "io.github.nervusos.ipc.v1";
+option java_multiple_files = true;
+option java_outer_classname = "SafetyProto";
+
+// =============================================================================
+// Boundary messages
+// =============================================================================
+
+// SafetyHalt is the stop request nervud sends to a Provider.
+//
+// motion_epoch is this latch's revocation generation: the Provider must void old commands at that boundary, and its reports
+// must carry back the same epoch; reports with a stale epoch are always ignored by nervud (§10.5).
+message SafetyHalt {
+  // The current latch generation. Always non-zero (§10.5).
+  uint64 motion_epoch = 1;
+
+  // The trigger reason (only for audit / device policy reference; it doesn't change the fact that it "must stop").
+  HaltReason reason = 2;
+
+  // The deadline in milliseconds for the Provider to confirm acceptance (by replying HaltAccepted). 0 means use the Safety Contract's
+  // provider_accept_timeout default, and does **not** mean waiting forever (§14.4).
+  uint32 accept_deadline_ms = 3;
+}
+
+// HaltAccepted means the Provider accepted the stop request. It does **not** mean it's physically at standstill; only
+// StandstillConfirmed or a trusted hardware state means standstill (NRCP §14.3).
+message HaltAccepted {
+  uint64 motion_epoch = 1;
+}
+
+// StopProgress reports physical stop progress advancing to a phase. Orthogonal to the top-level Safety Gate.
+message StopProgress {
+  uint64 motion_epoch = 1;
+  StopPhase phase = 2;
+}
+
+// StandstillConfirmed means trustworthy physical standstill evidence was obtained. Devices without evidence capability such as encoders / speed estimation
+// must not send this message (they must not dress up "output at zero" as standstill, NRCP §14.1).
+message StandstillConfirmed {
+  uint64 motion_epoch = 1;
+  StandstillEvidence evidence = 2;
+}
+
+// ProviderFault reports a Provider fault. nervud uses it to mark the Provider/Resource FAULT and escalate by
+// risk; the public detailed cause for ordinary callers is RESOURCE_FAULT, without exposing PROVIDER_FAULT (§19).
+message ProviderFault {
+  uint64 motion_epoch = 1;
+  FaultCode code = 2;
+}
+
+// =============================================================================
+// Enums (values aligned with the local mirror constants in nervud internal/safety; the proto is the single source of truth)
+// =============================================================================
+
+// StopPhase is the actual stop progress phase (architecture §6 / NRCP §14.1). The normal chain moves forward monotonically;
+// DELIVERY_FAULT / STANDSTILL_TIMEOUT are terminal side branches enterable from any non-terminal phase. Devices without standstill evidence capability
+// cap at OUTPUT_DISABLED.
+enum StopPhase {
+  STOP_PHASE_UNSPECIFIED = 0;
+  STOP_PHASE_REQUESTED = 1;
+  STOP_PHASE_SENT = 2;
+  STOP_PHASE_PROVIDER_ACCEPTED = 3;
+  STOP_PHASE_MCU_ACKED = 4;
+  STOP_PHASE_OUTPUT_DISABLED = 5;
+  STOP_PHASE_STANDSTILL_CONFIRMED = 6;
+  STOP_PHASE_DELIVERY_FAULT = 7;
+  STOP_PHASE_STANDSTILL_TIMEOUT = 8;
+}
+
+// HaltReason is the Safety trigger reason (for reference only).
+enum HaltReason {
+  HALT_REASON_UNSPECIFIED = 0;
+  HALT_REASON_OPERATOR_ESTOP = 1;         // manual/UI software emergency stop
+  HALT_REASON_DEADMAN_TIMEOUT = 2;        // deadman / command freshness lapsed
+  HALT_REASON_PROVIDER_FAULT = 3;         // triggered by a Provider fault
+  HALT_REASON_HEARTBEAT_LOST = 4;         // heartbeat with the Provider/MCU lost
+  HALT_REASON_SUPERVISOR_ESCALATION = 5;  // Supervisor timeout escalation
+  HALT_REASON_EXTERNAL_TRIP = 6;          // latch caused by an external report (MCU / independent hardware)
+}
+
+// FaultCode classifies Provider faults.
+enum FaultCode {
+  FAULT_CODE_UNSPECIFIED = 0;
+  FAULT_CODE_DEVICE_ERROR = 1;  // device/driver error
+  FAULT_CODE_LINK_LOST = 2;     // link to the controller/MCU lost
+}
+
+// StandstillEvidence is the source type of standstill evidence.
+enum StandstillEvidence {
+  STANDSTILL_EVIDENCE_UNSPECIFIED = 0;
+  STANDSTILL_EVIDENCE_ENCODER = 1;           // encoder readings
+  STANDSTILL_EVIDENCE_VELOCITY_ESTIMATE = 2; // velocity estimate
+  STANDSTILL_EVIDENCE_HARDWARE_STATE = 3;    // trusted hardware state (such as the brake engaged)
+}
+
+// BaseMotionErrorReason is the typed error_detail reason for control interface (BaseMotion) failures
+// (NRCP §19 "position B"). Robot detailed causes such as SAFETY_LATCHED / STALE_EPOCH can **only** go here,
+// not into the generic StatusCode (see the StatusCode notes in status.proto).
+//
+// [REWRITE-v1] A placeholder landed in safety.proto first; when the BaseMotion interface formally lands it moves into its own
+// interface schema (with number migration handled by the compatibility rules then).
+enum BaseMotionErrorReason {
+  BASE_MOTION_ERROR_REASON_UNSPECIFIED = 0;
+  BASE_MOTION_ERROR_REASON_SAFETY_LATCHED = 1;       // matches the generic code FAILED_PRECONDITION
+  BASE_MOTION_ERROR_REASON_STALE_EPOCH = 2;          // the command belongs to a revoked motion epoch
+  BASE_MOTION_ERROR_REASON_LOCOMOTION_NOT_READY = 3; // not locomotion-ready yet
+}

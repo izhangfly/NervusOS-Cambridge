@@ -1,0 +1,203 @@
+// Nervus standard interface · PermissionAdmin@1  [REWRITE-v1 / experimental]
+//
+//   interface_id = nervus.interface.permission.admin, major = 1
+//   Permission   = perm.permission.admin
+//   Resource     = none
+//
+// Implemented by nervud as a **built-in endpoint**. It's the only system interface the grant UI for
+// USER_CONSENT permissions needs.
+//
+// # The real gap it fills
+//
+// The runtime state of USER_CONSENT permissions (such as perm.storage.user) defaults to NOT_REQUESTED,
+// and nervud's AllowedAt only lets these permissions through when the state is exactly GRANTED. In other words,
+// a package that requests perm.storage.user can **never** get that permission once installed,
+// unless something changes that runtime state.
+//
+// Before this interface, the only thing in the whole system that could change it was SetRuntimeState, reachable only through the admin channel
+// (nervud-admin.sock, which only lets in packages holding perm.pkg.admin and the ops UID), so in practice
+// only nervusctl could use it. The result: the file manager installed and its permission request passed the decision,
+// yet it reported "user directory not writable", and nothing in the system had a UI to fix it.
+//
+// # Why the kernel implements it rather than a system service
+//
+// The grant state **is permission.Registry's own state**. Delegating it to a service would hand
+// "who can change the system's dangerous permissions" to a package that can be replaced, while perm.permission.admin's
+// bar (SYSTEM_ONLY + PLATFORM + platform-release signature) exists precisely so it can't be replaced.
+// Same shape as power / safety.control / resource.directory.
+//
+// # Boundary: this only manages **runtime grant state**, not install-time decisions
+//
+// The install-time set (GrantedPermissions) is computed by pkgregistry's IntersectAt and answers
+// "is this package entitled to request it at all". This interface changes "does the user agree right now", and both must pass
+// to allow. So calling SetGrantState on a permission not granted at install time fails:
+// the UI shouldn't give the user a switch that does nothing when pressed.
+//
+// [REWRITE-v1] experimental: destructive changes allowed before v2; once formally frozen, §10.12 applies.
+
+syntax = "proto3";
+
+package nervus.interface.permission.v1;
+
+import "nervus/ipc/v1/method_registry.proto";
+import "nervus/ipc/v1/provider_descriptor.proto";
+
+option go_package = "github.com/nervus-os/nervus-ipc/protocol/interface/permissionv1;permissionv1";
+
+// Java package names can't contain hyphens or the reserved word "interface", so the "iface" segment is used.
+option java_package = "io.github.nervusos.iface.permission.v1";
+option java_multiple_files = true;
+option java_outer_classname = "PermissionAdminProto";
+
+enum PermissionAdminMethod {
+  PERMISSION_ADMIN_METHOD_UNSPECIFIED = 0;
+
+  // List each package's grantable permissions and their current state. Read-only.
+  PERMISSION_ADMIN_METHOD_LIST_GRANTS = 1 [(nervus.ipc.v1.method_meta) = {
+    method_id: 1
+    required_permission: "perm.permission.admin"
+    risk_class: RISK_CLASS_NORMAL
+    requires_control_lease: false
+    returns_operation: false
+    needs_user_confirmation: false
+    request_type: "nervus.interface.permission.v1.ListGrantsRequest"
+    response_type: "nervus.interface.permission.v1.GrantList"
+    error_detail_type: ""
+  }];
+
+  // Set the runtime grant state of one USER_CONSENT permission.
+  //
+  // needs_user_confirmation is false, not true: **the caller of this method is the
+  // confirmation UI itself**. Setting it true would make the kernel ask for confirmation again before granting, and that confirmation would also
+  // have to be shown by the same UI: a loop confirming itself.
+  //
+  // The risk level is PRIVACY_SENSITIVE: it changes decisions like "who can read the user's files".
+  PERMISSION_ADMIN_METHOD_SET_GRANT_STATE = 2 [(nervus.ipc.v1.method_meta) = {
+    method_id: 2
+    required_permission: "perm.permission.admin"
+    risk_class: RISK_CLASS_PRIVACY_SENSITIVE
+    requires_control_lease: false
+    returns_operation: false
+    needs_user_confirmation: false
+    request_type: "nervus.interface.permission.v1.SetGrantStateRequest"
+    response_type: "nervus.interface.permission.v1.SetGrantStateResponse"
+    error_detail_type: ""
+  }];
+}
+
+// GrantState is the runtime decision for one USER_CONSENT permission.
+//
+// It corresponds value by value to the type of the same name in nervud's internal/permission. The zero value is UNSPECIFIED rather than
+// NOT_REQUESTED: proto3 can't tell "not filled in" from "filled in with zero", and the two are
+// completely different for granting. Treating "not filled in" as "the user hasn't been asked" would make an encoding mistake look like
+// a normal initial state.
+enum GrantState {
+  GRANT_STATE_UNSPECIFIED = 0;
+
+  // The user hasn't been asked yet. AllowedAt treats it as not granted.
+  GRANT_STATE_NOT_REQUESTED = 1;
+
+  // The user agreed. This is the only value AllowedAt lets through.
+  GRANT_STATE_GRANTED = 2;
+
+  // The user refused once, and may be asked again later.
+  GRANT_STATE_DENIED = 3;
+
+  // The user chose "don't ask again". The UI shouldn't pop up automatically any more, but the user can still turn it on in Settings.
+  GRANT_STATE_DENIED_PERMANENT = 4;
+}
+
+// ListGrantsRequest: filter conditions. Empty lists everything.
+message ListGrantsRequest {
+  // Only look at this one package. Empty = list every installed package.
+  string package_id = 1;
+}
+
+// PermissionGrant: one grantable permission of one package.
+//
+// Only permissions whose GrantMode is USER_CONSENT are included: other modes have no runtime state,
+// and listing them would only give the user a row of switches that won't move.
+message PermissionGrant {
+  // The permission ID, such as "perm.storage.user".
+  string permission_id = 1;
+
+  // The user-facing name and description, from the Catalog's permission definition.
+  //
+  // **Supplied by the kernel rather than hard-coded in the UI**: third-party packages can define their own permissions,
+  // and the UI can't know their text in advance.
+  nervus.ipc.v1.LocalizedText display_name = 2;
+  nervus.ipc.v1.LocalizedText description = 3;
+
+  nervus.ipc.v1.RiskClass risk_class = 4;
+
+  // The user's decision. **Not** "can it be used right now"; that's effective_granted.
+  //
+  // For system software (shipped with the read-only system image + Platform trust + a platform role signature) this is always
+  // NOT_REQUESTED: the consent exemption **doesn't fake a grant record**; what it skips is the step of "should we ask
+  // the user" itself. So using this field to decide whether a switch is on would show a permission that's actually accessible
+  // as "off".
+  GrantState state = 5;
+
+  // Can it be used right now: nervud's `AllowedAt` conclusion.
+  //
+  // # Why it must be a separate field from state
+  //
+  // The two **disagree** for system software, and the UI needs to know both:
+  //
+  //   state             the user's decision. Always NOT_REQUESTED for system software
+  //   effective_granted whether it's actually accessible. Always true for system software (consent exemption)
+  //
+  // The UI once only had state to look at, so the file manager's "user files" switch showed off
+  // while it could actually read and write the user directory: the switch contradicted reality. Changing state's meaning to "can it actually be
+  // used" won't do either: that would lose "what the user actually decided", which ordinary apps' UIs rely on to tell
+  // "never asked" from "asked and refused" (the latter shouldn't pop up again automatically).
+  //
+  // # How the UI should use it
+  //
+  // The switch's **displayed state** comes from this field; `state == NOT_REQUESTED` with this field true means
+  // exempt, and the switch should show on and **not be togglable**: toggling it means nothing, and SetGrantState would
+  // refuse with FAILED_PRECONDITION (system software's runtime state isn't the user's to decide).
+  //
+  // **Granted** and **exempt** must be distinguishable in the UI: the former is something the user agreed to and can take back;
+  // the latter is a system component accepted when the machine was set up, which can't be revoked.
+  bool effective_granted = 6;
+}
+
+// PackageGrants: a package and all its grantable permissions.
+message PackageGrants {
+  string package_id = 1;
+
+  // The package's display name, from the manifest label. When empty the UI falls back to package_id.
+  string label = 2;
+
+  // Ordered lexicographically by permission_id. A deterministic order, otherwise the switches in Settings jump on every refresh.
+  repeated PermissionGrant permissions = 3;
+}
+
+message GrantList {
+  // Ordered lexicographically by package_id.
+  //
+  // Packages with **not a single grantable permission** aren't included: an entry in Settings that opens onto nothing
+  // is pure noise to the user.
+  repeated PackageGrants packages = 1;
+}
+
+// SetGrantStateRequest: change one permission's runtime state.
+message SetGrantStateRequest {
+  string package_id = 1;
+  string permission_id = 2;
+
+  // The target state. UNSPECIFIED and NOT_REQUESTED are both refused:
+  // the former means not filled in, the latter means "back to never asked", which isn't a decision the user can make;
+  // to revoke, use DENIED.
+  GrantState state = 3;
+}
+
+// SetGrantStateResponse: the state after it took effect.
+//
+// An explicit state is returned rather than an empty response: whether the grant really landed is the kernel's decision (the permission may not be
+// USER_CONSENT, the package may have just been uninstalled), and what the UI gets back should be **the current fact**,
+// not the value it just asked for.
+message SetGrantStateResponse {
+  GrantState state = 1;
+}

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="GradleMigrationSettings" migrationVersion="1" />
+  <component name="GradleSettings">
+    <option name="linkedExternalProjectsSettings">
+      <GradleProjectSettings>
+        <compositeConfiguration>
+          <compositeBuild compositeDefinitionSource="SCRIPT">
+            <builds>
+              <build path="$PROJECT_DIR$/../nervus-app-sdk" name="nervus-app-sdk">
+                <projects>
+                  <project path="$PROJECT_DIR$/../nervus-app-sdk" />
+                </projects>
+              </build>
+              <build path="$PROJECT_DIR$/../nervus-packaging" name="nervus-packaging">
+                <projects>
+                  <project path="$PROJECT_DIR$/../nervus-packaging" />
+                  <project path="$PROJECT_DIR$/../nervus-packaging/gradle-plugin" />
+                  <project path="$PROJECT_DIR$/../nervus-packaging/signing-lib" />
+                </projects>
+              </build>
+            </builds>
+          </compositeBuild>
+        </compositeConfiguration>
+        <option name="externalProjectPath" value="$PROJECT_DIR$" />
+        <option name="gradleHome" value="" />
+        <option name="modules">
+          <set>
+            <option value="$PROJECT_DIR$/../nervus-app-sdk" />
+            <option value="$PROJECT_DIR$/../nervus-packaging" />
+            <option value="$PROJECT_DIR$/../nervus-packaging/gradle-plugin" />
+            <option value="$PROJECT_DIR$/../nervus-packaging/signing-lib" />
+            <option value="$PROJECT_DIR$" />
+          </set>
+        </option>
+      </GradleProjectSettings>
+    </option>
+  </component>
+</project>

@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Power hook for hosted mode. nervud runs this (as root) instead of shutting the
+# machine down when NervusOS runs as a session on top of Ubuntu.
+#
+#   hosted-power poweroff   end the NervusOS session and return to Ubuntu
+#   hosted-power reboot     restart the NervusOS kernel; the display stays open
+#
+# Wired up by NERVUS_HOSTED_POWER_HOOK in /etc/systemd/system/nervud.service.d/.
+set -u
+NERVUS_DISPLAY_NO="${NERVUS_DISPLAY_NO:-7}"
+
+case "${1:-}" in
+	poweroff)
+		# Closing the Xephyr display makes the user's nervus-session supervisor
+		# stop nervud and clean up. --no-block stop is the fallback for a session
+		# whose supervisor is gone. Both are queued before systemd stops us.
+		pkill -TERM -f "^Xephyr :${NERVUS_DISPLAY_NO}( |$)" || true
+		systemctl stop --no-block nervud.service
+		;;
+	reboot)
+		systemctl restart --no-block nervud.service
+		;;
+	*)
+		echo "usage: $0 poweroff|reboot" >&2
+		exit 2
+		;;
+esac

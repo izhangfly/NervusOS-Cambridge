@@ -1,0 +1,11 @@
+# Build output. This is the [only] directory in deploy/ that is safe to wipe
+out/
+
+# Download cache for the cross-build JRE (about 50 MB; deleted, it downloads again)
+.jre-cache/
+
+# Signing keys never go in the repository
+keys/
+
+.idea/
+.idea

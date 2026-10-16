@@ -1,0 +1,19 @@
+# Note: protocol/**/*.pb.go are **deliberately committed**; don't add ignore rules for them here.
+# See "Generated output is committed to the repository" in the README for why.
+
+# Local build output
+/bin/
+/build/
+
+# JVM
+.gradle/
+jvm/**/build/
+# The Kotlin compiler's session and error logs. Their file names carry timestamps and every build produces a new batch;
+# committing them would only create endless diff noise, with no diagnostic value to anyone (when something really goes wrong
+# the logs are local). Three errors-*.log files once slipped into git.
+.kotlin/
+
+# Editors
+.idea/
+.vscode/
+*.swp

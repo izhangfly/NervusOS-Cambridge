@@ -1,0 +1,46 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - depguard
+    - gochecknoglobals
+  settings:
+    depguard:
+      rules:
+        # This allowlist is the complete list of "who may touch syscall": three places, and no more will be added:
+        #   authority: privileged operations (that change system state), audited through the Gate
+        #   scheduler: its own mechanism (sched_setattr, needs CAP_SYS_NICE)
+        #   sysprobe:  pure observation (changes no state); see its doc.go for the admission rules
+        syscall-boundary:
+          files:
+            - "$all"
+            - "!**/internal/authority/**"
+            - "!**/internal/scheduler/**"
+            - "!**/internal/sysprobe/**"
+            - "!**/main.go"
+          deny:
+            - pkg: "syscall"
+              desc: "Only authority/scheduler/sysprobe are allowed (main.go signal constants exception)"
+            - pkg: "golang.org/x/sys"
+              desc: "Only authority/scheduler/sysprobe are allowed"
+            # os/exec is deliberately [not] allowed for sysprobe: starting a process is exercising power, not observing.
+            - pkg: "os/exec"
+              desc: "Only authority is allowed"
+        # godbus may only be imported by internal/authority/systemd: it's the D-Bus client for systemd (PID 1)
+        # and part of the TCB (architecture §8). Other modules may only depend on authority's narrow interface
+        # and must not speak the D-Bus protocol directly
+        godbus-boundary:
+          files:
+            - "$all"
+            - "!**/internal/authority/systemd/**"
+          deny:
+            - pkg: "github.com/godbus/dbus/v5"
+              desc: "Only internal/authority/systemd may speak D-Bus to systemd (architecture §8)"
+        no-testing-in-prod:
+          files:
+            - "$all"
+            - "!$test"
+          deny:
+            - pkg: "testing"
+              desc: "Production code must not import testing (no testing.Testing() branches / test hooks in the shipped binary)"

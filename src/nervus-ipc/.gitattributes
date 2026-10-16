@@ -1,0 +1,37 @@
+# golden vectors are **byte-exact** protobuf serialisation outputs (NRCP §22.6).
+#
+# They must be declared binary explicitly, without relying on git's text/binary auto-detection: detection is based on whether
+# the first 8000 bytes contain a NUL. A vector that happens to contain no NUL but does contain 0x0A/0x0D would be judged
+# text, and a Windows checkout with core.autocrlf=true would turn 0x0A into 0x0D0A, so
+# the Go and JVM assertions would fail together while the diff looks like "nothing changed", very hard to diagnose.
+#
+# binary is equivalent to -text -diff, turning off both newline conversion and text diffs.
+*.binpb binary
+
+# Everything else is LF. Generated output (.pb.go / .java) included: their sha256 is
+# the basis of the "two consecutive buf generate runs agree" gate, and can't vary by platform.
+*.go        text eol=lf
+# protoc 29.3's built-in Java generator consistently emits a space before some newlines.
+# These files are all generated; the original bytes are kept to preserve buf generate's determinism, and only
+# git diff --check's blank-at-eol / blank-at-eof warnings for this generator's format are turned off.
+*.java      text eol=lf whitespace=-blank-at-eol,-blank-at-eof
+*.kt        text eol=lf
+*.kts       text eol=lf
+*.proto     text eol=lf
+*.yaml      text eol=lf
+*.json      text eol=lf
+*.textproto text eol=lf
+*.md        text eol=lf
+go.mod      text eol=lf
+go.sum      text eol=lf
+gradlew     text eol=lf
+*.properties text eol=lf
+*.toml      text eol=lf
+.gitattributes text eol=lf
+.gitignore  text eol=lf
+
+# Windows batch files must be CRLF, otherwise cmd.exe parses them wrongly
+*.bat text eol=crlf
+
+# Gradle wrapper jar
+*.jar binary

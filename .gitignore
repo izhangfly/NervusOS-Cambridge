@@ -1,0 +1,26 @@
+# Build output (scripts/build.sh)
+/out/
+
+# Signing keys: generated on the first build, never committed
+/keys/
+**/signing/*.pem
+*.pem
+*.p12
+*.jks
+
+# Gradle and JVM build caches
+.gradle/
+build/
+.kotlin/
+.jre-cache/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Editors and OS
+.DS_Store
+*.swp
+*~

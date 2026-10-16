@@ -1,0 +1,17 @@
+[versions]
+# Keep in step with nervus-app-sdk and nervus-app-example. If the three drift, classes compiled into the
+# SDK and classes the app references come from two Kotlin/Compose versions, and you get NoSuchMethodError at run time
+kotlin = "2.1.0"
+coroutines = "1.9.0"
+compose = "1.7.3"
+protobuf = "4.29.3"
+
+[libraries]
+kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
+kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
+protobuf-java = { module = "com.google.protobuf:protobuf-java", version.ref = "protobuf" }
+
+[plugins]
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+compose = { id = "org.jetbrains.compose", version.ref = "compose" }

@@ -1,0 +1,12 @@
+# gradlew is a POSIX shell script; its line endings MUST be LF.
+#
+# Without this rule you hit a trap that is expensive to debug: a Windows checkout gives a CRLF gradlew,
+# and running it under WSL/Linux reports
+#     ./gradlew: cannot execute: required file not found
+# which reads like "file not found". The real cause is a \r at the end of the shebang line, so the kernel
+# looks for an interpreter called "/bin/sh\r". This has actually happened in a sibling repository.
+gradlew text eol=lf
+*.sh text eol=lf
+
+# The wrapper jar is binary; any line-ending conversion corrupts it
+gradle-wrapper.jar binary

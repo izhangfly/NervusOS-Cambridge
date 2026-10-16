@@ -1,0 +1,390 @@
+// Nervus system interface · OperationControl@1  [REWRITE-v1 / experimental]
+//
+//   interface_id = nervus.interface.operation.control, major = 1
+//   Implemented by nervud as a **built-in endpoint**.
+//
+// # What an Operation is
+//
+// A system-coordinated long task that "takes time and needs cancel/progress/terminal confirmation": arm trajectories, homing,
+// moving to a pose, navigating to a point. What distinguishes it from an ordinary method call isn't how long it takes, but that **the caller needs
+// to observe it during execution and may change its mind**.
+//
+// # Why it isn't a new Envelope body
+//
+// envelope.proto's rule: before adding a body, ask whether it's one of the eight things. Querying an
+// operation's state is none of them; it's just an ordinary method call. So this interface has the same shape as
+// Transfer Control: a system Interface implemented by nervud itself, using standard
+// Resolve + Request, taking no body number.
+//
+// # The full sequence
+//
+//	App --Request(some returns_operation method)--> nervud
+//	                nervud creates the Operation (PENDING), operation_id goes into the ExecutionContext
+//	                nervud --Dispatch--> Provider
+//	                nervud <--DispatchResult{ACCEPTED}-- Provider
+//	App <--Response{Success{ACCEPTED, OperationHandle}}-- nervud
+//	                nervud <--ReportProgress / CompleteOperation-- Provider (this interface)
+//	App <--OperationChanged (subscription event)-- nervud
+//
+// **By the time the App gets the handle, the Provider has already confirmed it took the job.** The other way round (return the handle first, then ask
+// the Provider) would produce an operation_id pointing at work nobody is doing, which the caller could only discover
+// through a timeout.
+//
+// # Who may call which methods
+//
+//	GetOperation / CancelOperation     the caller (the one that created it)
+//	AcceptOperation / ReportProgress /
+//	CompleteOperation                  the Provider (the one executing it)
+//
+// Both groups are decided by nervud by **connection identity**, never by any self-reported field in the payload.
+// A Provider can't report on someone else's operation, and an App can't cancel someone else's.
+//
+// [REWRITE-v1] experimental: destructive changes allowed before v2; once formally frozen, §10.12 applies.
+
+syntax = "proto3";
+
+package nervus.interface.operation.v1;
+
+import "nervus/ipc/v1/method_registry.proto";
+import "nervus/ipc/v1/status.proto";
+
+option go_package = "github.com/nervus-os/nervus-ipc/protocol/interface/operationv1;operationv1";
+
+// Java package names can't contain hyphens or the reserved word "interface", so the "iface" segment is used.
+option java_package = "io.github.nervusos.iface.operation.v1";
+option java_multiple_files = true;
+option java_outer_classname = "OperationControlProto";
+
+// =============================================================================
+// Methods
+// =============================================================================
+
+enum OperationControlMethod {
+  OPERATION_CONTROL_METHOD_UNSPECIFIED = 0;
+
+  // Read an operation's current state. Only the caller that created it may read it.
+  //
+  // **It doesn't exist for polling**: the normal path is subscribing to OperationChanged. Get covers two
+  // windows subscriptions can't: the moment between getting the handle and subscribing, and, after a reconnect,
+  // "it was still running when I left; how is it now".
+  OPERATION_CONTROL_METHOD_GET_OPERATION = 1 [(nervus.ipc.v1.method_meta) = {
+    method_id: 1
+    risk_class: RISK_CLASS_NORMAL
+    is_read_only: true
+    requires_control_lease: false
+    returns_operation: false
+    needs_user_confirmation: false
+    request_type: "nervus.interface.operation.v1.GetOperationRequest"
+    response_type: "nervus.interface.operation.v1.OperationStatus"
+    error_detail_type: "nervus.interface.operation.v1.OperationErrorDetail"
+    default_timeout_ms: 1000
+    max_timeout_ms: 3000
+  }];
+
+  // Request cancellation.
+  //
+  // **It's a "request", not a "command"**: returning success only means nervud has set the operation to
+  // CANCEL_REQUESTED and told the Provider, not that the arm has stopped. The real terminal state
+  // (CANCELLED, or "too late, already SUCCEEDED") comes in later events.
+  //
+  // Making it a synchronous "cancel complete" would be a lie: physical actions take time to converge, and during
+  // that time knowing the progress is exactly what the caller needs most.
+  OPERATION_CONTROL_METHOD_CANCEL_OPERATION = 2 [(nervus.ipc.v1.method_meta) = {
+    method_id: 2
+    risk_class: RISK_CLASS_NORMAL
+    requires_control_lease: false
+    returns_operation: false
+    needs_user_confirmation: false
+    request_type: "nervus.interface.operation.v1.CancelOperationRequest"
+    response_type: ""
+    error_detail_type: "nervus.interface.operation.v1.OperationErrorDetail"
+    default_timeout_ms: 1000
+    max_timeout_ms: 3000
+  }];
+
+  // The Provider confirms it has started executing; the operation goes from PENDING to RUNNING.
+  //
+  // The difference from DispatchResult{ACCEPTED}: that step only says "I've taken it", while this method says
+  // "I'm already moving". There may be preparation time between the two (planning the trajectory, waiting for posture readiness),
+  // and the caller needs to tell "still preparing" from "already moving", especially when deciding whether to cancel.
+  //
+  // motion_epoch must match the one at creation: a mismatch means a Safety takeover or pre-emption happened in between,
+  // and this execution is based on an authorisation that's already void.
+  OPERATION_CONTROL_METHOD_ACCEPT_OPERATION = 3 [(nervus.ipc.v1.method_meta) = {
+    method_id: 3
+    risk_class: RISK_CLASS_NORMAL
+    requires_control_lease: false
+    returns_operation: false
+    needs_user_confirmation: false
+    request_type: "nervus.interface.operation.v1.AcceptOperationRequest"
+    response_type: ""
+    error_detail_type: "nervus.interface.operation.v1.OperationErrorDetail"
+    default_timeout_ms: 1000
+    max_timeout_ms: 3000
+  }];
+
+  // Report one typed progress update. Doesn't change state.
+  //
+  // **A method call rather than PublishEvent**: PublishEvent is endpoint-level, and
+  // events belong to "this endpoint"; progress belongs to "this one operation", and two trajectories
+  // running at once must be told apart. With endpoint events, subscribers would get a pile of progress without knowing
+  // which belongs to their own call.
+  OPERATION_CONTROL_METHOD_REPORT_PROGRESS = 4 [(nervus.ipc.v1.method_meta) = {
+    method_id: 4
+    risk_class: RISK_CLASS_NORMAL
+    requires_control_lease: false
+    returns_operation: false
+    needs_user_confirmation: false
+    request_type: "nervus.interface.operation.v1.ReportProgressRequest"
+    response_type: ""
+    error_detail_type: "nervus.interface.operation.v1.OperationErrorDetail"
+    default_timeout_ms: 1000
+    max_timeout_ms: 3000
+  }];
+
+  // Write the terminal state: SUCCEEDED / FAILED / CANCELLED.
+  //
+  // **The terminal state is written once**; writing again returns FAILED_PRECONDITION + ALREADY_TERMINAL.
+  // Idempotently accepting a second write in silence would hide a real class of fault: two paths inside the Provider both think
+  // they should end this execution, and they may reach opposite conclusions.
+  OPERATION_CONTROL_METHOD_COMPLETE_OPERATION = 5 [(nervus.ipc.v1.method_meta) = {
+    method_id: 5
+    risk_class: RISK_CLASS_NORMAL
+    requires_control_lease: false
+    returns_operation: false
+    needs_user_confirmation: false
+    request_type: "nervus.interface.operation.v1.CompleteOperationRequest"
+    response_type: ""
+    error_detail_type: "nervus.interface.operation.v1.OperationErrorDetail"
+    default_timeout_ms: 1000
+    max_timeout_ms: 3000
+  }];
+}
+
+enum OperationControlEvent {
+  OPERATION_CONTROL_EVENT_UNSPECIFIED = 0;
+
+  // An operation's state or progress changed.
+  //
+  // **DELIVERY_CLASS_RELIABLE, not STATE.** That looks counter-intuitive (shouldn't a state stream naturally
+  // be merged?), but no: this event carries both **progress** and **state transitions**, and progress is a series of distinct
+  // sample points; merging would make the caller see a trajectory jump straight from 10% to 90%.
+  //
+  // More importantly, the terminal state: merging means a terminal event could be overwritten by a later event, and since there are no
+  // events after a terminal state, being overwritten means it's never received. "Did this trajectory succeed or not" is the one thing the caller must
+  // know.
+  //
+  // The cost is that slow consumers get their subscription dropped. That's right: for a caller that can't even keep up with results,
+  // an explicit failure is better than letting it think it's observing.
+  //
+  // # scoped
+  //
+  // When subscribing, Subscribe.scope is the operation_id. This interface has only one built-in endpoint,
+  // and every operation event on the machine comes out of it; not naming an instance would mean subscribing to everyone's
+  // progress and detailed failure causes.
+  //
+  // Ownership **needs no BindEventScope**: nervud itself owns operations
+  // and knows whose each one is. Subscribing to an operation that isn't yours is refused outright.
+  OPERATION_CONTROL_EVENT_OPERATION_CHANGED = 1 [(nervus.ipc.v1.event_meta) = {
+    event_id: 1
+    risk_class: RISK_CLASS_NORMAL
+    delivery_class: DELIVERY_CLASS_RELIABLE
+    payload_type: "nervus.interface.operation.v1.OperationEvent"
+    scoped: true
+    max_events_per_second: 100
+  }];
+}
+
+// =============================================================================
+// Handle
+// =============================================================================
+
+// OperationHandle is the ACCEPTED response payload of **any returns_operation method**.
+//
+// See returns_operation in method_registry.proto: that rule is protocol-level, not agreed
+// by each interface; otherwise every interface would invent its own "how to tell the caller the operation_id",
+// and the SDK would need special code for every interface.
+message OperationHandle {
+  // Allocated by nervud, host-session scoped, monotonically increasing, **never reused**.
+  //
+  // Not reused for the same reason as endpoint_id / lease_id / subscription_id: reuse would let
+  // a late OperationChanged be mistaken for an event of a new operation, and the receiver would have no
+  // way to tell them apart.
+  //
+  // **It doesn't survive a nervud restart**: a restart = a new host session, and old operations are all dropped.
+  // The same semantics as the motion epoch: after a restart nothing is still moving.
+  uint64 operation_id = 1;
+}
+
+// =============================================================================
+// State
+// =============================================================================
+
+// OperationState is every value of the state machine. Terminal states have no outgoing edges.
+enum OperationState {
+  OPERATION_STATE_UNSPECIFIED = 0;
+
+  // Created; the Provider hasn't confirmed it has started yet.
+  OPERATION_STATE_PENDING = 1;
+  // The Provider has called AcceptOperation and is executing.
+  OPERATION_STATE_RUNNING = 2;
+  // A cancel request was received; waiting for the Provider to converge. **Not terminal**: physical actions take time to stop.
+  OPERATION_STATE_CANCEL_REQUESTED = 3;
+
+  // The following are terminal, written once and unchangeable afterwards.
+  OPERATION_STATE_SUCCEEDED = 4;
+  OPERATION_STATE_FAILED = 5;
+  OPERATION_STATE_CANCELLED = 6;
+}
+
+// OperationOrigin is the type binding of the call that produced this operation.
+//
+// # Why it has to be on the wire
+//
+// progress / result / error are all typed bytes, and their Protobuf types are decided by
+// **the method that made the call**. After an SDK reconnects it only has an operation_id,
+// and without this binding it can't decode any payload; it would get a string of bytes with no idea what type to parse them as.
+//
+// **No google.protobuf.Any**: that would let the sender choose the receiver's parser,
+// which status.proto explicitly forbids.
+message OperationOrigin {
+  string interface_id = 1;
+  uint32 interface_major = 2;
+  uint32 interface_minor = 3;
+  uint32 method_id = 4;
+
+  // The deterministic identifier of the interface schema selected when the call was made. The SDK should check it matches its local generated code;
+  // a mismatch means the two sides' schemas drifted, and decoding with local types would read garbage.
+  bytes interface_schema_hash = 5;
+}
+
+// OperationStatus is a complete snapshot of one operation.
+message OperationStatus {
+  uint64 operation_id = 1;
+  OperationState state = 2;
+  OperationOrigin origin = 3;
+
+  // The set of bound public Resource handles.
+  repeated string resource_handles = 4;
+
+  // The motion epoch at creation. 0 = not motion.
+  //
+  // It lets the caller judge "has my action already been taken over and voided by Safety":
+  // a current active epoch greater than it means a stop or pre-emption happened in between.
+  uint64 motion_epoch = 5;
+
+  // The absolute deadline, in Linux CLOCK_MONOTONIC nanoseconds. Not finished by then means
+  // FAILED + DEADLINE_EXCEEDED.
+  int64 deadline_nanos = 6;
+
+  // The terminal payload, **non-empty only in terminal states**.
+  //
+  // terminal_code ∈ {OK, CANCELLED, other failure codes}, corresponding one to one with state:
+  // OK↔SUCCEEDED, CANCELLED↔CANCELLED, others↔FAILED. The redundancy is deliberate:
+  // state answers "is it over", code answers "why", and clients need both.
+  nervus.ipc.v1.StatusCode terminal_code = 7;
+  // The success result, typed by origin.
+  bytes terminal_result = 8;
+  // The detailed failure cause, typed by origin.
+  bytes terminal_error = 9;
+}
+
+// =============================================================================
+// Event payload
+// =============================================================================
+
+// OperationEventKind distinguishes whether an event is progress or a state transition.
+enum OperationEventKind {
+  OPERATION_EVENT_KIND_UNSPECIFIED = 0;
+  // Typed progress; doesn't change state.
+  OPERATION_EVENT_KIND_PROGRESS = 1;
+  // One state transition (including terminal ones).
+  OPERATION_EVENT_KIND_STATE = 2;
+}
+
+message OperationEvent {
+  uint64 operation_id = 1;
+  OperationEventKind kind = 2;
+
+  // The current state. For KIND_STATE it's the new state after the transition; for KIND_PROGRESS it's the current state
+  // before any transition (progress doesn't change state).
+  OperationState state = 3;
+
+  OperationOrigin origin = 4;
+
+  // KIND_PROGRESS's typed progress payload.
+  bytes progress = 5;
+
+  // The terminal payload, non-empty only for KIND_STATE with a terminal state. Same meaning as in OperationStatus.
+  nervus.ipc.v1.StatusCode terminal_code = 6;
+  bytes terminal_result = 7;
+  bytes terminal_error = 8;
+}
+
+// =============================================================================
+// Requests
+// =============================================================================
+
+message GetOperationRequest {
+  uint64 operation_id = 1;
+}
+
+message CancelOperationRequest {
+  uint64 operation_id = 1;
+}
+
+message AcceptOperationRequest {
+  uint64 operation_id = 1;
+
+  // The motion epoch at creation, passed back unchanged from the ExecutionContext.
+  //
+  // **It must be passed back for checking**: there may be a few hundred milliseconds of preparation between the Provider receiving the Dispatch
+  // and really starting to move, enough time for a Safety stop. Without the check,
+  // the Provider would start moving on an authorisation that's already void.
+  uint64 motion_epoch = 2;
+}
+
+message ReportProgressRequest {
+  uint64 operation_id = 1;
+
+  // The typed progress payload, typed by the method that made the call (see OperationOrigin).
+  bytes progress = 2;
+}
+
+message CompleteOperationRequest {
+  uint64 operation_id = 1;
+
+  // The terminal code. Only {OK, CANCELLED} and the failure codes Providers are allowed to produce are accepted;
+  // kernel-only codes such as ACCEPTED, UNAUTHENTICATED and PERMISSION_DENIED are always refused:
+  // those are decision results, not execution results.
+  nervus.ipc.v1.StatusCode code = 2;
+
+  // The success result, only meaningful when code == OK.
+  bytes result = 3;
+  // The detailed failure cause, only meaningful with a failure code.
+  bytes error_detail = 4;
+}
+
+// =============================================================================
+// Error detail
+// =============================================================================
+
+enum OperationReason {
+  OPERATION_REASON_UNSPECIFIED = 0;
+  // The operation_id doesn't exist, or was reclaimed after the terminal retention period.
+  OPERATION_REASON_NOT_FOUND = 1;
+  // The caller isn't this operation's owner (query side), or isn't its executor (reporting side).
+  OPERATION_REASON_NOT_OWNER = 2;
+  // Already terminal; can't change any more.
+  OPERATION_REASON_ALREADY_TERMINAL = 3;
+  // The motion epoch has expired: a Safety takeover or lease pre-emption happened in between.
+  OPERATION_REASON_STALE_EPOCH = 4;
+  // This transition isn't allowed in the current state (such as reporting progress on a PENDING operation).
+  OPERATION_REASON_INVALID_TRANSITION = 5;
+  // The Provider tried to write a terminal code it has no right to produce.
+  OPERATION_REASON_INVALID_TERMINAL_CODE = 6;
+}
+
+message OperationErrorDetail {
+  OperationReason reason = 1;
+}

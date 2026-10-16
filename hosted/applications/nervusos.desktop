@@ -1,0 +1,19 @@
+[Desktop Entry]
+Type=Application
+Name=NervusOS
+Comment=Open the NervusOS robot desktop (fullscreen). Quit it to return to Ubuntu.
+Exec=/usr/local/bin/nervus-session start
+Icon=nervusos
+Terminal=false
+Categories=Development;Robotics;
+Keywords=nervus;robot;piper;
+StartupNotify=false
+Actions=Window;Quit;
+
+[Desktop Action Window]
+Name=Open in a window
+Exec=/usr/local/bin/nervus-session start --window 1600x900
+
+[Desktop Action Quit]
+Name=Quit NervusOS
+Exec=/usr/local/bin/nervus-session stop

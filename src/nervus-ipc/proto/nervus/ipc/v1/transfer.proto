@@ -1,0 +1,195 @@
+// Nervus IPC v1: the generic Transfer data plane contract.
+//
+// Transfer adds no Envelope body. Creating, committing and aborting all go through
+// ordinary Request/Response on nervus.interface.transfer.control; the actual data
+// travels over a separate UDS. Camera, Microphone, file import and future sensor streams all share this protocol.
+
+syntax = "proto3";
+
+package nervus.ipc.v1;
+
+import "nervus/ipc/v1/status.proto";
+
+option go_package = "github.com/nervus-os/nervus-ipc/protocol/ipcv1;ipcv1";
+
+option java_package = "io.github.nervusos.ipc.v1";
+option java_multiple_files = true;
+option java_outer_classname = "TransferProto";
+
+enum TransferDirection {
+  TRANSFER_DIRECTION_UNSPECIFIED = 0;
+  TRANSFER_DIRECTION_PROVIDER_TO_CALLER = 1;
+  TRANSFER_DIRECTION_CALLER_TO_PROVIDER = 2;
+  TRANSFER_DIRECTION_BIDIRECTIONAL = 3;
+}
+
+enum TransferMode {
+  TRANSFER_MODE_UNSPECIFIED = 0;
+
+  // The baseline mode. Both ends connect to the fixed Transfer UDS, and nervud does bounded frame forwarding.
+  TRANSFER_MODE_FRAMED_RELAY = 1;
+
+  // The Linux high-throughput mode. nervud hands out memfd/eventfd through SCM_RIGHTS;
+  // the exact ring ABI must be frozen separately before implementation.
+  TRANSFER_MODE_SHARED_MEMORY_RING = 2;
+}
+
+enum TransferRole {
+  TRANSFER_ROLE_UNSPECIFIED = 0;
+  TRANSFER_ROLE_PRODUCER = 1;
+  TRANSFER_ROLE_CONSUMER = 2;
+  // Both ends of a BIDIRECTIONAL Transfer use PEER.
+  TRANSFER_ROLE_PEER = 3;
+}
+
+// TransferPolicy is an optional field of MethodMeta. When the field is absent the method may never create a
+// Transfer; a Provider can't upgrade an ordinary method into a streaming method by itself at run time.
+message TransferPolicy {
+  TransferDirection direction = 1;
+  uint32 max_streams = 2;
+  uint32 max_packet_bytes = 3;
+  uint64 max_bytes_per_second = 4;
+
+  // An empty set means only FRAMED_RELAY is allowed, not any future mode.
+  repeated TransferMode allowed_modes = 5;
+}
+
+// TransferHandle is the opaque credential one end uses to attach to the data plane. It can be embedded in any capability interface's
+// OpenStream response, so new Providers need no new IPC mechanism. In the PREPARED state only the
+// provider handle may attach; the caller handle must wait until Transfer Control's Commit succeeds.
+message TransferHandle {
+  // A 128-bit random ID. Predictable incrementing numbers must not be used.
+  bytes transfer_id = 1;
+
+  // An attach ticket of at least 256 bits, single-use, with a short TTL.
+  bytes attach_ticket = 2;
+
+  TransferRole role = 3;
+  TransferMode mode = 4;
+
+  // CLOCK_MONOTONIC time domain; 0 is illegal.
+  uint64 expires_at_monotonic_nanos = 5;
+
+  // Always /run/nervus/nervud-transfer.sock in production; test builds may return other paths.
+  string data_plane_endpoint = 6;
+}
+
+// AttachTransfer is the first frame on the separate data UDS, not an Envelope body. The handshake's
+// AttachTransfer and AttachTransferResult both use the control plane's u32 big-endian length prefix
+// + protobuf payload; only after success does it switch to the NVT1 data frames below. nervud must also
+// re-check the process identity with SO_PEERCRED; holding the ticket alone isn't authorisation.
+message AttachTransfer {
+  bytes transfer_id = 1;
+  bytes attach_ticket = 2;
+  TransferRole role = 3;
+}
+
+message AttachTransferSuccess {
+  TransferMode mode = 1;
+  uint32 max_packet_bytes = 2;
+  uint64 max_bytes_per_second = 3;
+
+  // Required when mode == SHARED_MEMORY_RING, and must be absent in other modes.
+  //
+  // **These parameters are authoritative; the copy in the shared memory header isn't.** See TransferRingConfig.
+  TransferRingConfig ring = 4;
+}
+
+// TransferRingConfig is the geometry of SHARED_MEMORY_RING.
+//
+// # Why the parameters go over the control plane rather than only in the shared memory header
+//
+// Shared memory is **writable by both ends**. If the consumer read slot_count / slot_size from the header and
+// computed offsets from them, a malicious or buggy producer could make the other side read out of bounds just by rewriting the header,
+// in the other side's own address space, where nothing can stop it.
+//
+// So nervud sends the geometry in AttachTransferResult: it goes over the control plane, is produced
+// by the kernel, and can't be tampered with by the peer. A copy also sits in the shared memory header, but that copy is **only for self-checks**
+// (a mismatch means an implementation bug or trampled memory) and is never the basis for bounds calculations.
+//
+// # File descriptors
+//
+// When AttachTransferResult succeeds and mode == SHARED_MEMORY_RING, nervud attaches **exactly 2** fds with SCM_RIGHTS
+// on the same data UDS, in a fixed order:
+//
+//	fd[0]  memfd    the ring memory. The producer gets PROT_READ|PROT_WRITE,
+//	                the consumer gets PROT_READ (nervud guarantees this by means other than F_SEAL_WRITE:
+//	                the consumer side is sent an fd duplicated O_RDONLY)
+//	fd[1]  eventfd  the producer write(1)s after writing to wake the consumer; the consumer waits with read or poll
+//
+// Receiving a number of fds other than 2 must be treated as a protocol violation that closes the connection; don't just use the first few.
+// A mismatched count means the two sides' understanding of the ABI has already diverged.
+//
+// # Memory layout (NVR1)
+//
+//	offset 0          header_bytes             first slot payload
+//	┌───────────────┬────────────────────────┬─────────────────┐
+//	│ ring header   │ slot descriptors       │ payload area    │
+//	│ header_bytes  │ descriptor_bytes each  │ slot_size each  │
+//	│               │ × slot_count           │ × slot_count    │
+//	└───────────────┴────────────────────────┴─────────────────┘
+//
+// Total length = header_bytes + slot_count*descriptor_bytes + slot_count*slot_size,
+// which must exactly equal the memfd's actual size; otherwise it's a protocol violation.
+//
+// Ring header (little-endian, matching the host byte order; this ABI is only used between processes on the same machine):
+//
+//	 0  magic[4]      "NVR1"
+//	 4  version u32    currently 1
+//	 8  slot_count u32     ┐
+//	12  slot_size u32      ├ for self-checks only; bounds calculations must **not** use these three
+//	16  descriptor_bytes u32 ┘
+//	24  producer_cursor u64  written only by the producer, read-only for the consumer
+//	32  consumer_cursor u64  written only by the consumer, read-only for the producer
+//	40  reserved, must be 0
+//
+// Slot descriptor (little-endian):
+//
+//	 0  sequence u64    written **last** by the producer with release semantics after the payload is written.
+//	                    Odd = being written, even = ready. A consumer reading an odd value skips it.
+//	 8  payload_length u32  must be <= slot_size; **the consumer must check this itself**
+//	12  flags u32
+//	16  monotonic_timestamp_nanos u64
+//	24  reserved, must be 0
+//
+// # Rules for untrusted input (implementations must follow them)
+//
+//  1. payload_length is always compared with the slot_size from the control plane before use; if it exceeds it, drop the
+//     slot and count one protocol error. Don't clamp and keep reading; that would turn a bug into silent
+//     data corruption.
+//  2. The peer's cursor is untrusted. When advancing, the consumer must check
+//     producer_cursor - consumer_cursor <= slot_count; exceeding it means the producer lapped it,
+//     and it should jump to the latest lap rather than read a batch of slots that were already overwritten.
+//  3. When slot_count / slot_size / descriptor_bytes in the header disagree with the control plane,
+//     treat it as a protocol violation and close the transfer: this is a self-check point, not a negotiable parameter.
+message TransferRingConfig {
+  // The number of slots in the ring. Must be a power of 2, so masking can do the modulo without a division.
+  uint32 slot_count = 1;
+
+  // The payload capacity of each slot, equal to the effective max_packet_bytes.
+  uint32 slot_size = 2;
+
+  // The ring header size in bytes. Fixed at 4096 (one page), so the descriptor area is page aligned.
+  uint32 header_bytes = 3;
+
+  // The size of each slot descriptor in bytes. Fixed at 32.
+  uint32 descriptor_bytes = 4;
+}
+
+message AttachTransferResult {
+  oneof outcome {
+    AttachTransferSuccess success = 1;
+    Failure failure = 2;
+  }
+}
+
+// After AttachTransferResult succeeds, FRAMED_RELAY mode switches to fixed binary frames:
+//   magic[4] = "NVT1"
+//   flags uint32 big-endian
+//   sequence uint64 big-endian
+//   monotonic_timestamp_nanos uint64 big-endian
+//   payload_length uint32 big-endian
+//   payload[payload_length]
+//
+// payload_length must be tightened by MethodMeta, TransferPolicy and the connection budget together; unknown flags
+// must be refused, not ignored while forwarding continues.

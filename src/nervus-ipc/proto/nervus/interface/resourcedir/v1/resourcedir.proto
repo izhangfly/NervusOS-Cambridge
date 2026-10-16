@@ -1,0 +1,122 @@
+// Nervus standard interface · ResourceDirectory@1  [REWRITE-v1 / experimental]
+//
+//   interface_id = nervus.interface.resource.directory, major = 1
+//   Permission   = perm.resource.query
+//   Resource     = none (this interface binds no resource; what it describes is the resources themselves)
+//
+// Implemented by nervud as a **built-in endpoint**, read-only.
+//
+// # The real gap it fills
+//
+// A ResourceSelector can answer "connect me to that front camera", but not
+// "how many cameras does this machine actually have". Without the latter, Apps could only probe with repeated Resolves
+// until NOT_FOUND. That's slow and unreliable: a failed Resolve can't tell
+// "no such device" from "there is one but I'm not allowed".
+//
+// With a directory, device discovery becomes one query, and Resolve goes back to its real job: setting up routes.
+//
+// # Why the kernel implements it rather than a system service
+//
+// The resource directory **is the Catalog itself**. Having a service answer for it would mean it maintaining a copy of the Catalog,
+// and between a copy and the original there's always a window that can drift: an install has taken effect, the copy hasn't
+// refreshed yet, and the App gets a stale device list. The kernel reads its own Snapshot directly,
+// so that window doesn't exist.
+//
+// # Boundary: it **only** holds information a successful Resolve would already expose
+//
+// What's returned is the public projection: handle / type / role / access mode / risk level / labels.
+// It does **not** include device node paths, serial numbers, the Provider PID or vendor firmware versions.
+//
+// This boundary is hard: the directory is readable by every App holding perm.resource.query, so
+// adding a field "just returned as well" would publish that field to the whole system.
+// Callers needing finer information should Resolve to the specific interface and accept that interface's own permission decision there.
+//
+// [REWRITE-v1] experimental: destructive changes allowed before v2; once formally frozen, §10.12 applies.
+
+syntax = "proto3";
+
+package nervus.interface.resourcedir.v1;
+
+import "nervus/ipc/v1/method_registry.proto";
+import "nervus/ipc/v1/provider_descriptor.proto";
+
+option go_package = "github.com/nervus-os/nervus-ipc/protocol/interface/resourcedirv1;resourcedirv1";
+
+// Java package names can't contain hyphens or the reserved word "interface", so the "iface" segment is used.
+option java_package = "io.github.nervusos.iface.resourcedir.v1";
+option java_multiple_files = true;
+option java_outer_classname = "ResourceDirectoryProto";
+
+enum ResourceDirectoryMethod {
+  RESOURCE_DIRECTORY_METHOD_UNSPECIFIED = 0;
+
+  // List matching resources. Purely a read; changes no state.
+  RESOURCE_DIRECTORY_METHOD_LIST_RESOURCES = 1 [(nervus.ipc.v1.method_meta) = {
+    method_id: 1
+    required_permission: "perm.resource.query"
+    risk_class: RISK_CLASS_NORMAL
+    requires_control_lease: false
+    returns_operation: false
+    needs_user_confirmation: false
+    request_type: "nervus.interface.resourcedir.v1.ListResourcesRequest"
+    response_type: "nervus.interface.resourcedir.v1.ResourceList"
+    error_detail_type: ""
+  }];
+}
+
+// ListResourcesRequest: filter conditions. Leaving them all empty lists every visible resource.
+//
+// # Why not just use ResourceSelector
+//
+// ResourceSelector has a policy field (REQUIRE_UNIQUE / SYSTEM_PREFERRED),
+// the rule for "which of several candidates to pick", while enumeration is **multi-valued by nature**, so policy is
+// meaningless here.
+//
+// Reusing it would mean silently ignoring policy in the implementation. A silently ignored field is far more dangerous
+// than no field at all: a caller filling in REQUIRE_UNIQUE thinks it's asserting "there should be only one",
+// while nothing actually happens. So three fields that really take effect are declared afresh here.
+message ListResourcesRequest {
+  // Resource type, such as "nervus.resource.camera". Empty = don't filter by type.
+  string resource_type = 1;
+
+  // Stable role, such as "cam.front". Empty = don't filter by role.
+  string stable_role = 2;
+
+  // Semantic labels; every key and value must match (AND). Empty = don't filter by labels.
+  //
+  // **Querying by labels is the recommended approach**: stable_role is a product of board configuration (whether the front
+  // camera on this board is called cam.front or camera0), and depending on it means changing code when the board changes.
+  map<string, string> labels = 3;
+}
+
+// ResourceEntry: the public projection of one resource.
+message ResourceEntry {
+  // The public handle, which can go straight into a ResourceSelector or RegisterEndpoint.
+  string handle = 1;
+
+  string resource_type = 2;
+  string stable_role = 3;
+
+  // The access mode decides whether this resource **can be held exclusively**.
+  //
+  // It's actionable information for Apps: SHARED_OBSERVE resources need no lease,
+  // while EXCLUSIVE_CONTROL ones need a lease before control methods can be called.
+  nervus.ipc.v1.ResourceAccessMode access_mode = 4;
+
+  nervus.ipc.v1.RiskClass risk_class = 5;
+
+  // Semantic labels, such as {"nervus.camera.facing": "front"}.
+  //
+  // Labels in the platform namespace (nervus.*) can only be defined by platform-release, so vendors can't
+  // crown their own camera "front-facing". Private labels must be in the vendor's own package namespace.
+  map<string, string> labels = 6;
+}
+
+message ResourceList {
+  // Ordered lexicographically by (resource_type, stable_role).
+  //
+  // **The order is deterministic**: Go's map iteration order is random, and returning the iteration result directly would give
+  // the same Catalog different orders on two calls. In the UI the device list jumps on every
+  // refresh, and almost nobody would report that as a bug.
+  repeated ResourceEntry resources = 1;
+}

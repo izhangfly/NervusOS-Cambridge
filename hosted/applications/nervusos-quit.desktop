@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Quit NervusOS
+Comment=Close NervusOS and stop the kernel, the apps and the arm driver
+Exec=/usr/local/bin/nervus-session stop
+Icon=nervusos
+Terminal=false
+Categories=Development;Robotics;
+StartupNotify=false

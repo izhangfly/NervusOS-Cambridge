@@ -1,0 +1,69 @@
+version: v2
+
+# clean: clear the previous round's output before generating, so that after deleting a .proto its old output doesn't stay in the repository
+# and keep being compiled. Those "ghost types" are very hard to track down.
+#
+# ⚠ clean **deletes each plugin's out directory entirely**. So every out must point at a
+#   directory that only holds generated files. The Go module already sits at the repository root, so the generator may only clean
+#   `protocol/` and must never point at the repository root.
+clean: true
+
+# Both languages are generated **in the same buf generate**.
+#
+# That isn't for convenience; it's how NRCP §22.6's "one round of implementation must depend on one frozen schema"
+# is enforced: one commit holds the schema and both outputs, and a single CI step
+# `buf generate && git diff --exit-code` covers every language at once.
+# Split across several repositories, "which schema was Go generated from" and "which schema was the JVM generated from"
+# become two facts that can drift separately, and after drifting both sides still compile and only behave differently.
+plugins:
+  # --- Go ------------------------------------------------------------------
+  #
+  # Uses a **local** plugin rather than buf's remote plugin (buf.build/protocolbuffers/go).
+  # Remote plugins are convenient, but they put an online service into the TCB's supply chain. The architecture says:
+  # "Protobuf is only a public binary encoding and code generation format, with no dependence on Google's online services";
+  # depending on the BSR instead would just break the same sentence with a different vendor.
+  #
+  # The plugin version is pinned by the root go.mod's tool directive (google.golang.org/protobuf v1.36.11).
+  # Install: go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
+  - local: protoc-gen-go
+    # out together with opt module=<prefix>: protoc-gen-go strips that prefix from each .proto's go_package
+    # and decides where to write by what remains.
+    #   go_package = ".../nervus-ipc/protocol/ipcv1;ipcv1"
+    #   module     = ".../nervus-ipc/protocol"
+    #   ⇒ "ipcv1" remains, landing in protocol/ipcv1/*.pb.go
+    #
+    # module is deliberately set at the protocol level here, so out can be narrowed to protocol,
+    # which only holds generated files, so clean deleting it entirely is harmless.
+    # protoc-gen-go's module parameter is only used to compute output paths and needn't equal the real module path.
+    out: protocol
+    opt:
+      - module=github.com/nervus-os/nervus-ipc/protocol
+
+  # --- JVM -----------------------------------------------------------------
+  #
+  # java is protoc's **built-in** generator (protoc_builtin), not a separate plugin, so it needs
+  # protoc itself on PATH; the Go side only needs protoc-gen-go.
+  #
+  # **Only java is generated, not kotlin.** protobuf-kotlin produces DSL builders on top of
+  # protobuf-java's message classes, optional sugar rather than a replacement, while nervus-app-sdk uses
+  # Java's .newBuilder() throughout, and so do the JVM golden vector tests (50 uses of newBuilder,
+  # zero of the DSL). Since nothing uses it, 90 extra generated .kt files would be pure noise: they'd go into git,
+  # through review and into compilation, with no consumer at all.
+  #
+  # If the DSL is really needed later, just add the kotlin generator back (it doesn't change the wire, and doesn't affect
+  # the Java types already generated).
+  #
+  # Output follows the Gradle convention src/main/java, with the exact package path decided by the .proto's
+  # java_package + java_multiple_files.
+  - protoc_builtin: java
+    out: jvm/protocol/src/main/java
+
+  # --- Removed: Python ---------------------------------------------------------
+  #
+  # This used to generate python/protocol with a hand-written python/sdk alongside, because "group C (the ROS
+  # adapter / perception / Agent) uses Python". That language decision was dropped: system services use Go.
+  #
+  # Removed was not only the generator but the whole python/ directory (generated output + hand-written SDK + tests). The cost of
+  # keeping it wasn't disk space but the drift surface of "three SDKs each implementing the same framing handshake", plus
+  # maintaining one more side of golden vectors on every schema change. To restore it, add the two
+  # protoc_builtin entries (python + pyi) back and rerun; the generated output is purely derived.

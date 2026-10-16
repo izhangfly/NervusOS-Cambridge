@@ -1,0 +1,3 @@
+# /run/nervus-x11 holds the X cookie for the NervusOS display. Owned by the
+# desktop user, who opens the display; readable by every app UID.
+d /run/nervus-x11 0755 @USER@ @USER@ -

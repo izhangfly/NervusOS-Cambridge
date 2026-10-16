@@ -1,0 +1,39 @@
+# Central version management. All of these were actually built and verified on WSL Debian (see "Verification records" in the root README).
+#
+# The protobuf entry isn't "just take the latest"; it has a hard constraint:
+#
+#   the protobuf-java runtime version must be >= the protoc version used to generate this code.
+#
+#   From protoc v27 (Java 4.27.x) on, generated code includes a runtime version self-check, and a runtime older than
+#   the generator throws at class loading rather than quietly running wrong.
+#   Generation currently uses protoc 29.3, so this is pinned at 4.29.3; the two must be upgraded together,
+#   never each to its own latest.
+
+[versions]
+# The Kotlin compiler / standard library. KGP is fetched by Gradle from the plugin portal; no local kotlinc needed.
+kotlin = "2.1.0"
+
+# The protobuf-java + protobuf-kotlin runtimes. See the version alignment constraint above.
+protobuf = "4.29.3"
+
+# The JVM bytecode target. 17 is a conservative LTS floor, giving class major version = 61 (verified).
+# Which JDK the build machine has doesn't matter: settings.gradle.kts's foojay resolver
+# provisions a 17 toolchain on demand, so builds on different machines give the same result.
+jvmTarget = "17"
+
+# JUnit 5 (Jupiter), only for the protocol module's golden vectors tests.
+# Versions are unified through the BOM, and the test runtime is provided by junit-platform-launcher.
+junit = "5.11.3"
+
+[libraries]
+protobuf-java = { module = "com.google.protobuf:protobuf-java", version.ref = "protobuf" }
+# protobuf-kotlin is the DSL builder, **built on top of** protobuf-java rather than replacing it; both are needed.
+protobuf-kotlin = { module = "com.google.protobuf:protobuf-kotlin", version.ref = "protobuf" }
+
+# JUnit 5: the BOM aligns the jupiter artefact versions; the launcher lets the test runtime discover engines.
+junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
+
+[plugins]
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }

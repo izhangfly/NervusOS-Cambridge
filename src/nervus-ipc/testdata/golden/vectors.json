@@ -1,0 +1,116 @@
+[
+  {
+    "name": "response_success_ok",
+    "kind": "envelope",
+    "file": "response_success_ok.binpb",
+    "doc": "Response success, code=OK, non-empty payload"
+  },
+  {
+    "name": "response_failure_permission_denied",
+    "kind": "envelope",
+    "file": "response_failure_permission_denied.binpb",
+    "doc": "Response failure, code=PERMISSION_DENIED, with public_message"
+  },
+  {
+    "name": "response_failure_unavailable",
+    "kind": "envelope",
+    "file": "response_failure_unavailable.binpb",
+    "doc": "Response failure, code=UNAVAILABLE, no detail (disconnect/restart kind)"
+  },
+  {
+    "name": "resolve_failure_interface_not_found",
+    "kind": "envelope",
+    "file": "resolve_failure_interface_not_found.binpb",
+    "doc": "ResolveEndpointResult failure, NOT_FOUND + reason=INTERFACE_NOT_FOUND"
+  },
+  {
+    "name": "resolve_failure_version_mismatch",
+    "kind": "envelope",
+    "file": "resolve_failure_version_mismatch.binpb",
+    "doc": "ResolveEndpointResult failure, FAILED_PRECONDITION + reason=VERSION_MISMATCH"
+  },
+  {
+    "name": "resolve_failure_unknown_reason",
+    "kind": "envelope",
+    "file": "resolve_failure_unknown_reason.binpb",
+    "doc": "reason=99 (unknown) in error_detail, outer NOT_FOUND unchanged; old SDKs must keep the generic code"
+  },
+  {
+    "name": "failure_malformed_detail_internal",
+    "kind": "envelope",
+    "file": "failure_malformed_detail_internal.binpb",
+    "doc": "Response failure, INTERNAL, error_detail is unparseable garbage bytes (the result of nervud's normalisation)"
+  },
+  {
+    "name": "acquire_control_human_base",
+    "kind": "envelope",
+    "file": "acquire_control_human_base.binpb",
+    "doc": "AcquireControl: HUMAN requests base.main, wanting a 500ms lifetime"
+  },
+  {
+    "name": "acquire_control_ai_arm",
+    "kind": "envelope",
+    "file": "acquire_control_ai_arm.binpb",
+    "doc": "AcquireControl: AI requests arm.main, wanting a 1s lifetime"
+  },
+  {
+    "name": "acquire_control_result_success",
+    "kind": "envelope",
+    "file": "acquire_control_result_success.binpb",
+    "doc": "AcquireControlResult success: lease_id/motion_epoch/deadline/resource_handle"
+  },
+  {
+    "name": "acquire_control_result_held_by_human",
+    "kind": "envelope",
+    "file": "acquire_control_result_held_by_human.binpb",
+    "doc": "AcquireControlResult failure: FAILED_PRECONDITION + reason=HELD_BY_HUMAN (distinguishable cause)"
+  },
+  {
+    "name": "acquire_control_result_unknown_reason",
+    "kind": "envelope",
+    "file": "acquire_control_result_unknown_reason.binpb",
+    "doc": "AcquireControlResult failure: control-lease reason=99 (unknown), outer FAILED_PRECONDITION unchanged"
+  },
+  {
+    "name": "release_control",
+    "kind": "envelope",
+    "file": "release_control.binpb",
+    "doc": "ReleaseControl: release the lease this connection holds"
+  },
+  {
+    "name": "release_control_result_success",
+    "kind": "envelope",
+    "file": "release_control_result_success.binpb",
+    "doc": "ReleaseControlResult success, code=OK"
+  },
+  {
+    "name": "dispatch_control_execution_context",
+    "kind": "envelope",
+    "file": "dispatch_control_execution_context.binpb",
+    "doc": "Dispatch carrying the ControlLease execution context issued by the kernel"
+  },
+  {
+    "name": "interface_schema_bundle",
+    "kind": "interface_schema_bundle",
+    "file": "interface_schema_bundle.binpb",
+    "doc": "The InterfaceSchemaBundle of a single OEM private interface (interface_id/version/schema_hash/fds)"
+  },
+  {
+    "name": "interface_schema_bundle_set",
+    "kind": "interface_schema_bundle_set",
+    "file": "interface_schema_bundle_set.binpb",
+    "doc": "The multi-interface bundle set one .nspkg carries"
+  },
+  {
+    "name": "transfer_handle_peer",
+    "kind": "transfer_handle",
+    "file": "transfer_handle_peer.binpb",
+    "doc": "A single-use PEER handle for a bidirectional Transfer"
+  },
+  {
+    "name": "attach_transfer_result_success",
+    "kind": "attach_transfer_result",
+    "file": "attach_transfer_result_success.binpb",
+    "doc": "Transfer attached successfully, returning the tightened packet size and rate"
+  }
+]

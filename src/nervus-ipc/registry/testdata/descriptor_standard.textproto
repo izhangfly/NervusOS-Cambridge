@@ -1,0 +1,76 @@
+# Sample standard Provider Descriptor (built into the platform image, A4 §2)
+#
+# The platform image distributes this declaration with the standard Provider, and the interface→permission/risk/resource data fed to nervud
+# comes from here, not from a hard-coded Go constant table in endpoint.DefaultInterfaceCatalog().
+# Standard interfaces' required_permission points at perm.*. A platform-signed Provider may declare these platform permissions in the same
+# Descriptor; nervud must first verify the definer has Platform trust /
+# an allowed signer role before putting the definitions into the global permission catalog.
+#
+# The text format corresponds to nervus.ipc.v1.ProviderDescriptor. schema_hash uses a 32-byte placeholder here;
+# the real value is computed by A5's descriptor bundle and aligned with RegisterEndpoint / RobotCatalog.
+
+package_id: "nervus.platform.motion"
+
+interfaces {
+  interface_id: "nervus.interface.motion.base"
+  interface_versions {
+    major: 1
+    schema_hash: "0123456789abcdef0123456789abcdef"
+  }
+  required_permission: "perm.motion.control"
+  resource_risk_floor: RISK_CLASS_PHYSICAL_CONTROL
+  compatible_resource_types: "nervus.resource.motion.base"
+  default_resource_type: "nervus.resource.motion.base"
+  default_resource_role: "base.main"
+}
+
+interfaces {
+  interface_id: "nervus.interface.manipulator.arm"
+  interface_versions {
+    major: 1
+    schema_hash: "abcdef0123456789abcdef0123456789"
+  }
+  required_permission: "perm.manipulator.control"
+  resource_risk_floor: RISK_CLASS_PHYSICAL_CONTROL
+  compatible_resource_types: "nervus.resource.manipulator.arm"
+  default_resource_type: "nervus.resource.manipulator.arm"
+  default_resource_role: "arm.main"
+}
+
+resources {
+  stable_role: "base.main"
+  resource_type: "nervus.resource.motion.base"
+  access_mode: RESOURCE_ACCESS_MODE_EXCLUSIVE_CONTROL
+  risk_class: RISK_CLASS_PHYSICAL_CONTROL
+}
+
+resources {
+  stable_role: "arm.main"
+  resource_type: "nervus.resource.manipulator.arm"
+  access_mode: RESOURCE_ACCESS_MODE_EXCLUSIVE_CONTROL
+  risk_class: RISK_CLASS_PHYSICAL_CONTROL
+}
+
+permissions {
+  id: "perm.motion.control"
+  grant_mode: GRANT_MODE_USER_CONSENT
+  risk_class: RISK_CLASS_PHYSICAL_CONTROL
+  minimum_trust: PERMISSION_TRUST_FLOOR_ORDINARY
+  group: "motion"
+  display_name { en: "Motion control" }
+  description {
+    en: "Allows controlling robot base motion."
+  }
+}
+
+permissions {
+  id: "perm.manipulator.control"
+  grant_mode: GRANT_MODE_USER_CONSENT
+  risk_class: RISK_CLASS_PHYSICAL_CONTROL
+  minimum_trust: PERMISSION_TRUST_FLOOR_ORDINARY
+  group: "motion"
+  display_name { en: "Manipulator control" }
+  description {
+    en: "Allows controlling the robot manipulator."
+  }
+}

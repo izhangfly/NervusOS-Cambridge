@@ -1,0 +1,1178 @@
+// Nervus IPC v1: the control-plane Envelope
+//
+// The transport combination is fixed (§10.1, §10.3):
+//
+//	AF_UNIX / SOCK_STREAM
+//	    + uint32 big-endian length prefix (N excludes the prefix itself; 0 and >128KiB are both protocol errors)
+//	    + Protobuf Envelope
+//	    + Nervus RPC / Event / Subscription semantics
+//
+// The Envelope's responsibilities (§10.4): establishing connections, discovering endpoints, making calls, returning results,
+// cancelling, subscribing, pushing events, keeping connections alive. It does **not** carry arbitrary shell commands, does **not** allow uploading
+// code, and does **not** try to replicate all of HTTP/gRPC. Before adding a new body, ask:
+// is it one of these eight things? If not, it should be a method on some Interface.
+//
+// Things that don't go in this file:
+//   - the Transfer data plane (BeginTransfer/CommitTransfer, §10.9): those are methods on a system
+//     Interface, using Request/Response, taking no Envelope body number;
+//   - Operation queries (GetOperation/CancelOperation, §10.9): likewise, and [v2+];
+//   - internal_connection_id (§10.2): it never leaves nervud and never goes on the wire.
+//
+// Field number discipline (§10.12): this file's body numbers are **never reused** once published. The numbers §10.4 gives
+// (10/11, 20-25, 30-32, 40-43, 50/51, 60/61) are the initial allocation; this file extended into the gaps of those groups with
+// 26/27, 44/45, 52, without changing any allocated number.
+
+syntax = "proto3";
+
+package nervus.ipc.v1;
+
+import "nervus/ipc/v1/status.proto";
+
+option go_package = "github.com/nervus-os/nervus-ipc/protocol/ipcv1;ipcv1";
+
+// Hyphens are illegal in Java package names; see status.proto for why.
+option java_package = "io.github.nervusos.ipc.v1";
+option java_multiple_files = true;
+
+// This file **must** specify it explicitly: the default outer class name would be derived from envelope.proto as Envelope,
+// and this file happens to contain a message called Envelope; without renaming that's a compile-time conflict.
+option java_outer_classname = "EnvelopeProto";
+
+// =============================================================================
+// Envelope
+// =============================================================================
+
+// Envelope is the only top-level message on the control plane, exactly one Envelope per Frame.
+//
+// Receiving discipline (§10.7): nervud first parses this small outer structure and completes the identity, endpoint, method,
+// length and permission checks, and **only after that** parses the method payload with generated code. The other order would let
+// unauthorised input drive business parsers directly, an entry point for CPU/memory amplification attacks.
+message Envelope {
+  // The protocol version the sender is using.
+  //
+  // **Only meaningful in Hello / HelloAck.** After the handshake the version is decided by the connection state,
+  // and receivers ignore these two fields in later Envelopes: the protocol version is a connection property and isn't
+  // renegotiated per frame. proto3 doesn't send zero values, so these two fields take no bytes when left empty in non-handshake frames.
+  uint32 protocol_major = 1;
+  uint32 protocol_minor = 2;
+
+  // An unset body (including unknown bodies from an unknown newer version) is always treated as a protocol violation:
+  // the connection is closed with no response. An empty Envelope has no legitimate use, and tolerating it would only leave a gap
+  // for "sending a pile of empty frames to burn the budget".
+  oneof body {
+    // --- Connection state machine (takes no business request_id, §10.4) ---
+    Hello hello = 10;
+    HelloAck hello_ack = 11;
+
+    // --- Endpoint discovery and registration ---
+    ResolveEndpoint resolve_endpoint = 20;
+    ResolveEndpointResult resolve_endpoint_result = 21;
+    RegisterEndpoint register_endpoint = 22;
+    RegisterEndpointResult register_endpoint_result = 23;
+    EndpointDied endpoint_died = 24;
+    EndpointRevoked endpoint_revoked = 25;
+    // 26/27 are this file's extension: graceful Service shutdown (SHUTTING_DOWN in NRCP §16.2).
+    // Without it, a Provider wanting to stop serving one endpoint could only drop the whole connection.
+    UnregisterEndpoint unregister_endpoint = 26;
+    UnregisterEndpointResult unregister_endpoint_result = 27;
+
+    // --- Calls ---
+    Request request = 30;
+    Response response = 31;
+    // [KERNEL: NOT IMPLEMENTED] nervud closes the connection on receipt and audits it as UnsupportedBody.
+    // SDKs must not send it. For implementation status see the "Implementation status" table in the README.
+    Cancel cancel = 32;
+
+    // --- Subscriptions and events ---
+    // 40/42 are subscriber → nervud; 41/43/44/45 are nervud → subscriber.
+    // The **source** of events isn't in this group; see PublishEvent(53).
+    Subscribe subscribe = 40;
+    SubscribeResult subscribe_result = 41;
+    Unsubscribe unsubscribe = 42;
+    Event event = 43;
+    // 44/45 are this file's extensions; see each message's notes for why.
+    UnsubscribeResult unsubscribe_result = 44;
+    SubscriptionClosed subscription_closed = 45;
+
+    // --- Forwarding to external Services (only valid on nervud ↔ Service connections) ---
+    Dispatch dispatch = 50;
+    DispatchResult dispatch_result = 51;
+    // 52 is this file's extension: without it, a cancelled call would leave the Service computing until its own timeout.
+    // [KERNEL: NOT IMPLEMENTED] nervud doesn't send CancelDispatch yet (the upstream
+    // Cancel(32) isn't implemented, so there's no trigger). ServiceHosts may ignore it for now.
+    CancelDispatch cancel_dispatch = 52;
+    // 53 is this file's extension: the **source** half of the subscription chain.
+    //
+    // The six bodies 40-45 are all "subscriber ↔ nervud", and none lets a Provider push out events:
+    // the subscription_id an Event carries is a handle scoped to the subscriber's connection, which the Provider neither knows
+    // nor should know (it belongs to someone else's connection). Without 53, subscriptions could be set up but would never receive anything.
+    //
+    // Symmetric with Dispatch(50): calls have nervud → Service forwarding, and subscriptions have Service →
+    // nervud reporting. Both are **mechanisms**, and after adding this once, no event source (camera, microphone,
+    // lidar, Safety) needs IPC changes again.
+    PublishEvent publish_event = 53;
+
+    // A Provider registers ownership of an event instance (Service → nervud).
+    //
+    // Together with PublishEvent(53) it's the provider side of the subscription mechanism: that one says "what happened",
+    // this one says "who's entitled to see it". After adding it once, no "one endpoint, many instances"
+    // capability needs IPC changes again.
+    BindEventScope bind_event_scope = 54;
+
+    // --- Keep-alive ---
+    Ping ping = 60;
+    Pong pong = 61;
+
+    // --- Control leases (ControlLease, §10.2) ---
+    // 70-73 are this file's extension. The original message set (the body numbers §10.4 gives) had no lease channel,
+    // so Apps couldn't get a motion lease and the dog/arm couldn't move (the A5 background). ControlLeases have been Resource-scoped in protocol semantics
+    // since day one (§10.2), so Acquire carries a ResourceSelector directly.
+    // These four branches only freeze the wire; how the conn state machine handles them is nervud B1b's job.
+    //
+    // nervud's conn state machine has wired these four branches (internal/ipc/conn.go handleAcquireControl
+    // / handleReleaseControl), and internal/control's lease logic on the kernel side is fully implemented too.
+    // Acquire / Release are sent by the caller, and the two Results are sent back by nervud (SDKs must not send Results).
+    AcquireControl acquire_control = 70;
+    AcquireControlResult acquire_control_result = 71;
+    ReleaseControl release_control = 72;
+    ReleaseControlResult release_control_result = 73;
+
+    // --- Component launch ---
+    // 80/81 are this file's extension. The original message set had no channel to "launch a component", and the only path in the kernel
+    // that could start a component was endpoint.Resolve starting an on-demand provider; in other words
+    // "launch an App" could only be done by sending a Resolve for some interface it exports. That had three downsides:
+    //   1. every launchable App was forced to export a placeholder interface it didn't need;
+    //   2. "resolve an interface" and "launch an app" shared one message, and audit couldn't tell them apart;
+    //   3. the Launcher had no way to launch an App with no interface at all.
+    // So it's a message of its own. Permission is decided by nervud against perm.system.launch.
+    LaunchComponent launch_component = 80;
+    LaunchComponentResult launch_component_result = 81;
+  }
+}
+
+// =============================================================================
+// Connection setup (§10.2)
+// =============================================================================
+
+// Hello is the first Envelope a client sends on the connection. Before it, nervud has already got
+// PID/UID/GID through SO_PEERCRED and mapped them to a Package, so there's **no**
+// identity field in Hello that can be believed.
+//
+// No other body is accepted before the handshake; the handshake has its own short deadline and closes on timeout
+// (otherwise connecting and saying nothing would occupy a connection slot for free).
+message Hello {
+  // The closed range of protocol major versions the client supports. nervud picks the highest in the intersection;
+  // with no intersection it replies with a Failure HelloAck and closes, rather than "downgrading to some version I'm not sure of either".
+  uint32 min_protocol_major = 1;
+  uint32 max_protocol_major = 2;
+
+  // The highest minor for max_protocol_major. Minors only ever increase,
+  // and the minor the server chooses never exceeds this value.
+  uint32 max_protocol_minor = 3;
+
+  // SDK identification, only for diagnostics and compatibility statistics, **never used in any decision**.
+  // Permissions come from Package signatures/install origin/manifest, not from "which SDK is installed" (§10.10).
+  string sdk_name = 4;
+  string sdk_version = 5;
+
+  // The Component ID the client **claims**, a lead to be verified rather than an identity statement (§10.2).
+  //
+  // nervud checks it against the PID, systemd unit/cgroup and launch record; a mismatch fails the handshake.
+  // Why the client still provides it: several Components of the same Package share a UID, and having the claimed value first
+  // narrows the check from "walking every Component of the Package" down to one comparison.
+  string declared_component_id = 6;
+}
+
+// HelloAck is the handshake's only result. On failure nervud sends a HelloAck with a Failure first
+// and **then** closes the connection: a bare close would leave the client unable to tell "versions couldn't be agreed" from "the socket broke",
+// and the right reactions are completely different (the former shouldn't reconnect, the latter should).
+message HelloAck {
+  oneof outcome {
+    HelloAckSuccess success = 1;
+    Failure failure = 2;
+  }
+}
+
+message HelloAckSuccess {
+  // The protocol version the server chose, in effect immediately.
+  uint32 protocol_major = 1;
+  uint32 protocol_minor = 2;
+
+  // The identity nervud confirmed after checking, echoed back to the client.
+  //
+  // This **doesn't** grant an identity (that was settled at SO_PEERCRED); it only lets the SDK
+  // spot configuration mismatches early ("I thought I was com.foo.a, the kernel says I'm com.foo.b"),
+  // which would otherwise only surface at the first permission refusal.
+  string package_id = 3;
+  string component_id = 4;
+
+  // The budgets in effect for this connection. They let the SDK constrain itself, instead of discovering limits by "being killed".
+  ConnectionLimits limits = 5;
+}
+
+// ConnectionLimits are the wire projection of §10.11's admission limits.
+//
+// The server does **not** relax enforcement because it has announced them: these values are guides for SDK self-discipline, not promises.
+// Actual values may differ by caller profile, but never exceed the 128 KiB Frame hard limit or
+// the process-wide global budget; there's no "unlimited" tier.
+message ConnectionLimits {
+  // The absolute Frame limit, always 131072 (128 KiB). It's sent as a field so the SDK
+  // has a single source of truth, rather than hard-coding 128 KiB in three places in two languages.
+  uint32 max_frame_bytes = 1;
+
+  // The default request/response quota of ordinary methods (§10.3: 16 KiB).
+  // Per-method quotas are declared in the Registry, and the final value is the minimum of "method quota, profile quota, hard limit".
+  uint32 default_method_payload_bytes = 2;
+
+  // The maximum in-flight Requests per connection (default 64).
+  uint32 max_inflight_requests = 3;
+
+  // The total in-flight payload bytes per connection (default 1 MiB).
+  // **Measured in bytes rather than count**: a queue counting only entries could be blown up by 64 requests of 128 KiB.
+  uint64 max_inflight_payload_bytes = 4;
+
+  // The total outbound queue bytes per connection (default 512 KiB). When exceeded and a response can't be queued safely,
+  // the slow consumer is closed.
+  uint64 max_outbound_queue_bytes = 5;
+
+  // The maximum concurrent subscriptions per connection.
+  uint32 max_subscriptions = 6;
+
+  // The default used when Request.timeout_ms is 0, and the ceiling the server allows.
+  // nervud tightens the caller's requested timeout to the method maximum, taking the smaller.
+  uint32 default_timeout_ms = 7;
+  uint32 max_timeout_ms = 8;
+
+  // How long without any Frame before the server considers the connection idle. The SDK uses it to decide its Ping period
+  // instead of guessing.
+  uint32 idle_timeout_ms = 9;
+}
+
+// =============================================================================
+// Endpoint discovery and registration (§10.5)
+// =============================================================================
+
+// ResolveEndpoint asks to resolve a logical Interface into a routing handle on this connection.
+//
+// endpoint_id is an opaque, **connection-scoped** handle, not an fd, and doesn't get its safety from "others can't guess
+// the number": the lookup key is really (connection, endpoint_id), and the same number on another connection
+// isn't the same binding.
+message ResolveEndpoint {
+  uint64 request_id = 1;
+
+  // The logical interface ID, such as "nervus.interface.motion.base".
+  string interface_id = 2;
+
+  // The closed range of acceptable interface major versions. No intersection → FAILED_PRECONDITION +
+  // ResolveEndpointErrorDetail{VERSION_MISMATCH}.
+  uint32 min_interface_major = 3;
+  uint32 max_interface_major = 4;
+
+  // The Resource selector.
+  //
+  // Interfaces that bind resources **must give it explicitly**. v1 used to allow leaving it empty, with nervud implicitly taking
+  // {nervus.resource.motion.base, main}; that default was removed in v2: it made "I didn't write a
+  // selector" and "I want the base" the same thing, so a call that forgot to fill it in would silently get the base.
+  //
+  // Interfaces that bind no resource can leave it empty (when the interface's compatible_resource_types is empty).
+  //
+  // OEM Package/Component/Provider names **can't** be submitted: that would let Apps bypass standard
+  // Resource selection. To choose devices by meaning, use labels.
+  ResourceSelector selector = 5;
+
+  // Only for non-generic Services or OEM private dependencies the manifest has bound explicitly.
+  // It isn't a back door for "choosing an implementation": standard interfaces use the selector, and a non-empty value here not declared
+  // in the manifest is PERMISSION_DENIED.
+  string explicit_component = 6;
+}
+
+// ResourceSelectionPolicy decides "what to do when several resources match".
+//
+// **Unspecified fails closed as REQUIRE_UNIQUE.** For a robot, "I asked for a camera and
+// the system gave me any old one" is far more dangerous than a clear error, especially when the candidates mix front and rear cameras,
+// or left and right arms. If you want the system to choose for you, say so explicitly.
+enum ResourceSelectionPolicy {
+  // Fail closed: treated as REQUIRE_UNIQUE.
+  RESOURCE_SELECTION_POLICY_UNSPECIFIED = 0;
+
+  // Exactly one must match, otherwise FAILED_PRECONDITION. The default meaning.
+  RESOURCE_SELECTION_POLICY_REQUIRE_UNIQUE = 1;
+
+  // Several candidates are allowed, and the system picks one by platform policy (the current implementation takes the lexicographically smallest stable_role,
+  // so the choice for the same Catalog is deterministic and reproducible).
+  RESOURCE_SELECTION_POLICY_SYSTEM_PREFERRED = 2;
+}
+
+// ResourceSelector uses a structured shape rather than a dotted string (NRCP §8.3).
+//
+// labels let callers choose devices by **meaning** rather than by name: "give me a front camera" doesn't need
+// to know whether it's called cam.front or camera0 on this board; that's board configuration, which Apps shouldn't depend on.
+message ResourceSelector {
+  // The resource type, such as "nervus.resource.motion.base".
+  string type = 1;
+  // The stable role, such as "main" / "front". When given it's an exact match, and labels still filter on top.
+  string role = 2;
+
+  // Label filter: every key and value must match (AND semantics). An empty map doesn't filter.
+  //
+  // Key namespaces follow the same rules as interfaces/permissions: platform standard labels use the nervus.* prefix (such as
+  // nervus.camera.facing); OEM private labels must be in the definer's package namespace
+  // (com.acme.cam.night_capable). nervud checks declarers by the same rules.
+  map<string, string> labels = 3;
+
+  // The selection policy with several candidates. Unspecified = REQUIRE_UNIQUE (see the enum notes).
+  ResourceSelectionPolicy policy = 4;
+}
+
+message ResolveEndpointResult {
+  uint64 request_id = 1;
+  oneof outcome {
+    ResolveEndpointSuccess success = 2;
+    // The error_detail type is fixed as ResolveEndpointErrorDetail (see status.proto).
+    Failure failure = 3;
+  }
+}
+
+message ResolveEndpointSuccess {
+  // The routing handle on this connection. All are invalid after a disconnect, and a reconnect must Resolve again.
+  uint64 endpoint_id = 1;
+
+  // The interface version chosen atomically.
+  uint32 interface_major = 2;
+  uint32 interface_minor = 3;
+
+  // The deterministic identifier of the chosen interface schema. The SDK uses it to check its local generated code matches the server;
+  // a mismatch means the two sides' schemas drifted, an error that must surface before the first call
+  // rather than when some field gets silently dropped.
+  bytes interface_schema_hash = 4;
+
+  // The resolved public Resource handle, returned when the interface needs one.
+  // It does **not** include the Provider PID, driver name, device node, serial number or internal paths (§7 v2 directory projection).
+  string resource_handle = 5;
+
+  // [v2+] The caller-projection directory revision at resolution time.
+  //
+  // It only records a snapshot and does **not** form the binding's lifecycle: unrelated directory changes don't automatically
+  // revoke existing bindings; a binding lives or dies by its own generation, Service/Resource state,
+  // EndpointDied/EndpointRevoked and the re-check on every call (§10.5).
+  uint64 catalog_revision = 6;
+}
+
+// RegisterEndpoint is a Service **reporting in** to nervud, not creating permissions by itself (§10.5).
+// Only endpoints the manifest declared, and matching the signature/permission profile, can be registered.
+message RegisterEndpoint {
+  uint64 request_id = 1;
+
+  string interface_id = 2;
+  uint32 interface_major = 3;
+  uint32 interface_minor = 4;
+
+  // The schema hash this Service implements. A mismatch with the value registered in the Registry is refused,
+  // so a Provider compiled against an old schema can't quietly serve a new interface.
+  bytes interface_schema_hash = 5;
+
+  // The Resource handle this endpoint serves. Left empty for interfaces that bind no physical resource;
+  // filling it in with something not in the Resource Registry is refused with INVALID_ARGUMENT.
+  string resource_handle = 6;
+}
+
+message RegisterEndpointResult {
+  uint64 request_id = 1;
+  oneof outcome {
+    RegisterEndpointSuccess success = 2;
+    Failure failure = 3;
+  }
+}
+
+message RegisterEndpointSuccess {
+  // The server-side handle. Dispatch uses it to say which registered endpoint is being called,
+  // and Unregister uses it to say which one to withdraw.
+  //
+  // It's in **a different namespace** from the caller's endpoint_id: the same number on an App connection and
+  // a Provider connection means nothing in common.
+  uint64 endpoint_id = 1;
+}
+
+// UnregisterEndpoint lets a Service gracefully withdraw an endpoint (this file's extension, number 26).
+//
+// Why it's needed: NRCP §16.2 defines the Provider's SHUTTING_DOWN state, while §10.4's
+// original message set only had Register and no Unregister; a Service wanting to stop serving could only drop the whole
+// connection, so "gracefully taking down one interface" and "the process crashed" were indistinguishable on the wire, and nervud
+// couldn't treat the former as an expected event (for example draining in-flight Dispatches before withdrawing bindings).
+//
+// After withdrawing, nervud sends EndpointDied{SERVICE_SHUTTING_DOWN} to callers holding that binding.
+message UnregisterEndpoint {
+  uint64 request_id = 1;
+  uint64 endpoint_id = 2;
+
+  // Whether to wait for in-flight Dispatches to finish before withdrawing. false = withdraw immediately, ending in-flight calls with UNAVAILABLE.
+  bool drain = 3;
+}
+
+message UnregisterEndpointResult {
+  uint64 request_id = 1;
+  oneof outcome {
+    UnregisterEndpointSuccess success = 2;
+    Failure failure = 3;
+  }
+}
+
+message UnregisterEndpointSuccess {}
+
+// EndpointDied tells the caller the binding lapsed for **a service-side reason**.
+//
+// The difference from EndpointRevoked isn't rhetorical: Died means "it may work again later", so the SDK should
+// Resolve again (perhaps with backoff); Revoked means "the permission is gone", so resolving again would only
+// be refused again. Using one message for both would leave the SDK retrying blindly.
+message EndpointDied {
+  uint64 endpoint_id = 1;
+  EndpointDiedReason reason = 2;
+}
+
+enum EndpointDiedReason {
+  ENDPOINT_DIED_REASON_UNSPECIFIED = 0;
+  // The Service process exited or the connection dropped.
+  ENDPOINT_DIED_REASON_SERVICE_GONE = 1;
+  // The Service is shutting down gracefully (UnregisterEndpoint / SHUTTING_DOWN).
+  ENDPOINT_DIED_REASON_SERVICE_SHUTTING_DOWN = 2;
+  // The bound Resource entered fault/offline (NRCP §16.2).
+  ENDPOINT_DIED_REASON_RESOURCE_FAULT = 3;
+  // The Service restarted, and the binding generation is no longer valid.
+  ENDPOINT_DIED_REASON_SERVICE_RESTARTED = 4;
+}
+
+// EndpointRevoked tells the caller the binding was revoked for **a caller-side reason**.
+// It supports dynamic revocation, without waiting for the next call to be refused or dropping the whole connection.
+message EndpointRevoked {
+  uint64 endpoint_id = 1;
+  EndpointRevokedReason reason = 2;
+}
+
+enum EndpointRevokedReason {
+  ENDPOINT_REVOKED_REASON_UNSPECIFIED = 0;
+  // The user or Policy revoked the required Permission.
+  ENDPOINT_REVOKED_REASON_PERMISSION_REVOKED = 1;
+  // The caller's Package was uninstalled or disabled.
+  ENDPOINT_REVOKED_REASON_PACKAGE_DISABLED = 2;
+  // Policy suspended this UID's access for persistent violations (§10.11).
+  ENDPOINT_REVOKED_REASON_POLICY_SUSPENDED = 3;
+}
+
+// =============================================================================
+// Calls (§10.6, §10.7)
+// =============================================================================
+
+// Request is one RPC initiated by the caller.
+//
+// Each Request ends with **at most one** final Response (§10.7). This invariant is
+// guaranteed jointly by the route table, timeouts, cancellation and the rules for dropping late DispatchResults; it doesn't hold naturally.
+message Request {
+  // An atomically increasing value the caller's SDK generates within the current connection (§10.6).
+  //
+  // **0 is permanently reserved**, the first request is 1, and it never wraps: on reaching the limit, close and rebuild the connection.
+  // The matching key is (the internal connection object, request_id), so the same number on different connections
+  // never clashes, even when two processes belong to the same Package and share a UID.
+  //
+  // A duplicate request_id still being processed on the same connection is a protocol violation.
+  uint64 request_id = 1;
+
+  // Obtained from ResolveEndpoint, scoped to this connection.
+  uint64 endpoint_id = 2;
+
+  // The stable numeric method ID in the interface schema. Stable once published, and kept unused after deletion.
+  uint32 method_id = 3;
+
+  // The timeout the caller wants (milliseconds).
+  //
+  // **0 means use the method default, not unlimited.** nervud tightens it to the method maximum and on receipt
+  // immediately converts it into a local **monotonic clock** deadline; using the wall clock would let one NTP adjustment push every
+  // in-flight call to time out immediately or never.
+  uint32 timeout_ms = 4;
+
+  // The serialised bytes of the method-specific Protobuf request. The type is decided uniquely by
+  // endpoint_id + the selected interface_version + method_id.
+  bytes payload = 5;
+}
+
+message Response {
+  // Corresponds exactly to Request.request_id.
+  uint64 request_id = 1;
+  oneof outcome {
+    Success success = 2;
+    Failure failure = 3;
+  }
+}
+
+// Cancel is **best-effort** cancellation (§10.7).
+//
+// There's deliberately no CancelResult: the cancelled request's final Response is the result, and adding another result would
+// create the ambiguity of "one Request, two final responses". A successful cancel shows up as that request_id's
+// Response carrying CANCELLED; if the work already finished, the original result comes back as normal.
+//
+// It can stop work not yet committed, but **can't** pretend that motor actions, file commits or external
+// side effects that already happened were rolled back automatically. SDKs must not take it to mean side effects didn't happen.
+message Cancel {
+  uint64 request_id = 1;
+}
+
+// =============================================================================
+// Subscriptions and events (§10.8)
+// =============================================================================
+
+// Subscribe subscribes to one kind of event on an endpoint.
+//
+// Subscriptions are **push**, not polling: after a successful subscription the server sends Events proactively, and the client stops querying.
+message Subscribe {
+  uint64 request_id = 1;
+  uint64 endpoint_id = 2;
+
+  // The stable numeric event ID in the interface schema. Subscriptions are per (endpoint, event_id) rather than to
+  // a whole endpoint: budgets, backpressure policy and permissions are all declared per event type, and coarse subscriptions would make
+  // a lossy telemetry stream and a reliable safety event stream share the same rules.
+  uint32 event_id = 3;
+
+  // The serialised bytes of subscription parameters (filters, sample rate and so on); may be empty.
+  // The type is decided by endpoint + event_id.
+  bytes payload = 4;
+
+  // Instance scope: when an endpoint has several independently observable instances, says which one to watch.
+  //
+  // # The problem it solves
+  //
+  // Subscriptions are set up per (endpoint, event_id). But one camera can have several streams open at once,
+  // and one built-in endpoint runs every operation on the machine; not separating instances means every subscriber
+  // gets every instance's events. That isn't just wasted bandwidth, it's **an information leak**: other people's progress, detailed failure
+  // causes and resource handles all get delivered.
+  //
+  // # Why a uint64 on the Envelope rather than a field in the payload
+  //
+  // nervud must **understand it itself** to decide ownership. Putting it in the payload would require the kernel to decode bytes
+  // by the Provider's schema, which is exactly the "decoding by a sender-reported type" status.proto keeps
+  // guarding against.
+  //
+  // Real-world instance identifiers are all numeric handles (stream_id, operation_id), so a uint64 is enough.
+  //
+  // # Who decides
+  //
+  // **Ownership is registered in advance by the Provider**; see BindEventScope(54): when creating an instance, the Provider
+  // tells nervud "this scope belongs to the caller of which call". At subscription time nervud checks its own
+  // table and decides synchronously, without asking the Provider again, which would leave Subscribe stuck in the read loop waiting for a round trip.
+  //
+  // When the event declares EventMeta.scoped this field is required and non-zero; otherwise it must be 0.
+  uint64 scope = 5;
+}
+
+message SubscribeResult {
+  uint64 request_id = 1;
+  oneof outcome {
+    SubscribeSuccess success = 2;
+    Failure failure = 3;
+  }
+}
+
+message SubscribeSuccess {
+  // The subscription handle scoped to this connection, generated by nervud.
+  //
+  // **Never reused within a connection**: reuse would let in-flight Events arriving after unsubscribing be mistaken for the new subscription's
+  // data, and that confusion is almost undetectable in telemetry/state streams.
+  uint64 subscription_id = 1;
+
+  // This subscription's delivery class, which decides how the client should interpret sequence gaps. See DeliveryClass.
+  DeliveryClass delivery_class = 2;
+}
+
+// DeliveryClass turns §10.8's backpressure table into an explicit declaration on the wire (this file's extension).
+//
+// Why it must be explicit: §10.8 allows merging State and dropping Telemetry the schema declares as such,
+// and both look like sequence gaps on the wire, but the client's right reactions are completely opposite.
+// Sending only the sequence without the class leaves the client unable to judge whether to "do nothing" or treat it as "data permanently lost".
+enum DeliveryClass {
+  DELIVERY_CLASS_UNSPECIFIED = 0;
+
+  // Must not be dropped silently: control results, Safety events, control commands.
+  // When it can't be delivered it must fail explicitly or disconnect the slow consumer, never skip quietly.
+  // In this class Event.dropped is always 0; non-zero means the server broke the rules.
+  DELIVERY_CLASS_RELIABLE = 1;
+
+  // Mergeable: only the latest state is kept. dropped>0 means intermediate states were skipped,
+  // but **this one is the latest value**, and the client needn't fetch anything.
+  DELIVERY_CLASS_STATE = 2;
+
+  // Droppable: only allowed when the schema explicitly declares it lossy.
+  // dropped>0 means data was **permanently lost**, and clients needing the complete sequence must compensate themselves.
+  DELIVERY_CLASS_LOSSY = 3;
+}
+
+// Unsubscribe cancels a subscription.
+message Unsubscribe {
+  uint64 request_id = 1;
+  uint64 subscription_id = 2;
+}
+
+// UnsubscribeResult is this file's extension (number 44).
+//
+// Why it's needed: in §10.4 Resolve/Register/Subscribe all come in pairs, and only Unsubscribe
+// was one-way. Without it there were three concrete consequences:
+//   1. the client couldn't tell "the unsubscribe took effect, and this one is in flight" from "nervud forgot to tear it down";
+//   2. §10.8 requires "control results must not be silently dropped", and a control message without a result itself
+//      violates that;
+//   3. §10.12 requires every pending call to complete with UNAVAILABLE on disconnect, and an Unsubscribe with no pending entry
+//      would become a special branch in the SDK, and special cases are where bugs live.
+//
+// After receiving this result, no more Events will arrive on that subscription_id.
+message UnsubscribeResult {
+  uint64 request_id = 1;
+  oneof outcome {
+    UnsubscribeSuccess success = 2;
+    Failure failure = 3;
+  }
+}
+
+message UnsubscribeSuccess {}
+
+// Event is a server push. It does **not** pose as a Response and takes no business request_id.
+message Event {
+  uint64 subscription_id = 1;
+
+  // A monotonically increasing sequence number within this subscription, starting at 1.
+  //
+  // A gap = some event wasn't delivered. The **meaning** of a gap is decided by delivery_class, and the
+  // **number** by dropped: only with both does the client know what happened.
+  uint64 sequence = 2;
+
+  // The endpoint the event came from. Redundant with subscription_id, but lets the client route without a lookup.
+  uint64 endpoint_id = 3;
+
+  // The stable numeric event ID in the schema.
+  uint32 event_id = 4;
+
+  // Event-specific Protobuf bytes.
+  bytes payload = 5;
+
+  // The number of events merged or dropped since the last **delivered** Event (this file's extension).
+  //
+  // The meaning varies with delivery_class:
+  //   RELIABLE → always 0; non-zero means the server broke its own declared class
+  //   STATE    → the number of intermediate states merged away; this one is the latest value, nothing to fetch
+  //   LOSSY    → the number permanently lost; clients needing the complete sequence compensate or alert based on it
+  //
+  // With it, clients no longer have to infer "does this gap matter" from sequence differences.
+  uint64 dropped = 6;
+
+  // The production time the Provider gave in PublishEvent, passed through unchanged. 0 means not provided.
+  //
+  // **It isn't the same as "the time received"**: the event goes through nervud's fan-out and the subscriber's outbound queue,
+  // and there may be a backpressure wait between the two. Consumers making timing judgements must use this value.
+  uint64 monotonic_timestamp_nanos = 7;
+}
+
+// SubscriptionClosed is this file's extension (number 45): the server ends a subscription unilaterally.
+//
+// Why it's needed: in the original message set a subscription could only be ended by the client's Unsubscribe. So
+//   - when an endpoint lapsed, the client could only infer "which subscriptions went with it" from EndpointDied,
+//     and that inference needed the client to maintain its own endpoint→subscriptions map;
+//   - wanting to cut off just one lossy subscription flooding the queue (rather than closing the whole connection per §10.8,
+//     killing innocent Safety subscriptions on the same connection with it) simply couldn't be expressed.
+//
+// After receiving it the subscription_id is invalid at once, and the client needn't send Unsubscribe.
+message SubscriptionClosed {
+  uint64 subscription_id = 1;
+  SubscriptionClosedReason reason = 2;
+}
+
+// PublishEvent is a Provider reporting one event to nervud (this file's extension, number 53).
+//
+// It **only appears on nervud ↔ Service connections**; subscribers neither send nor receive it; what they receive is
+// the Event(43) nervud fans out.
+//
+// # Why Providers can't send Events directly
+//
+// An Event carries a subscription_id, a handle scoped to **the subscriber's connection**. The Provider doesn't know
+// who the subscribers are, still less their handles, and shouldn't: that belongs to other people's connections.
+// Letting the Provider fill in that field would let it specify "who this message is delivered to", while delivery decisions must stay in
+// nervud: subscribers' permissions may be revoked after they subscribe, and the Provider has no way of knowing.
+//
+// # What nervud does after receiving it
+//
+//  1. check that endpoint_id belongs to this connection and is still alive
+//  2. look up the authoritative EventMeta by event_id; undeclared event_ids are always refused, since a Provider
+//     can't push an event that never appeared in the contract
+//  3. tighten by max_payload_bytes and max_events_per_second
+//  4. fan out to each subscriber, translating into its own subscription_id and sequence,
+//     and handle backpressure by delivery_class (RELIABLE disconnects slow consumers / STATE merges / LOSSY drops)
+//
+// **There's no PublishEventResult**: reporting is one-way. A result would turn the Provider's
+// event loop into request-response, and one slow subscriber could hold up the whole Provider; the right place for backpressure
+// is between nervud and the subscriber, not between nervud and the Provider.
+message PublishEvent {
+  // The Provider-side endpoint handle, i.e. RegisterEndpointSuccess.endpoint_id.
+  //
+  // The Provider's own handle rather than the subscriber's: nervud uses it to confirm "this connection really owns
+  // this endpoint", so a Provider can't push events for another endpoint.
+  uint64 endpoint_id = 1;
+
+  // The stable numeric event ID in the schema. Must have been declared in the interface's EventMeta.
+  uint32 event_id = 2;
+
+  // Event-specific Protobuf bytes; may be empty (a pure signal event).
+  bytes payload = 3;
+
+  // The Provider-side monotonic timestamp (nanoseconds); may be 0 if not provided.
+  //
+  // nervud makes no decision with it; it's only passed through with the event to subscribers, so consumers can work out
+  // "when this data was produced" rather than "when it was received".
+  uint64 monotonic_timestamp_nanos = 4;
+}
+
+// BindEventScope is a Provider registering ownership of an event instance (this file's extension, number 54).
+//
+// It **only appears on nervud ↔ Service connections**; subscribers neither send nor receive it.
+//
+// # The problem it solves
+//
+// One camera can have several streams open at once. Only the Provider knows "did you open this stream",
+// while the subscription decision happens in nervud; there's a missing bridge between the two.
+//
+// # Why registration in advance rather than asking the Provider at subscription time
+//
+// Asking costs a round trip each time, and Subscribe runs in the connection's read loop: while waiting, the connection's
+// request responses, Pings and even other subscriptions can't be read, and one slow Provider can hold up the whole connection.
+//
+// Registering in advance moves that round trip to **the moment the instance is created**, where a call is already being made,
+// so one more sentence adds no wait at all. After that nervud checks its own table and decides synchronously, in microseconds.
+//
+// # Ownership is proved by origin_route_id, not self-reported
+//
+// The Provider doesn't say "this scope belongs to com.example", which would be a self-reported package name. What it says is
+// "it belongs to the caller of the call I'm handling right now", and nervud itself knows
+// who made that call. The same trick as BeginTransfer proving identity with origin_route_id.
+//
+// # No result
+//
+// For the same reason as PublishEvent: a result would add a round trip to the Provider's handling flow.
+// And it **needs no** result: this body and the DispatchResult that follows travel on the same ordered connection,
+// so by the time nervud reads the DispatchResult (and builds the caller's Response), the registration has certainly taken effect.
+// The moment the caller gets the stream_id, it can already subscribe.
+message BindEventScope {
+  // The Provider-side endpoint handle, i.e. RegisterEndpointSuccess.endpoint_id.
+  //
+  // The Provider's own handle rather than the subscriber's: nervud uses it to confirm "this connection really owns
+  // this endpoint", so a Provider can't register ownership for another endpoint.
+  uint64 endpoint_id = 1;
+  // The instance identifier, matching Subscribe.scope. 0 is illegal.
+  uint64 scope = 2;
+  // The Dispatch.route_id currently being handled. nervud works out the caller connection from it.
+  //
+  // Ignored when released = true: revoking needs no proof of ownership, since a Provider can only ever
+  // revoke scopes on its own endpoint.
+  uint64 origin_route_id = 3;
+
+  // true = revoke this registration (the instance was destroyed).
+  //
+  // **It must be revoked explicitly**: otherwise a Provider repeatedly opening and closing streams would make the ownership table grow
+  // without bound. Disconnects and endpoint withdrawal clean up as well, but that covers crashes, not normal closes.
+  bool released = 4;
+}
+
+enum SubscriptionClosedReason {
+  SUBSCRIPTION_CLOSED_REASON_UNSPECIFIED = 0;
+  // The owning endpoint lapsed (see the EndpointDied sent at the same time for details).
+  SUBSCRIPTION_CLOSED_REASON_ENDPOINT_DIED = 1;
+  // The owning endpoint was revoked (see the EndpointRevoked sent at the same time for details).
+  SUBSCRIPTION_CLOSED_REASON_ENDPOINT_REVOKED = 2;
+  // The client consumed too slowly, and nervud chose to end only this subscription rather than close the whole connection.
+  SUBSCRIPTION_CLOSED_REASON_BACKPRESSURE = 3;
+  // nervud is shutting down.
+  SUBSCRIPTION_CLOSED_REASON_SERVER_SHUTDOWN = 4;
+}
+
+// =============================================================================
+// Forwarding to external Services (§10.7)
+// =============================================================================
+
+// Dispatch is a call nervud forwards to the chosen Service.
+//
+// It **only appears on nervud ↔ Service connections**; ordinary callers neither send nor receive it.
+// A Service never holds the client socket, and has no right to decide who the result is written to; that's exactly why the client's
+// request_id can't be reused directly for global routing.
+message Dispatch {
+  // The routing ID nervud generates, valid only between nervud and **the chosen Service connection**,
+  // invisible to callers and other Services.
+  //
+  // nervud maps the route_id to (target Service connection, endpoint binding generation,
+  // source connection, source request_id, deadline, method schema). The generation and the like
+  // **don't go on the wire**: a Service can't forge what it doesn't know.
+  uint64 route_id = 1;
+
+  // The Service-side endpoint handle, i.e. RegisterEndpointSuccess.endpoint_id.
+  uint64 endpoint_id = 2;
+
+  uint32 method_id = 3;
+
+  // The **remaining** time budget of this call (milliseconds), not the original timeout.
+  //
+  // Queuing and forwarding have already used up some of it, and passing the original value down would make the Service think it has more
+  // time, producing the tear of "the Service is still computing while nervud has already answered DEADLINE_EXCEEDED".
+  // Services should set their internal deadlines from it.
+  uint32 remaining_ms = 4;
+
+  bytes payload = 5;
+
+  // The trusted caller context attached by nervud. Services can read it, but can't use it to bypass the nervud Policy already
+  // in effect, still less invent identities or permission decisions (§10.2).
+  CallerContext caller = 6;
+
+  // The execution authorisation snapshot nervud attaches after the method gate. From protocol minor 1 every
+  // Dispatch must carry it; ordinary calls only have the deadline/resource projection, while calls needing a control lease
+  // also carry the full lease/epoch/sequence. Providers must not make it up from the payload.
+  ExecutionContext execution_context = 7;
+}
+
+// ExecutionContext is an immutable execution snapshot of one Dispatch, generated by nervud.
+//
+// It solves "the command goes stale in the Provider's queue after the kernel checks pass": a Provider
+// can do one more fail-closed check against the resource generation, motion epoch, command sequence
+// and absolute deadline right before touching the device. It isn't a transferable capability; in particular
+// lease_id is only used to associate this execution with the lease on the caller's connection.
+message ExecutionContext {
+  // Always non-zero for methods needing a ControlLease; 0 for ordinary methods.
+  uint64 lease_id = 1;
+
+  // Projected from the valid lease. Must be UNSPECIFIED without a lease. AcquireControl's class today
+  // is still a value the caller chooses within Policy constraints, not an independent "human present" proof.
+  ControllerClass controller_class = 2;
+
+  // The revocation generation when the lease was issued. Always non-zero for methods needing a ControlLease; 0 for ordinary methods.
+  uint64 motion_epoch = 3;
+
+  // The absolute deadline of this execution, in the Linux CLOCK_MONOTONIC nanosecond clock domain.
+  // With a lease it's the earlier of the Request deadline and the lease deadline; always greater than 0.
+  int64 deadline_nanos = 4;
+
+  // The command sequence number nervud issues. Always non-zero for methods needing a ControlLease, and monotonically increasing for the same
+  // (resource_handle, resource_generation); 0 for ordinary methods.
+  uint64 command_sequence = 5;
+
+  // The public Resource and catalog generation this route is bound to. Interfaces without a Resource may have
+  // both empty/0; setting only one of them is forbidden.
+  string resource_handle = 6;
+  uint64 resource_generation = 7;
+
+  // The Operation this Dispatch corresponds to. Always non-zero when the method declares returns_operation,
+  // 0 otherwise.
+  //
+  // # Why Providers must take it from here rather than generating it themselves
+  //
+  // operation_id is allocated by nervud, and nervud owns the state machine. If a Provider made one up,
+  // the handle the caller got wouldn't match nervud's records, and neither side would report an error; cancels would just never
+  // reach anything, and progress would never arrive.
+  //
+  // **The Operation exists before the Dispatch.** This order lets the Provider answer
+  // ACCEPTED directly in the DispatchResult: that code requires "the Operation must already exist",
+  // which holds here. The Provider then uses this id with
+  // nervus.interface.operation.control to report progress and the terminal state.
+  uint64 operation_id = 8;
+}
+
+// CallerContext is the part of the ConnectionContext that may be passed out (§10.2).
+//
+// **internal_connection_id never appears here**; it never leaves nervud.
+// Ordinary Requests must not contain trusted identity fields filled in by the caller either: permissions are always enforced by nervud from
+// the connection context, never from source:"system" or package name strings in the payload.
+message CallerContext {
+  string package_id = 1;
+  string component_id = 2;
+
+  // From the Linux kernel's SO_PEERCRED, not from any Envelope field.
+  uint32 uid = 3;
+  uint32 gid = 4;
+  // PIDs are recycled when processes exit; only for diagnostics and log correlation, and **must not** be used to look up /proc afterwards
+  // and trust the result.
+  int32 pid = 5;
+
+  TrustProfile trust_profile = 6;
+
+  // The granted permissions relevant to this call. A **read-only projection** of nervud's decision,
+  // for the Service to do a second fail-closed check, not for the Service to decide again.
+  repeated string granted_permissions = 7;
+}
+
+// TrustProfile is a trust and permission profile, not a third software type (§7).
+//
+// Only platform/OEM-signed Packages in the read-only system image are eligible for non-ORDINARY profiles;
+// dynamically installed developer-signed Packages are still ORDINARY even if they declare a Service.
+// A manifest can't crown itself system.
+enum TrustProfile {
+  TRUST_PROFILE_UNSPECIFIED = 0;
+  TRUST_PROFILE_ORDINARY = 1;
+  TRUST_PROFILE_OEM = 2;
+  TRUST_PROFILE_PLATFORM = 3;
+}
+
+// DispatchResult is the result a Service returns to nervud.
+//
+// nervud only accepts it when **the source Service connection, binding generation, route state and deadline
+// all match**. Unknown, duplicate, post-revocation or post-timeout late results are always dropped and audited,
+// and must never produce a second final Response (§10.7).
+//
+// nervud doesn't pass it through: it must decode the detail by the authoritative method schema, check that (code, reason)
+// is an allowed mapping, field lengths and value ranges, and re-encode after dropping unknown fields. Malformed details, illegal outcome
+// combinations or results breaking the Provider Contract are always normalised to INTERNAL for the caller,
+// with the full reason only in Audit.
+message DispatchResult {
+  uint64 route_id = 1;
+  oneof outcome {
+    Success success = 2;
+    Failure failure = 3;
+  }
+}
+
+// CancelDispatch is this file's extension (number 52): nervud tells a Service to stop in-flight work.
+//
+// Why it's needed: clients have Cancel(request_id) → nervud, but in the original message set
+// nervud → Service had no cancellation channel at all. So §10.7's promise that "Cancel can stop work
+// not yet committed" couldn't be kept for cross-process calls: the Service would compute until its own deadline,
+// pointlessly holding Resources, ControlLeases and CPU budget. Especially bad for robots: an abandoned
+// long action would still be holding the actuator.
+//
+// Like Cancel it's best effort, and likewise has no result message: the Service returns its DispatchResult as normal
+// (usually carrying CANCELLED), and that's the result.
+message CancelDispatch {
+  uint64 route_id = 1;
+  CancelDispatchReason reason = 2;
+}
+
+enum CancelDispatchReason {
+  CANCEL_DISPATCH_REASON_UNSPECIFIED = 0;
+  // The caller sent Cancel itself.
+  CANCEL_DISPATCH_REASON_CLIENT_CANCELLED = 1;
+  // The call exceeded its deadline, and nervud has already answered the caller with DEADLINE_EXCEEDED.
+  CANCEL_DISPATCH_REASON_DEADLINE_EXCEEDED = 2;
+  // The caller's connection has dropped, and the result has nowhere to go.
+  CANCEL_DISPATCH_REASON_CLIENT_GONE = 3;
+}
+
+// =============================================================================
+// Keep-alive
+// =============================================================================
+
+// Ping / Pong probe the peer's liveness and measure RTT. Either side may start.
+//
+// The initiator chooses the nonce, and the responder **echoes it unchanged**. Without a nonce a Pong can't be matched back to
+// a Ping, so with several probes in flight neither the RTT can be measured accurately nor lost replies detected.
+//
+// Keep-alive **can't** replace deadlines: a connection can Ping happily while never answering some Response.
+message Ping {
+  uint64 nonce = 1;
+}
+
+message Pong {
+  uint64 nonce = 1;
+}
+
+// =============================================================================
+// Control leases: ControlLease (§10.2, §10.3, §10.4)
+// =============================================================================
+//
+// A ControlLease is a **short-lived, connection-bound, non-transferable** resource control lease nervud issues to a HUMAN or AI
+// controlling party. Without one, ordinary motion commands always get FAILED_PRECONDITION + CONTROL_NOT_HELD
+// (NRCP §19). This section only freezes the wire surface (messages + Envelope oneof branches 70-73); lease slots,
+// epoch increments, pre-emption and the deadman are all executed in nervud, as B1b's job.
+//
+// Red lines running through this section (§10.2 rules, §10.4 Provider duties):
+//   - a lease is bound to owner_connection and is **non-transferable**; disconnect / deadline / deadman /
+//     a Safety trip revokes it (with the revocation generation motion_epoch incremented per §10.5).
+//   - clients **can't** request NONE: NONE means "no valid lease right now", not a requestable value,
+//     so ControllerClass has no NONE option at all.
+//   - ControlLeases have been Resource-scoped since day one: a request must give a selector,
+//     and the ManagedResource declared in the Catalog decides what it points at.
+//   - the trusted fields of the ExecutionContext (caller_context / lease_id / controller_class /
+//     motion_epoch / deadline) are attached by nervud **when dispatching to the Provider**, and Apps
+//     **must not** fill them in themselves in any Request payload (§10.3). This section's Acquire/Release are
+//     control-plane messages for Apps to request/release leases explicitly, not the same thing as the ExecutionContext.
+
+// ControllerClass is the controlling-party category. It deliberately **has no NONE**; see the red lines above: clients can't
+// request NONE, which is only the internal state "no valid lease", not a value that can be submitted on the wire.
+enum ControllerClass {
+  // Fail closed: missing / trimmed / from an unknown newer version all land here, and nervud must refuse,
+  // never treating unspecified as some default class.
+  CONTROLLER_CLASS_UNSPECIFIED = 0;
+  // A human controlling party (local touchscreen, short-lived HUMAN leases from a remote phone/web).
+  CONTROLLER_CLASS_HUMAN = 1;
+  // An AI Agent controlling party. AI has no privileged group: dangerous actions can still only be requested, and the confirmation dialog is held by the system.
+  CONTROLLER_CLASS_AI = 2;
+}
+
+// AcquireControl requests a control lease on a Resource.
+message AcquireControl {
+  // The request ID scoped to this connection, with the same semantics as Request.request_id: 0 is permanently reserved, the first is 1,
+  // and it never wraps. The matching key is (connection, request_id).
+  uint64 request_id = 1;
+
+  // The controlling-party category requested; must be HUMAN or AI (see ControllerClass: no NONE).
+  ControllerClass controller_class = 2;
+
+  // The Resource to control. ControlLeases are Resource-scoped by nature (§10.2).
+  //
+  // **It must be given explicitly**: v1 used to allow leaving it empty and implicitly took the base; that default was removed in v2.
+  // Only resources whose access_mode is EXCLUSIVE_CONTROL can be leased; sensors declared SHARED_OBSERVE
+  // can be routed but never get control.
+  //
+  // Submitting OEM Package/Component/Provider names is always refused (as with ResolveEndpoint.selector).
+  ResourceSelector resource = 3;
+
+  // The lease lifetime the caller wants (nanoseconds). It's a **wish**, not a promise: nervud may tighten it by Policy
+  // (remote HUMAN leases especially short). 0 means use the system default, and does **not** mean unlimited.
+  int64 requested_deadline_nanos = 4;
+}
+
+message AcquireControlResult {
+  uint64 request_id = 1;
+  oneof outcome {
+    AcquireControlSuccess success = 2;
+    // The error_detail type is fixed as ControlLeaseErrorDetail: callers need distinguishable reasons such as "who holds it"
+    // to know whether to back off or pre-empt; a generic BUSY isn't enough (§10.2 rules).
+    Failure failure = 3;
+  }
+}
+
+message AcquireControlSuccess {
+  // An opaque handle the system issues, **bound to this connection and non-transferable**. It lapses on disconnect.
+  // It doesn't get its safety from "others can't guess the number": the real key is (connection, lease_id).
+  uint64 lease_id = 1;
+
+  // The motion generation at issue (§10.5). Providers use it to void stale commands when re-checking every motion command;
+  // always non-zero. After Safety / pre-emption / a Provider restart the epoch increments, and old leases lapse with it.
+  uint64 motion_epoch = 2;
+
+  // The validity period nervud finally decided (nanoseconds, an absolute deadline in the monotonic clock domain). It may be much smaller than
+  // requested_deadline_nanos. Renewal extends this value without changing lease_id.
+  int64 deadline_nanos = 3;
+
+  // The resolved public Resource handle (with the same meaning as ResolveEndpointSuccess.resource_handle).
+  // It does **not** include the Provider PID / driver name / device node / serial number / internal paths.
+  string resource_handle = 4;
+}
+
+// ReleaseControl voluntarily releases a lease held. Releasing increments motion_epoch per §10.5
+// and returns to NONE; old AI actions don't resume automatically.
+message ReleaseControl {
+  uint64 request_id = 1;
+  // The lease to release; must be a lease_id this connection holds, otherwise FAILED_PRECONDITION.
+  uint64 lease_id = 2;
+}
+
+message ReleaseControlResult {
+  uint64 request_id = 1;
+  oneof outcome {
+    Success success = 2;
+    Failure failure = 3;
+  }
+}
+
+// ControlLeaseErrorDetail is the fixed detail type when AcquireControlResult fails
+// (NRCP §19 "position B"). It belongs to the control plane rather than an Interface, so it's defined here,
+// alongside ResolveEndpointErrorDetail.
+message ControlLeaseErrorDetail {
+  ControlLeaseErrorReason reason = 1;
+}
+
+// The mapping of ControlLeaseErrorReason to generic StatusCodes is fixed (NRCP §19):
+//
+//	HELD_BY_HUMAN        → FAILED_PRECONDITION
+//	HELD_BY_AI           → FAILED_PRECONDITION
+//	RESOURCE_UNAVAILABLE → UNAVAILABLE
+//	SAFETY_LATCHED       → FAILED_PRECONDITION
+//	INVALID_CONTROLLER   → INVALID_ARGUMENT
+//
+// Why "held by HUMAN" and "held by AI" are two reasons: in v1 a second requester of the same class is
+// always refused, but the caller's right reaction to "held by a person" (give way) and "held by another AI" (possibly pre-emptable)
+// differs, and a generic BUSY would flatten the two (§10.2 rules).
+enum ControlLeaseErrorReason {
+  CONTROL_LEASE_ERROR_REASON_UNSPECIFIED = 0;
+  // The Resource is currently held by a HUMAN lease.
+  CONTROL_LEASE_ERROR_REASON_HELD_BY_HUMAN = 1;
+  // The Resource is currently held by an AI lease.
+  CONTROL_LEASE_ERROR_REASON_HELD_BY_AI = 2;
+  // The Resource is in fault / offline, and no lease can be issued for now.
+  CONTROL_LEASE_ERROR_REASON_RESOURCE_UNAVAILABLE = 3;
+  // Safety has latched, the ordinary motion Gate is closed, and no ordinary lease is issued.
+  CONTROL_LEASE_ERROR_REASON_SAFETY_LATCHED = 4;
+  // controller_class is illegal (UNSPECIFIED, or the client trying to request NONE semantics).
+  CONTROL_LEASE_ERROR_REASON_INVALID_CONTROLLER = 5;
+}
+
+// =============================================================================
+// Component launch
+// =============================================================================
+
+// LaunchComponent asks nervud to start an installed component.
+//
+// This is the message the Launcher (desktop) sends when opening an App, and also how the session service brings up the desktop
+// after boot.
+//
+// ## What it does **not** do
+//
+// It returns no handle to the launched component and sets up no call relationship. After launching, a caller wanting to talk to
+// it still has to go through the normal ResolveEndpoint; "who can call it" is decided by the permission and
+// visibility decisions on that path, never relaxed because "I'm the one who launched it".
+//
+// ## Permission
+//
+// Needs perm.system.launch. This isn't a capability ordinary apps should have: launching other components at will
+// means bypassing on-demand's power-saving semantics, and being able to start a component immediately after it was disabled and re-enabled.
+// v1 gives it only to the Launcher and the session service.
+message LaunchComponent {
+  // The request ID scoped to this connection, with the same semantics as Request.request_id (0 reserved, the first is 1, no wrap-around).
+  uint64 request_id = 1;
+
+  // The target Package.
+  string package_id = 2;
+
+  // The target Component.
+  //
+  // **Required.** No inference like "empty means the package's only app component": a package may well have
+  // several app components, and an inference rule would quietly change behaviour the day it goes from one to two;
+  // the caller saying explicitly what to launch is the only semantics that won't go sour later.
+  string component_id = 3;
+}
+
+message LaunchComponentResult {
+  uint64 request_id = 1;
+  oneof outcome {
+    LaunchComponentSuccess success = 2;
+    // The error_detail type is fixed as LaunchComponentErrorDetail.
+    Failure failure = 3;
+  }
+}
+
+message LaunchComponentSuccess {
+  // The component was already running **before** this request.
+  //
+  // It lets "check whether the desktop is up, and start it if not" be written as one call rather than two:
+  // launching is idempotent itself, but the caller often needs to know whether it was the one that really started it
+  // (for example to decide whether to log "the desktop restarted").
+  bool already_running = 1;
+}
+
+// LaunchComponentErrorDetail is the fixed detail type when LaunchComponent fails.
+message LaunchComponentErrorDetail {
+  LaunchComponentReason reason = 1;
+}
+
+enum LaunchComponentReason {
+  LAUNCH_COMPONENT_REASON_UNSPECIFIED = 0;
+  // No such Package.
+  LAUNCH_COMPONENT_REASON_PACKAGE_NOT_FOUND = 1;
+  // The Package exists but has no such Component.
+  LAUNCH_COMPONENT_REASON_COMPONENT_NOT_FOUND = 2;
+  // The component is disabled (nervusctl disable / manifest disableable).
+  //
+  // Separate from NOT_FOUND: the former is "wrong name installed", the latter "switched off on purpose",
+  // and the Launcher shows them completely differently: the latter should prompt the user to enable it in Settings.
+  LAUNCH_COMPONENT_REASON_COMPONENT_DISABLED = 3;
+  // The component used up its restart budget and its circuit is broken; launches aren't accepted for now.
+  LAUNCH_COMPONENT_REASON_COMPONENT_FAILED = 4;
+  // Starting the process itself failed (systemd unavailable, sandbox properties refused and so on).
+  LAUNCH_COMPONENT_REASON_SPAWN_FAILED = 5;
+}

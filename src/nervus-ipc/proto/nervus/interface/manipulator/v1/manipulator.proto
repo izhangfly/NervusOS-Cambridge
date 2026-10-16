@@ -1,0 +1,247 @@
+// Nervus standard interface · Manipulator@1  [REWRITE-v1 / experimental]
+//
+// interface_id = nervus.interface.manipulator.arm, major = 1, experimental.
+//   Feature     = nervus.feature.manipulator.arm
+//   Permission  = perm.manipulator.control
+//   Resource    = nervus.resource.manipulator.arm (role such as main/left/right)
+//
+// Semantic boundaries (NRCP §17 / §13.2):
+//   An arm isn't a mobile base; its semantics are **joints / end-effector pose / trajectories / gripper / homing**.
+//   Inverse kinematics, trajectory planning and collision detection are themselves the OEM Provider's job; this schema **doesn't** implement
+//   algorithms, it only defines boundary messages, method_ids and error semantics.
+//
+// Long tasks are operations (NRCP §11): the three motion methods MoveToPose / MoveJointTrajectory / GoHome
+//   are long tasks with method_meta.returns_operation = true; dispatch goes through
+//   operation.Create (B5), and success is answered with STATUS_CODE_ACCEPTED + operation_id;
+//   SetGripper / Stop are short commands, not operations.
+//
+// Units and frames (NRCP §17.1; keep them in the comments):
+//   joint angle = rad; joint angular velocity = rad/s; Cartesian position = m; quaternions are dimensionless;
+//   frames always use an explicit frame string (such as "base_link"); vague or implicit defaults are **forbidden**.
+//
+// [REWRITE-v1] experimental: destructive changes allowed before v2; third parties must not assume it's stable.
+//   Once formally frozen, §10.12 applies: method_ids / field numbers / enum values never change meaning or get reused,
+//   deletions become reserved, new fields need safe defaults, and enums start with *_UNSPECIFIED = 0.
+
+syntax = "proto3";
+
+package nervus.interface.manipulator.v1;
+
+// The method_meta custom option + RiskClass come from the mechanism layer.
+import "nervus/ipc/v1/method_registry.proto";
+
+option go_package = "github.com/nervus-os/nervus-ipc/protocol/interface/manipulatorv1;manipulatorv1";
+
+// Java package names can't contain hyphens or the reserved word "interface" (JLS §3.9), so the
+// "iface" segment is used here. The proto package can still use "interface" (that's only for wire/naming).
+option java_package = "io.github.nervusos.iface.manipulator.v1";
+option java_multiple_files = true;
+option java_outer_classname = "ManipulatorProto";
+
+// =============================================================================
+// method_id enum + Method Registry metadata
+// =============================================================================
+
+// Each ManipulatorMethod enum value **is** that method's wire method_id (it goes into
+// Request.method_id). Each value carries (nervus.ipc.v1.method_meta), so nervud and the SDK
+// extract the Registry from the descriptor instead of keeping separate lists in Go/Kotlin.
+//
+// method_meta.method_id redundantly equals the enum's numeric value (the extraction tool checks they agree).
+enum ManipulatorMethod {
+  MANIPULATOR_METHOD_UNSPECIFIED = 0;
+
+  // Read-only: joint positions / end-effector pose / readiness / limits / epoch.
+  MANIPULATOR_METHOD_GET_ARM_STATE = 1 [(nervus.ipc.v1.method_meta) = {
+    method_id: 1
+    risk_class: RISK_CLASS_NORMAL
+    requires_control_lease: false
+    returns_operation: false
+    needs_user_confirmation: false
+    request_type: "nervus.interface.manipulator.v1.GetArmStateRequest"
+    response_type: "nervus.interface.manipulator.v1.ArmState"
+    error_detail_type: "nervus.interface.manipulator.v1.ManipulatorErrorDetail"
+  }];
+
+  // State event stream (a subscription, not request/response). The response type is the event payload type.
+  MANIPULATOR_METHOD_SUBSCRIBE_ARM_STATE = 2 [(nervus.ipc.v1.method_meta) = {
+    method_id: 2
+    risk_class: RISK_CLASS_NORMAL
+    requires_control_lease: false
+    returns_operation: false
+    needs_user_confirmation: false
+    request_type: "nervus.interface.manipulator.v1.SubscribeArmStateRequest"
+    response_type: "nervus.interface.manipulator.v1.ArmState"
+    error_detail_type: "nervus.interface.manipulator.v1.ManipulatorErrorDetail"
+  }];
+
+  // Move the end effector to a Cartesian pose (with frame). A long task → operation.
+  MANIPULATOR_METHOD_MOVE_TO_POSE = 3 [(nervus.ipc.v1.method_meta) = {
+    method_id: 3
+    required_permission: "perm.manipulator.control"
+    risk_class: RISK_CLASS_PHYSICAL_CONTROL
+    requires_control_lease: true
+    returns_operation: true
+    needs_user_confirmation: true
+    request_type: "nervus.interface.manipulator.v1.MoveToPoseRequest"
+    response_type: "nervus.interface.manipulator.v1.ManipulatorMoveResult"
+    error_detail_type: "nervus.interface.manipulator.v1.ManipulatorErrorDetail"
+  }];
+
+  // A joint-space trajectory. A long task → operation.
+  MANIPULATOR_METHOD_MOVE_JOINT_TRAJECTORY = 4 [(nervus.ipc.v1.method_meta) = {
+    method_id: 4
+    required_permission: "perm.manipulator.control"
+    risk_class: RISK_CLASS_PHYSICAL_CONTROL
+    requires_control_lease: true
+    returns_operation: true
+    needs_user_confirmation: true
+    request_type: "nervus.interface.manipulator.v1.MoveJointTrajectoryRequest"
+    response_type: "nervus.interface.manipulator.v1.ManipulatorMoveResult"
+    error_detail_type: "nervus.interface.manipulator.v1.ManipulatorErrorDetail"
+  }];
+
+  // Home / stowed position. A long task → operation.
+  MANIPULATOR_METHOD_GO_HOME = 5 [(nervus.ipc.v1.method_meta) = {
+    method_id: 5
+    required_permission: "perm.manipulator.control"
+    risk_class: RISK_CLASS_PHYSICAL_CONTROL
+    requires_control_lease: true
+    returns_operation: true
+    needs_user_confirmation: true
+    request_type: "nervus.interface.manipulator.v1.GoHomeRequest"
+    response_type: "nervus.interface.manipulator.v1.ManipulatorMoveResult"
+    error_detail_type: "nervus.interface.manipulator.v1.ManipulatorErrorDetail"
+  }];
+
+  // Gripper open/close (a short command, not an operation), but it still drives actuators → needs a lease.
+  MANIPULATOR_METHOD_SET_GRIPPER = 6 [(nervus.ipc.v1.method_meta) = {
+    method_id: 6
+    required_permission: "perm.manipulator.control"
+    risk_class: RISK_CLASS_PHYSICAL_CONTROL
+    requires_control_lease: true
+    returns_operation: false
+    needs_user_confirmation: false
+    request_type: "nervus.interface.manipulator.v1.SetGripperRequest"
+    response_type: ""
+    error_detail_type: "nervus.interface.manipulator.v1.ManipulatorErrorDetail"
+  }];
+
+  // Ordinary controlled stop (not SafetyHalt). Needs a lease; a short command.
+  MANIPULATOR_METHOD_STOP = 7 [(nervus.ipc.v1.method_meta) = {
+    method_id: 7
+    required_permission: "perm.manipulator.control"
+    risk_class: RISK_CLASS_PHYSICAL_CONTROL
+    requires_control_lease: true
+    returns_operation: false
+    needs_user_confirmation: false
+    request_type: "nervus.interface.manipulator.v1.StopRequest"
+    response_type: ""
+    error_detail_type: "nervus.interface.manipulator.v1.ManipulatorErrorDetail"
+  }];
+}
+
+// =============================================================================
+// Messages (for units/frames see the file header and the per-field comments)
+// =============================================================================
+
+// JointState: joint-space state. The indices of position/velocity correspond one to one with the Provider's joint order
+// (the order is constrained by the Provider Descriptor / the length of ArmState.limits).
+message JointState {
+  repeated double position_rad = 1;    // each joint angle, rad
+  repeated double velocity_rad_s = 2;  // each joint angular velocity, rad/s
+}
+
+// Pose: a Cartesian pose, position in m + a unit quaternion (dimensionless). frame must be given explicitly.
+message Pose {
+  string frame = 1;   // the frame, such as "base_link". **No vagueness**: empty = INVALID_ARGUMENT.
+  double x = 2;       // m
+  double y = 3;       // m
+  double z = 4;       // m
+  double qx = 5;      // quaternion component (dimensionless)
+  double qy = 6;
+  double qz = 7;
+  double qw = 8;
+}
+
+// ArmReadiness: the arm's readiness. *_UNSPECIFIED=0 fails closed.
+enum ArmReadiness {
+  ARM_READINESS_UNSPECIFIED = 0;
+  ARM_READINESS_READY = 1;
+  ARM_READINESS_NOT_READY = 2;
+  ARM_READINESS_TRANSITIONING = 3;
+  ARM_READINESS_FAULT = 4;
+}
+
+// ArmState: the state payload of GetArmState / SubscribeArmState.
+message ArmState {
+  ArmReadiness readiness = 1;
+  JointState joints = 2;
+  Pose tcp_pose = 3;                     // end-effector (tool center point) pose
+  repeated double joint_lower_rad = 4;   // each joint's lower limit, rad (indices aligned with joints)
+  repeated double joint_upper_rad = 5;   // each joint's upper limit, rad
+  uint64 active_motion_epoch = 6;        // the current motion epoch (stale commands are voided by it)
+}
+
+message GetArmStateRequest {}
+message SubscribeArmStateRequest {}
+
+// MoveToPoseRequest: move the end effector to a target pose.
+message MoveToPoseRequest {
+  Pose target = 1;
+  double max_vel_scale = 2;  // velocity scale, 0..1; out of range → INVALID_ARGUMENT
+}
+
+// MoveJointTrajectoryPoint: one waypoint on a joint trajectory.
+message MoveJointTrajectoryPoint {
+  repeated double position_rad = 1;    // each joint's target angle, rad (indices aligned with ArmState)
+  int64 time_from_start_nanos = 2;     // time since the trajectory start, ns, monotonically increasing
+}
+
+// MoveJointTrajectoryRequest: a joint-space trajectory.
+message MoveJointTrajectoryRequest {
+  repeated MoveJointTrajectoryPoint points = 1;
+}
+
+message GoHomeRequest {}
+
+// SetGripperRequest: gripper open/close.
+message SetGripperRequest {
+  double opening = 1;     // 0 = closed, 1 = fully open; out of range → INVALID_ARGUMENT
+  double max_effort = 2;  // maximum torque/force limit (0 = the Provider default)
+}
+
+message StopRequest {}
+
+// ManipulatorMoveResult: the success terminal payload of motion operations (NRCP §11).
+// The operation's terminal payload type is decided by the origin method binding (method_meta.response_type).
+message ManipulatorMoveResult {
+  Pose final_pose = 1;  // the actual end-effector pose after arriving
+}
+
+// =============================================================================
+// Error detail (NRCP §19 "position B")
+// =============================================================================
+
+// ManipulatorReason: the typed error_detail reason for Manipulator failures.
+//
+// Business failures always use the Failure outcome (the generic StatusCode in position A + this reason in position B),
+// and must **never** be hidden in a Success payload (NRCP §19). PERMISSION_DENIED / DEADLINE_EXCEEDED
+// / CANCELLED / UNAVAILABLE are only generic position A codes and aren't repeated here.
+//
+// Every value starts with *_UNSPECIFIED=0 and fails closed.
+enum ManipulatorReason {
+  MANIPULATOR_REASON_UNSPECIFIED = 0;
+  MANIPULATOR_REASON_NOT_READY = 1;           // not READY yet
+  MANIPULATOR_REASON_SAFETY_LATCHED = 2;      // Safety has latched
+  MANIPULATOR_REASON_STALE_EPOCH = 3;         // the command belongs to a revoked motion epoch
+  MANIPULATOR_REASON_CONTROL_NOT_HELD = 4;    // no ControlLease held
+  MANIPULATOR_REASON_JOINT_LIMIT = 5;         // beyond a joint limit
+  MANIPULATOR_REASON_UNREACHABLE_POSE = 6;    // no IK solution / outside the workspace
+  MANIPULATOR_REASON_COLLISION = 7;           // blocked by collision detection
+  MANIPULATOR_REASON_RESOURCE_UNAVAILABLE = 8;// Resource/link unavailable
+  MANIPULATOR_REASON_RESOURCE_FAULT = 9;      // Resource fault
+}
+
+message ManipulatorErrorDetail {
+  ManipulatorReason reason = 1;
+}

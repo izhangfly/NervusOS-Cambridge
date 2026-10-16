@@ -1,0 +1,107 @@
+// Nervus IPC v1: Interface schema bundle distribution  [REWRITE-v1 / experimental]
+//
+// [KERNEL: NOT WIRED] nervud has no consumer path yet: install-time schema bundle verification and the
+// RobotCatalog projection haven't landed. For now this file only freezes the shape.
+//
+// This file defines the wire structure for **how OEM / third-party Interfaces' type information is distributed with the .nspkg,
+// verified by nervud at install time, and then used by SDKs / Agents to decode** (NRCP §8.4).
+//
+// Why it's needed: the first principle of extensibility requires "adding an interface without changing the kernel" (master coordination §3). An
+// OEM private interface's message types aren't in anyone's compile-time known set, so an SDK / Agent wanting to decode its
+// Request/Response/error_detail can only use that interface's Protobuf descriptors. This file is the distribution envelope
+// for those descriptors.
+//
+// Hard rules (NRCP §8.4):
+//   - Only use bundles **verified at install time with a matching hash**. Never download an arbitrary schema from a Provider
+//     at run time and feed it straight to a model / SDK; that would let a Provider compromised by prompt injection choose the
+//     parser (compare status.proto: not accepting sender-reported type URLs is the same principle).
+//   - The RobotCatalog / ResolveEndpoint projections carry interface_id / version / schema_hash;
+//     calls are only allowed when all three match this bundle. schema_hash is the only binding anchor.
+//
+// This file does **not** enter the Envelope oneof: a schema bundle isn't a control-plane Frame but metadata carried with the package
+// and consumed at install time. It takes no Envelope body number.
+//
+// [REWRITE-v1] experimental: destructive changes allowed before freezing (NRCP §22.6).
+// Compatibility rules (§10.12, effective once frozen): published field numbers are never reused; deletions become reserved;
+// new fields need safe defaults; every enum starts with *_UNSPECIFIED = 0 and fails closed.
+
+syntax = "proto3";
+
+package nervus.ipc.v1;
+
+option go_package = "github.com/nervus-os/nervus-ipc/protocol/ipcv1;ipcv1";
+
+// Hyphens are illegal in Java package names; see status.proto for why.
+option java_package = "io.github.nervusos.ipc.v1";
+option java_multiple_files = true;
+option java_outer_classname = "SchemaProto";
+
+// =============================================================================
+// InterfaceSchemaBundle
+// =============================================================================
+
+// InterfaceSchemaBundle is the type information package of a **single** Interface.
+//
+// It carries a self-contained FileDescriptorSet (the complete descriptors of the interface's Request/Response/event/
+// error_detail messages and their transitive dependencies), plus the interface_id / version / schema_hash triple
+// that pins it to the catalog projection.
+message InterfaceSchemaBundle {
+  // The logical interface ID, such as "nervus.interface.motion.base" or the OEM-private
+  // "com.acme.interface.gripper". The same namespace as ResolveEndpoint.interface_id.
+  string interface_id = 1;
+
+  // The interface major version, aligned with ResolveEndpointSuccess.interface_major.
+  // major rather than major.minor: minors only increase and are backward compatible, so one bundle covers
+  // every minor under a major; a different major is a different bundle.
+  uint32 version = 2;
+
+  // The deterministic identifier of this bundle's content (a canonical hash over file_descriptor_set).
+  //
+  // This is the only binding anchor: nervud computes and registers it at install time; the RobotCatalog /
+  // ResolveEndpoint projections echo it; the SDK checks that the bundle it decodes with locally matches the projection.
+  // A mismatch is schema drift, and must surface before the first call, rather than letting some field be silently dropped.
+  // The exact hash algorithm is agreed by nervud's implementation (not self-described on the wire, to avoid "choose your verifier" attacks).
+  bytes schema_hash = 3;
+
+  // The serialised google.protobuf.FileDescriptorSet.
+  //
+  // **Deliberately bytes rather than importing descriptor.proto's type directly**: this repository generates code in three languages,
+  // and the bundle is often only stored / forwarded / hashed (the installer, the Catalog projection)
+  // rather than parsed reflectively on the spot. bytes lets those stages avoid linking protobuf's descriptor runtime;
+  // the side that really needs reflective decoding (SDK / Agent) parses it into a FileDescriptorSet itself.
+  // It also makes schema_hash's input an explicit byte string, unambiguous across languages.
+  bytes file_descriptor_set = 4;
+
+  // The full name of the method_id enum carrying method_meta. Recorded explicitly rather than scanning every enum in the bundle,
+  // so methods of other interfaces in transitive dependencies aren't wrongly taken into this interface's directory.
+  // Example: "nervus.interface.manipulator.v1.ManipulatorMethod".
+  string method_enum_type = 5;
+
+  // The full name of the event_id enum carrying event_meta. Empty = this interface pushes no events.
+  //
+  // # Why it needs its own field rather than inlining EventMeta into the ProviderDescriptor
+  //
+  // ProvidedInterfaceVersion.events is for **metadata interfaces**: those interfaces have no
+  // schema bundle, so their events can't have a payload_type either; without a FileDescriptorSet
+  // there's no way to check that the message the type name points at really exists.
+  //
+  // Interfaces with a schema are the opposite: their events almost always have payloads (a state snapshot, a
+  // control value). The payload type must be resolvable and checkable, and that FileDescriptorSet is in the same
+  // bundle, so event metadata should come from here too, perfectly symmetric with method_enum_type.
+  //
+  // The consequence of lacking this field is concrete: events with payloads **couldn't be declared at all**. Inlining into the
+  // descriptor would be refused by "metadata interfaces don't allow payload_type", and putting them in the bundle would leave nowhere
+  // to say which enum it is.
+  //
+  // Example: "nervus.interface.camera.v1.CameraEvent".
+  string event_enum_type = 6;
+}
+
+// InterfaceSchemaBundleSet is the set of **all** interface bundles a .nspkg carries.
+//
+// One package can implement several interfaces (a multi-function Provider). At install time nervud verifies each one:
+// each bundle's schema_hash is consistent with its file_descriptor_set, and matches the interface_id / version
+// the manifest declares. Any mismatch fails closed and the whole package is refused.
+message InterfaceSchemaBundleSet {
+  repeated InterfaceSchemaBundle bundles = 1;
+}

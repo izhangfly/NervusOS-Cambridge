@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+# nervus-session: open and quit NervusOS on a normal Ubuntu desktop.
+#
+#   nervus-session start [--window WxH]   open NervusOS (fullscreen by default)
+#   nervus-session stop                   quit NervusOS and go back to Ubuntu
+#   nervus-session toggle                 start if stopped, stop if running
+#   nervus-session restart                quit and reopen
+#   nervus-session status                 print what is running
+#
+# How it works. NervusOS draws on its own X display (:7), hosted by Xephyr. To
+# GNOME, Xephyr is just one more window, so Ubuntu keeps running underneath and
+# nothing about the login screen or the Ubuntu session changes. Inside :7,
+# Openbox gives the single-window layout with the 80 px navigation bar on the
+# right, and nervud (the NervusOS kernel, a system service) launches the desktop
+# and apps onto :7. (:0 and :1 belong to GNOME's Xwayland.) Quitting closes
+# Xephyr, then stops nervud, which stops every app and the PiPER driver with it.
+set -uo pipefail
+
+NERVUS_DISPLAY="${NERVUS_DISPLAY:-:7}"
+XAUTH_FILE=/run/nervus-x11/xauth
+OPENBOX_RC=/etc/nervus/openbox/rc.xml
+RUN_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/nervus-session"
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/nervus"
+LOG="$STATE_DIR/session.log"
+DISPLAY_NO="${NERVUS_DISPLAY#:}"
+
+mkdir -p "$RUN_DIR" "$STATE_DIR"
+
+log() { printf '%s %s\n' "$(date '+%F %T')" "$*" >>"$LOG"; }
+say() { printf 'nervus-session: %s\n' "$*"; log "$*"; }
+
+xephyr_pid() {
+	local p
+	p="$(cat "$RUN_DIR/xephyr.pid" 2>/dev/null)" || return 1
+	[[ -n "$p" ]] && kill -0 "$p" 2>/dev/null && echo "$p"
+}
+
+is_running() { xephyr_pid >/dev/null; }
+
+notify() {
+	command -v notify-send >/dev/null 2>&1 && notify-send -a NervusOS -i nervusos "NervusOS" "$1" 2>/dev/null || true
+}
+
+host_display_ok() {
+	# Xephyr needs the Ubuntu desktop's X display (Xwayland on GNOME). When this
+	# runs from SSH there is no DISPLAY, so borrow the logged-in desktop's.
+	if [[ -z "${DISPLAY:-}" ]]; then
+		local uid; uid="$(id -u)"
+		local d
+		d="$(pgrep -u "$uid" -a Xwayland 2>/dev/null | grep -oE ' :[0-9]+' | head -1 | tr -d ' ')"
+		export DISPLAY="${d:-:0}"
+		if [[ -z "${XAUTHORITY:-}" ]]; then
+			local a
+			a="$(ls -t /run/user/"$uid"/.mutter-Xwaylandauth.* 2>/dev/null | head -1)"
+			[[ -n "$a" ]] && export XAUTHORITY="$a"
+		fi
+		export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$uid}"
+		export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=/run/user/$uid/bus}"
+	fi
+	xdpyinfo >/dev/null 2>&1
+}
+
+# Runs in the background for the life of the session: waits for Xephyr to go
+# away (window closed, Quit, or the NervusOS power button) and cleans up.
+supervise() {
+	local xpid="$1"
+	while kill -0 "$xpid" 2>/dev/null; do sleep 1; done
+	log "display $NERVUS_DISPLAY closed; stopping NervusOS"
+	systemctl stop nervud.service >>"$LOG" 2>&1 || log "systemctl stop nervud failed"
+	local wm; wm="$(cat "$RUN_DIR/openbox.pid" 2>/dev/null)"
+	[[ -n "$wm" ]] && kill "$wm" 2>/dev/null
+	rm -f "$RUN_DIR"/*.pid
+	log "NervusOS session ended"
+}
+
+start() {
+	local geometry=""
+	if [[ "${1:-}" == "--window" ]]; then geometry="${2:-1600x900}"; fi
+
+	if is_running; then
+		say "already running; bringing it to the front"
+		xdotool search --name '^NervusOS$' windowactivate 2>/dev/null || true
+		return 0
+	fi
+	host_display_ok || { say "cannot reach the Ubuntu desktop display (DISPLAY=${DISPLAY:-unset})"; return 1; }
+	[[ -d /run/nervus-x11 && -w /run/nervus-x11 ]] || {
+		say "/run/nervus-x11 is missing or not writable; run: sudo systemd-tmpfiles --create /etc/tmpfiles.d/nervus-hosted.conf"
+		return 1
+	}
+	if [[ -e "/tmp/.X11-unix/X$DISPLAY_NO" ]] && ! is_running; then
+		# A stale socket or lock from a crashed Xephyr would make the new one refuse to start
+		if ! xdpyinfo -display "$NERVUS_DISPLAY" >/dev/null 2>&1; then
+			rm -f "/tmp/.X$DISPLAY_NO-lock" "/tmp/.X11-unix/X$DISPLAY_NO" 2>/dev/null
+		else
+			say "display $NERVUS_DISPLAY is already used by another X server"; return 1
+		fi
+	fi
+
+	log "starting NervusOS on $NERVUS_DISPLAY (host DISPLAY=$DISPLAY, ${geometry:-fullscreen})"
+
+	# Fresh cookie each session. 0644 because every NervusOS app runs under its own
+	# UID and the kernel bind-mounts this file into each app's sandbox.
+	# xauth rewrites the file and resets its mode, so chmod comes last. The entry
+	# is converted to FamilyWild (ffff) so it matches whatever hostname a client
+	# resolves.
+	rm -f "$XAUTH_FILE.new" "$XAUTH_FILE.tmp"
+	xauth -q -f "$XAUTH_FILE.tmp" add "$NERVUS_DISPLAY" MIT-MAGIC-COOKIE-1 "$(mcookie)"
+	xauth -q -f "$XAUTH_FILE.tmp" nlist "$NERVUS_DISPLAY" | sed -e 's/^..../ffff/' \
+		| xauth -q -f "$XAUTH_FILE.new" nmerge -
+	rm -f "$XAUTH_FILE.tmp"
+	chmod 0644 "$XAUTH_FILE.new"
+	mv -f "$XAUTH_FILE.new" "$XAUTH_FILE"
+
+	local xargs=(-auth "$XAUTH_FILE" -nolisten tcp -title NervusOS -no-host-grab -br -noreset)
+	if [[ -n "$geometry" ]]; then xargs+=(-screen "$geometry" -resizeable); else xargs+=(-fullscreen); fi
+	setsid Xephyr "$NERVUS_DISPLAY" "${xargs[@]}" >>"$STATE_DIR/xephyr.log" 2>&1 &
+	local xpid=$!
+	echo "$xpid" >"$RUN_DIR/xephyr.pid"
+
+	local i
+	for i in $(seq 50); do
+		[[ -S "/tmp/.X11-unix/X$DISPLAY_NO" ]] && break
+		kill -0 "$xpid" 2>/dev/null || { say "Xephyr exited at startup; see $STATE_DIR/xephyr.log"; return 1; }
+		sleep 0.1
+	done
+
+	DISPLAY="$NERVUS_DISPLAY" XAUTHORITY="$XAUTH_FILE" xsetroot -solid '#0f1419' 2>/dev/null || true
+	DISPLAY="$NERVUS_DISPLAY" XAUTHORITY="$XAUTH_FILE" setsid openbox --config-file "$OPENBOX_RC" \
+		>>"$STATE_DIR/openbox.log" 2>&1 &
+	echo $! >"$RUN_DIR/openbox.pid"
+
+	# The polkit rule installed with NervusOS lets this desktop user start and stop
+	# nervud without a password.
+	if ! systemctl start nervud.service >>"$LOG" 2>&1; then
+		say "could not start nervud; see: journalctl -u nervud -n 50"
+		kill "$xpid" 2>/dev/null
+		return 1
+	fi
+
+	setsid bash "$0" __supervise "$xpid" >/dev/null 2>&1 < /dev/null &
+	say "NervusOS is starting (the desktop appears in a few seconds)"
+}
+
+stop() {
+	local xpid
+	if xpid="$(xephyr_pid)"; then
+		say "quitting NervusOS"
+		kill "$xpid" 2>/dev/null
+		# the supervisor stops nervud; wait for it so `stop` means stopped
+		local i
+		for i in $(seq 100); do
+			systemctl is-active --quiet nervud.service || break
+			sleep 0.1
+		done
+	fi
+	# Covers a session whose supervisor died, and nervud started some other way
+	if systemctl is-active --quiet nervud.service; then
+		systemctl stop nervud.service >>"$LOG" 2>&1
+	fi
+	return 0
+}
+
+status() {
+	if xpid="$(xephyr_pid)"; then echo "display  $NERVUS_DISPLAY (Xephyr pid $xpid)"; else echo "display  not running"; fi
+	echo "nervud   $(systemctl is-active nervud.service 2>/dev/null)"
+	echo "piper    $(systemctl is-active nervus-piper.service 2>/dev/null)"
+	echo "can0     $(ip -br link show can0 2>/dev/null | awk '{print $2}' || echo absent)"
+}
+
+case "${1:-}" in
+	start) shift; start "$@" ;;
+	stop) stop ;;
+	restart) stop; sleep 1; shift; start "$@" ;;
+	toggle) if is_running; then stop; else start; fi ;;
+	status) status ;;
+	__supervise) supervise "$2" ;;
+	*) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+esac

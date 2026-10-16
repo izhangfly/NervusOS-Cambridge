@@ -1,0 +1,23 @@
+version: v2
+
+modules:
+  - path: proto
+
+lint:
+  use:
+    - STANDARD
+
+# The breaking check carries out the compatibility rules of architecture §10.12:
+#   published field numbers never change meaning/type and are never reused; deletions become reserved;
+#   method_ids / event_ids stay stable once published, and stay unused after deletion.
+#
+# FILE (the strictest) rather than WIRE: wire compatibility only guarantees the bytes still parse, while renaming a field still
+# breaks the generated code in three languages. This repository's output is compiled directly by Go/Kotlin/Java,
+# so source compatibility matters as much as wire compatibility.
+#
+# Note: don't turn this on in CI **before** the schema is frozen. NRCP §22.6 explicitly allows
+# destructive changes during the Rewrite v1 stage; turning it on early only forces people to bypass it with --force,
+# which builds the habit of bypassing it. Turn it on at freezing time, and record the baseline ref.
+breaking:
+  use:
+    - FILE

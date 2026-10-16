@@ -1,0 +1,203 @@
+// Nervus standard interface · SafetyControl@1  [REWRITE-v1 / experimental]
+//
+// interface_id = nervus.interface.safety.control, major = 1, experimental.
+//   Permission = perm.safety.observe / .rearm
+//
+// # The kernel implements it itself; no Provider supplies it
+//
+// This is **the first built-in interface**: the implementer is nervud itself (endpoint.RegisterBuiltin),
+// not any Package. Callers use completely standard ResolveEndpoint → Request → Response
+// and neither know nor need to know whether the other side is the kernel or an external Service.
+//
+// Why it has to be an Interface rather than a new Envelope body: envelope.proto says
+// "before adding a new body, ask whether it's one of the eight things above; if not, it should be a method
+// on some Interface". Re-arm isn't any of establishing a connection, discovering an endpoint, making a call,
+// returning a result, cancelling, subscribing, pushing events or keeping the connection alive.
+//
+// # Mechanism in the kernel, policy in the service
+//
+// On Rearm the kernel only re-checks one **hard precondition that can't be bypassed**: the stop progress must have settled,
+// either the normal chain reached OUTPUT_DISABLED / STANDSTILL_CONFIRMED (output confirmed off)
+// or it entered a terminal side branch such as DELIVERY_FAULT / STANDSTILL_TIMEOUT that needs human handling.
+// Releasing the latch while the stop is still in progress would allow motion again without knowing whether the output is off.
+//
+// "Should we re-arm right now" is itself policy and isn't in the kernel: a system service (nervus.safety.recovery)
+// decides after aggregating device state, risk and user policy, then calls this method.
+//
+// # What this interface can't do
+//
+// **There's no Trip method.** Software emergency stops are triggered by other paths (a Vital component's circuit breaking, a deadman timeout,
+// a Provider reporting a fault); this interface only observes and recovers. Making "stop the machine" an
+// RPC any App can call would turn one mistaken call into a production incident, and the emergency stop should be backed by
+// physical buttons and the kernel's supervision chain, not depend on a network round trip.
+//
+// [REWRITE-v1] experimental: destructive changes allowed before freezing (NRCP §22.6).
+
+syntax = "proto3";
+
+package nervus.interface.safety.v1;
+
+import "nervus/ipc/v1/method_registry.proto";
+
+option go_package = "github.com/nervus-os/nervus-ipc/protocol/interface/safetyv1;safetyv1";
+
+// Hyphens are illegal in Java package names; see status.proto for why.
+option java_package = "io.github.nervusos.iface.safety.v1";
+option java_multiple_files = true;
+option java_outer_classname = "SafetyControlProto";
+
+// =============================================================================
+// method_id enum + Method Registry metadata
+// =============================================================================
+
+enum SafetyControlMethod {
+  SAFETY_CONTROL_METHOD_UNSPECIFIED = 0;
+
+  // Read the current safety state: top-level state, motion epoch, stop phase.
+  //
+  // Read-only with no side effects, but **not** RISK_CLASS_NORMAL: the safety state is the basis for judging whether the machine can
+  // move right now, and its visibility deserves control in itself. A process that can keep polling the safety state has
+  // a high-fidelity side channel on the machine's running state. So PRIVACY_SENSITIVE rather than NORMAL.
+  SAFETY_CONTROL_METHOD_GET_STATE = 1 [(nervus.ipc.v1.method_meta) = {
+    method_id: 1
+    required_permission: "perm.safety.observe"
+    risk_class: RISK_CLASS_PRIVACY_SENSITIVE
+    requires_control_lease: false
+    returns_operation: false
+    needs_user_confirmation: false
+    is_read_only: true
+    is_motion: false
+    request_type: "nervus.interface.safety.v1.GetSafetyStateRequest"
+    response_type: "nervus.interface.safety.v1.SafetyState"
+    error_detail_type: "nervus.interface.safety.v1.SafetyControlErrorDetail"
+  }];
+
+  // Release the stop latch, return to NORMAL and increment the motion epoch.
+  //
+  // The highest-risk method in the whole system: it's the **only** entry point that can let a machine already stopped for safety reasons
+  // move again. Hence CRITICAL_SAFETY + a mandatory system confirmation dialog.
+  //
+  // is_motion = false is accurate: it doesn't drive any actuator itself, it only lifts the ban.
+  // But needs_user_confirmation = true weighs more here than on any motion method:
+  // a mistaken motion call only moves the machine once, while a mistaken call to this disables the whole safety protection.
+  //
+  // **Agents can't confirm by themselves.** This is a hard rule in the Agent document §4.3: the confirmation dialog is held by the system,
+  // and neither Providers nor Agents can lower it by self-reporting or click confirm on the user's behalf.
+  SAFETY_CONTROL_METHOD_REARM = 2 [(nervus.ipc.v1.method_meta) = {
+    method_id: 2
+    required_permission: "perm.safety.rearm"
+    risk_class: RISK_CLASS_CRITICAL_SAFETY
+    requires_control_lease: false
+    returns_operation: false
+    needs_user_confirmation: true
+    is_read_only: false
+    is_motion: false
+    request_type: "nervus.interface.safety.v1.RearmRequest"
+    response_type: ""
+    error_detail_type: "nervus.interface.safety.v1.SafetyControlErrorDetail"
+  }];
+
+  // Ask to enter the OEM recovery phase (SAFETY_LATCHED → OEM_RECOVERY).
+  //
+  // The recovery phase only allows allowlisted actions requested through the dedicated Safety Gate, and **doesn't clear the latch**:
+  // it's "let the OEM's diagnostic/reset flow run", not "lift the stop". Only Rearm lifts the stop.
+  SAFETY_CONTROL_METHOD_REQUEST_RECOVERY = 3 [(nervus.ipc.v1.method_meta) = {
+    method_id: 3
+    required_permission: "perm.safety.rearm"
+    risk_class: RISK_CLASS_CRITICAL_SAFETY
+    requires_control_lease: false
+    returns_operation: false
+    needs_user_confirmation: true
+    is_read_only: false
+    is_motion: false
+    request_type: "nervus.interface.safety.v1.RequestRecoveryRequest"
+    response_type: ""
+    error_detail_type: "nervus.interface.safety.v1.SafetyControlErrorDetail"
+  }];
+}
+
+// =============================================================================
+// Messages
+// =============================================================================
+
+message GetSafetyStateRequest {}
+
+message RearmRequest {}
+
+message RequestRecoveryRequest {}
+
+// SafetyState is a snapshot of the safety state.
+//
+// (state, epoch, stop_phase) are **always self-consistent**: the phase is only reported when it belongs to the same latch round as the current epoch,
+// otherwise UNSPECIFIED is reported. So observers never see a contradictory combination like "this round has latched
+// but the phase is left over from the previous round".
+message SafetyState {
+  TopState state = 1;
+
+  // motion epoch: the revocation generation of actuator commands. Providers use it to void stale commands when re-checking every motion command;
+  // always non-zero. Every revocation boundary (Safety trip, pre-emption, Provider restart,
+  // re-arm) increments it.
+  uint64 motion_epoch = 2;
+
+  StopPhase stop_phase = 3;
+}
+
+// TopState is the top-level safety state.
+enum TopState {
+  TOP_STATE_UNSPECIFIED = 0;
+  // Normal: motion allowed.
+  TOP_STATE_NORMAL = 1;
+  // Latched: the stop decision has taken effect and the motion Gate is closed.
+  TOP_STATE_SAFETY_LATCHED = 2;
+  // OEM recovery phase: only allowlisted diagnostic/reset actions are allowed, and the latch is still there.
+  TOP_STATE_OEM_RECOVERY = 3;
+  // An explicit re-arm is required to return to NORMAL.
+  TOP_STATE_REARM_REQUIRED = 4;
+}
+
+// StopPhase is this round's stop progress.
+//
+// There are two branches: the normal chain (REQUESTED → SENT → PROVIDER_ACCEPTED → MCU_ACKED →
+// OUTPUT_DISABLED → STANDSTILL_CONFIRMED) and the fault side branches (DELIVERY_FAULT /
+// STANDSTILL_TIMEOUT). The kernel only allows re-arm on **settled** phases:
+// OUTPUT_DISABLED / STANDSTILL_CONFIRMED (output confirmed off), or the two terminal side branches
+// (which already need human handling). Releasing the latch while the stop is still in progress would allow motion again
+// without knowing whether the output is off.
+enum StopPhase {
+  // This round's Supervisor hasn't started tracking yet, or the phase belongs to the previous latch round.
+  STOP_PHASE_UNSPECIFIED = 0;
+  STOP_PHASE_REQUESTED = 1;
+  STOP_PHASE_SENT = 2;
+  STOP_PHASE_PROVIDER_ACCEPTED = 3;
+  STOP_PHASE_MCU_ACKED = 4;
+  STOP_PHASE_OUTPUT_DISABLED = 5;
+  STOP_PHASE_STANDSTILL_CONFIRMED = 6;
+  // Delivery failed: the command couldn't reach the Provider/MCU. Needs human handling.
+  STOP_PHASE_DELIVERY_FAULT = 7;
+  // Timed out without trustworthy standstill evidence. Needs human handling.
+  STOP_PHASE_STANDSTILL_TIMEOUT = 8;
+}
+
+// =============================================================================
+// Detailed error cause
+// =============================================================================
+
+// SafetyControlErrorDetail is this interface's fixed detail type on failure.
+message SafetyControlErrorDetail {
+  SafetyControlReason reason = 1;
+}
+
+enum SafetyControlReason {
+  // Fail closed.
+  SAFETY_CONTROL_REASON_UNSPECIFIED = 0;
+
+  // The current state doesn't allow this transition (for example requesting re-arm while not in REARM_REQUIRED).
+  SAFETY_CONTROL_REASON_WRONG_STATE = 1;
+
+  // The stop progress hasn't settled yet: still in REQUESTED/SENT/PROVIDER_ACCEPTED/MCU_ACKED.
+  //
+  // **This is the one that most needs distinguishing.** A caller seeing it should **wait and retry**, while one seeing
+  // WRONG_STATE should **stop trying**. Collapsing them into one code would make the recovery UI either give up for nothing
+  // or loop forever on a state that can never succeed.
+  SAFETY_CONTROL_REASON_STOP_NOT_SETTLED = 2;
+}

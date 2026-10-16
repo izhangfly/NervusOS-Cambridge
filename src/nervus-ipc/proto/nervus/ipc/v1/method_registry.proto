@@ -1,0 +1,269 @@
+// Nervus IPC v1: the generic Method Registry mechanism  [REWRITE-v1 / experimental]
+//
+// [KERNEL: NOT WIRED] nervud doesn't yet extract the Method Registry from descriptors; method-level
+// permission decisions aren't wired (internal/endpoint only reaches interface granularity so far; see its catalog.go).
+// The extraction code itself is in registry.ExtractMethodMetas with tests; what's missing is the kernel-side wiring.
+//
+// This file defines an **interface-independent** mechanism: each method's metadata
+// (permission / risk level / whether it needs a ControlLease / whether it's an operation / whether it needs user confirmation /
+// request and response message types) is attached with protobuf **custom options** to that interface's method_id
+// enum values. With one `buf generate`, this metadata is visible to Go / Java / Kotlin
+// at once; nervud and every SDK **extract** the Method Registry **read-only** from the generated descriptors,
+// rather than each copying a list in its own language.
+//
+// Why it lives in the proto (`00` red lines #3/#4, NRCP §22.6):
+//   The proto is the single wire source of truth. If **lists** such as method_id → permission / is-operation were written as
+//   compile-time Go constant tables in nervud, "add a method / add an OEM interface" would become
+//   "change the kernel, recompile nervud". Only by hanging the lists on options, driven by descriptors, is it possible
+//   for an OEM to attach options in its own .proto, with nervud's Go unchanged, and have new methods/interfaces
+//   enter the Registry automatically (B1 dispatch uses it for method-level permission + operation decisions).
+//
+// Self-check: does an OEM adding an operation-returning method need to change code outside nervus-ipc?
+//   It shouldn't. It only defines a method_id enum value in its own .proto and attaches (method_meta).
+//
+// [REWRITE-v1] experimental: destructive changes allowed before freezing. Extension number 60001, once published,
+// **never changes and is never reused**: it's the anchor for option extraction in three languages, and changing it would disconnect method_meta
+// in all generated code.
+
+syntax = "proto3";
+
+package nervus.ipc.v1;
+
+// Custom options must extend EnumValueOptions in descriptor.proto.
+// That's a **built-in** well-known type of protoc, shipped with buf / protoc, needing no third-party dependency,
+// and touching no online service (the NRCP red line: no dependence on Google's online services).
+import "google/protobuf/descriptor.proto";
+import "nervus/ipc/v1/envelope.proto";
+import "nervus/ipc/v1/transfer.proto";
+
+option go_package = "github.com/nervus-os/nervus-ipc/protocol/ipcv1;ipcv1";
+
+// Hyphens are illegal in Java package names; see status.proto for why.
+option java_package = "io.github.nervusos.ipc.v1";
+option java_multiple_files = true;
+option java_outer_classname = "MethodRegistryProto";
+
+// =============================================================================
+// Risk level (shared by Agent tool metadata + Resource protection levels, NRCP §9 / A4)
+// =============================================================================
+
+// RiskClass is the physical and privacy risk level of a method/resource. It serves two consumers at once:
+//   1. The Method Registry's method_meta.risk_class: per-method risk, fed to
+//      the Agent tool directory and the system confirmation dialog decision (Agents can only request dangerous actions; the confirmation dialog is held by
+//      the system, `00` red line #6).
+//   2. A4's ProviderDescriptor (ManagedResource.risk_class /
+//      ProvidedInterface.resource_risk_floor): the minimum protection level of an interface/resource.
+//
+// So it's defined in this **mechanism layer** file, for interface schemas and Provider Descriptors to
+// import together, rather than stuffed into one particular interface.
+//
+// Every enum starts with *_UNSPECIFIED = 0 and fails closed: unknown/missing is always treated as "most conservative"
+// (callers must not let UNSPECIFIED through as NORMAL).
+enum RiskClass {
+  RISK_CLASS_UNSPECIFIED = 0;
+  // Read-only, or no physical/privacy side effects (such as GetState / Subscribe).
+  RISK_CLASS_NORMAL = 1;
+  // Touches privacy-sensitive data (such as raw microphone/camera streams).
+  RISK_CLASS_PRIVACY_SENSITIVE = 2;
+  // Drives physical actuators (such as motion/arms/grippers). Dangerous actions; Agents need a system confirmation dialog.
+  RISK_CLASS_PHYSICAL_CONTROL = 3;
+  // Touches the safety-critical path (Safety re-arm and the like). The highest risk.
+  RISK_CLASS_CRITICAL_SAFETY = 4;
+}
+
+// =============================================================================
+// Method metadata
+// =============================================================================
+
+// MethodMeta is the metadata attached to **an interface's method_id enum value**.
+//
+// The source of truth is always the proto: Go / SDKs / Agents only read it from the generated EnumValueOptions,
+// never writing lists elsewhere. Once published, fields follow the §10.12 compatibility rules (numbers never reused, deletions become
+// reserved, new fields need safe defaults).
+message MethodMeta {
+  // The stable numeric method_id, going into Request.method_id / Dispatch.method_id.
+  //
+  // **It must equal the numeric value of its enum value**: the enum value itself carries the wire method_id,
+  // and this redundant copy lets consumers that "only have one MethodMeta" carry the id too, without
+  // looking up the enum. The extraction tool checks the two agree; a mismatch is a schema error.
+  uint32 method_id = 1;
+
+  // The Permission id needed to call this method (such as perm.manipulator.control).
+  // Empty = interface-level Resolve is enough, and no extra permission is needed at method level (such as read-only state queries).
+  //
+  // This is the **source of truth** for method-level permissions: B1 dispatch makes method-level decisions from it before forwarding.
+  string required_permission = 2;
+
+  // This method's risk level, fed to the Agent tool directory and the system confirmation dialog (see the RiskClass notes).
+  RiskClass risk_class = 3;
+
+  // Whether the caller must hold the Resource's ControlLease to call it.
+  // false for read-only methods; true for methods that drive actuators.
+  bool requires_control_lease = 4;
+
+  // true → the method is a long task, and nervud's Operation Manager owns its state machine.
+  // false → ordinary request/response, answered with OK on success.
+  //
+  // # Protocol-level rule: the payload of ACCEPTED is always OperationHandle
+  //
+  // When returns_operation = true, nervud's Success is always
+  //
+  //	code    = STATUS_CODE_ACCEPTED
+  //	payload = nervus.interface.operation.v1.OperationHandle
+  //
+  // **This isn't agreed by each interface.** If each interface decided for itself "how to tell the caller the operation_id",
+  // the SDK would need special code for every interface, and missing one would show up as
+  // "this interface's long tasks can't get a handle", a bug that only appears on one interface.
+  //
+  // Note response_type describes **not** this handle, but the result type when the operation finally succeeds
+  // (see below). They're two things at two different moments.
+  //
+  // # Later interaction
+  //
+  // The caller uses the operation_id with nervus.interface.operation.control:
+  // GetOperation to check once, subscribe to OperationChanged to keep watching, CancelOperation
+  // to request cancellation. The Provider reports Accept / Progress / Complete through the same interface.
+  bool returns_operation = 5;
+
+  // Agent tool metadata: whether a **system-held** user confirmation dialog is needed before calling.
+  //
+  // Dangerous actions (such as moving the arm) should set it true. The Agent Service's MCP adapter **only projects
+  // this flag, never creates it**, and Providers **can't lower it by self-reporting** (Agent document §4.3, A4 §3).
+  bool needs_user_confirmation = 6;
+
+  // The full Protobuf name of the request message, such as
+  // "nervus.interface.manipulator.v1.MoveToPoseRequest".
+  // SDKs/Agents locate the request type from it; empty means no request body (rare).
+  string request_type = 7;
+
+  // The full Protobuf name of the response/terminal message.
+  //   returns_operation=false → the type of the ordinary Success payload (may be empty = empty success)
+  //   returns_operation=true  → the type of the operation's success result
+  string response_type = 8;
+
+  // -------- Agent tool metadata added by WP-A4 (A4 §3) --------
+  // A4 requires method_meta to be enough to drive the Agent tool directory + system confirmation dialog decisions; beyond needs_user_confirmation
+  // / risk_class, Agents/UIs also need direct flags for "does this tool change state, does it make the robot move".
+  // Both are redundant with risk_class but semantically finer; their source of truth is here too, and Providers can't lower them by self-reporting.
+
+  // Whether the method is read-only (changes no state, no side effects). The Agent tool directory uses it to present "safe queries"
+  // separately from "actions with side effects" to the model; true for GetXxxState / SubscribeXxx.
+  bool is_read_only = 9;
+
+  // Whether it drives actuators into physical motion. For Agents/confirmation dialogs/UIs to judge "will it move" quickly.
+  // It usually appears with risk_class = RISK_CLASS_PHYSICAL_CONTROL, but making it explicit stops consumers
+  // inferring the risk level backwards.
+  bool is_motion = 10;
+
+  // 0 means use nervud's conservative default, not unlimited. Non-zero values are still tightened by the connection-level hard ceiling.
+  uint32 default_timeout_ms = 11;
+  uint32 max_timeout_ms = 12;
+  uint32 max_request_bytes = 13;
+  uint32 max_response_bytes = 14;
+
+  // Unset = this method can't create a Transfer. When set, nervud must still tighten requested values to the
+  // direction, mode, stream count and rate budget declared here.
+  TransferPolicy transfer = 15;
+
+  // The full Protobuf name of Failure.error_detail. Empty means the method doesn't let the Provider submit
+  // an error_detail; nervud may only generate its own audited control-plane detail. When non-empty, nervud must
+  // decode it with the authoritative schema, refuse unknown fields/illegal enums and re-encode it, never passing the bytes through as is.
+  string error_detail_type = 16;
+}
+
+// EventMeta is the authoritative metadata of **subscription events**, with the same standing as MethodMeta for methods.
+//
+// # Why events need their own metadata
+//
+// Subscribe is set up at (endpoint_id, event_id) granularity. nervud has to answer three questions before it can
+// allow a subscription, and none of the three answers is in the event payload:
+//
+//	who may subscribe        required_permission
+//	how fast it pushes       max_events_per_second / max_payload_bytes
+//	what a gap means         delivery_class
+//
+// The last one especially can't be self-reported by the Provider at run time: DeliveryClass decides whether a client seeing a sequence
+// gap should "do nothing" or treat it as "data permanently lost". Letting the Provider say so on every push
+// would hand a safety/correctness judgement to the party being observed.
+message EventMeta {
+  // The stable numeric event_id, going into Subscribe.event_id and Event.event_id.
+  // **It must equal the numeric value of its enum value**, the same rule as MethodMeta.method_id.
+  uint32 event_id = 1;
+
+  // The Permission id needed to subscribe to this event. Empty = interface-level Resolve is enough.
+  //
+  // Declared separately from method-level permissions: an interface may let anyone read its state but only let privileged parties subscribe to
+  // raw telemetry; merging the two would force every event onto the strictest tier.
+  string required_permission = 2;
+
+  RiskClass risk_class = 3;
+
+  // This event's delivery class. **Declared by the schema; Providers can't self-report it at run time.**
+  //
+  // When unspecified, nervud must fail closed and treat it as RELIABLE: that's the strictest tier
+  // (no drops allowed), while treating a missing value as "drop freely" would be the dangerous default.
+  DeliveryClass delivery_class = 4;
+
+  // The full Protobuf name of the event payload. Empty means no payload (a pure signal event).
+  string payload_type = 5;
+
+  // 8 used to be subscribe_payload_type: the instance identifier went into Subscribe.payload, and the endpoint
+  // owner decoded and decided on it. That required nervud to decode bytes by the Provider's schema, which for
+  // external Providers meant a round trip, and Subscribe runs in the read loop, which can't afford to wait.
+  // Now the instance identifier is Subscribe.scope on the Envelope (a uint64 the kernel understands itself),
+  // with ownership registered in advance by BindEventScope(54).
+  reserved 8;
+  reserved "subscribe_payload_type";
+
+  // Whether this event is dispatched **per instance**.
+  //
+  // # It solves "several instances behind one endpoint"
+  //
+  // Subscriptions are set up per (endpoint, event_id). When there are several independently observable
+  // instances behind one endpoint (one built-in endpoint running every operation on the machine, one camera with several
+  // streams open), not separating instances means every subscriber gets every instance's events.
+  //
+  // That isn't just wasted bandwidth, it's **an information leak**: other people's progress, detailed failure causes and resource handles all get delivered.
+  // And the query path for the same information (GetOperation and the like) usually checks visibility: the same data,
+  // two paths, two rules, the kind of hole most easily overlooked.
+  //
+  // # The contract when true
+  //
+  //	Subscribe.scope   required and non-zero
+  //	ownership         registered in advance by the Provider through BindEventScope(54),
+  //	                  or (for built-in endpoints) known by nervud itself
+  //
+  // Subscribing to an instance you don't own is refused by nervud outright.
+  //
+  // # The decision happens at Subscribe, not at fan-out
+  //
+  // Subscribing and then dropping events one by one at fan-out would be wrong: the caller would think it's observing and wait forever for an
+  // event that never comes. "Can't subscribe" is an explicit failure, and it knows at once what to do.
+  bool scoped = 9;
+
+  // The limit on a single event payload. 0 means use nervud's conservative default, not unlimited.
+  uint32 max_payload_bytes = 6;
+
+  // The maximum number of pushes per second. 0 means use nervud's conservative default, not unlimited.
+  //
+  // It's the first gate of backpressure: when exceeded, delivery_class decides whether to merge, drop or disconnect the slow consumer.
+  uint32 max_events_per_second = 7;
+}
+
+// method_meta is an extension option on EnumValueOptions.
+//
+// Extension number 60001 is in protobuf's private range for custom extensions (50000–99999), clashing with no
+// publicly registered extension. **Never change this number once frozen**; see the file header.
+extend google.protobuf.EnumValueOptions {
+  MethodMeta method_meta = 60001;
+
+  // event_meta uses **the same mechanism with a different extension number** from method_meta.
+  //
+  // Two numbers rather than one shared: method_id and event_id are two unrelated numbering spaces
+  // (in the same interface, method 1 and event 1 have nothing to do with each other). Sharing one option would mean telling whether an enum value
+  // is a method or an event by whether a field is zero, and that way of telling would silently
+  // treat an event as a method when something was left out.
+  //
+  // 60002 is also in the private range (50000–99999). **Never change this number once frozen.**
+  EventMeta event_meta = 60002;
+}

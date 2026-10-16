@@ -1,0 +1,102 @@
+// nervus.interface.transfer.control@1
+//
+// This is a system Interface implemented by nervud. While handling an approved Dispatch, a Provider
+// uses origin_route_id to prepare a data channel; ordinary Apps can't create a Transfer out of nothing.
+//
+// BeginTransfer must be sent from **the same ServiceHost control connection that received the Dispatch**.
+// route_id is a connection-scoped handle, and even with the same process identity it must not be reused on a separately opened Client connection.
+
+syntax = "proto3";
+
+package nervus.interface.transfer.v1;
+
+import "nervus/ipc/v1/method_registry.proto";
+import "nervus/ipc/v1/transfer.proto";
+
+option go_package = "github.com/nervus-os/nervus-ipc/protocol/interface/transferv1;transferv1";
+
+option java_package = "io.github.nervusos.iface.transfer.v1";
+option java_multiple_files = true;
+option java_outer_classname = "TransferControlProto";
+
+enum TransferControlMethod {
+  TRANSFER_CONTROL_METHOD_UNSPECIFIED = 0;
+
+  TRANSFER_CONTROL_METHOD_BEGIN_TRANSFER = 1 [
+    (nervus.ipc.v1.method_meta) = {
+      method_id: 1
+      risk_class: RISK_CLASS_NORMAL
+      request_type: "nervus.interface.transfer.v1.BeginTransferRequest"
+      response_type: "nervus.interface.transfer.v1.BeginTransferResponse"
+      is_read_only: false
+      default_timeout_ms: 1000
+      max_timeout_ms: 3000
+      max_request_bytes: 4096
+      max_response_bytes: 4096
+    }
+  ];
+
+  TRANSFER_CONTROL_METHOD_COMMIT_TRANSFER = 2 [
+    (nervus.ipc.v1.method_meta) = {
+      method_id: 2
+      risk_class: RISK_CLASS_NORMAL
+      request_type: "nervus.interface.transfer.v1.CommitTransferRequest"
+      response_type: "nervus.interface.transfer.v1.CommitTransferResponse"
+      is_read_only: false
+      default_timeout_ms: 1000
+      max_timeout_ms: 3000
+      max_request_bytes: 1024
+      max_response_bytes: 1024
+    }
+  ];
+
+  TRANSFER_CONTROL_METHOD_ABORT_TRANSFER = 3 [
+    (nervus.ipc.v1.method_meta) = {
+      method_id: 3
+      risk_class: RISK_CLASS_NORMAL
+      request_type: "nervus.interface.transfer.v1.AbortTransferRequest"
+      response_type: "nervus.interface.transfer.v1.AbortTransferResponse"
+      is_read_only: false
+      default_timeout_ms: 1000
+      max_timeout_ms: 3000
+      max_request_bytes: 1024
+      max_response_bytes: 1024
+    }
+  ];
+}
+
+message BeginTransferRequest {
+  // The Dispatch.route_id the Provider is currently handling.
+  uint64 origin_route_id = 1;
+  nervus.ipc.v1.TransferDirection direction = 2;
+  // UNSPECIFIED means nervud chooses the baseline mode from MethodMeta.transfer.allowed_modes.
+  nervus.ipc.v1.TransferMode preferred_mode = 3;
+  // 0 means use MethodMeta / the kernel's conservative default, not unlimited.
+  uint32 requested_max_packet_bytes = 4;
+  uint64 requested_bytes_per_second = 5;
+}
+
+message BeginTransferResponse {
+  // For the Provider's own use; never put it in a business response for the caller.
+  nervus.ipc.v1.TransferHandle provider = 1;
+
+  // Embedded in the OpenStream response of capability interfaces such as Camera/Microphone.
+  nervus.ipc.v1.TransferHandle caller = 2;
+}
+
+message CommitTransferRequest {
+  // BeginTransfer first creates a PREPARED Transfer. The Provider Commits after finishing its own attachment and confirming the business
+  // OpenStream response can return successfully; only after Commit can the caller ticket attach.
+  // Repeated Commits of the same transfer_id must be idempotent.
+  bytes transfer_id = 1;
+}
+
+message CommitTransferResponse {}
+
+message AbortTransferRequest {
+  // Abandon a PREPARED Transfer. nervud must also Abort automatically when the handler fails, the route is cancelled or the connection drops;
+  // repeated Aborts must be idempotent.
+  bytes transfer_id = 1;
+}
+
+message AbortTransferResponse {}

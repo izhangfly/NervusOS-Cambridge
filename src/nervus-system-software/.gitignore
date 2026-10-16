@@ -1,0 +1,11 @@
+build/
+.gradle/
+.kotlin/
+out/
+*.log
+.idea/*
+.idea
+
+# Signing keys never go in the repository
+signing/*.pem
+signing/*.key
