@@ -65,16 +65,23 @@ class Datasets:
         if not (root / "meta" / "info.json").exists():
             raise ValueError(f"no dataset '{name}'")
         e = self.edits(name)
+        bounds = {"keep_before": (0, 150), "keep_after": (0, 150), "threshold_deg": (0.1, 30.0)}
         for k in ("auto_trim", "keep_before", "keep_after", "threshold_deg"):
             if k in upd:
-                e[k] = type(DEFAULT_EDITS[k])(upd[k])
+                v = type(DEFAULT_EDITS[k])(upd[k])
+                if k in bounds:
+                    lo, hi = bounds[k]
+                    v = type(v)(min(hi, max(lo, v)))
+                e[k] = v
         for ep, v in (upd.get("episodes") or {}).items():
             ep = str(int(ep))
             cur = dict(e["episodes"].get(ep, {}))
             for k in ("exclude", "start", "end"):
                 if k in v:
-                    cur[k] = v[k] if v[k] is None or k == "exclude" else int(v[k])
-            cur = {k: v for k, v in cur.items() if v not in (None, False)}
+                    cur[k] = v[k] if v[k] is None else (bool(v[k]) if k == "exclude" else max(0, int(v[k])))
+            if cur.get("start") is not None and cur.get("end") is not None and cur["end"] <= cur["start"]:
+                raise ValueError(f"episode {ep}: the trim end must be after its start")
+            cur = {k: v for k, v in cur.items() if v is not None and v is not False}  # 0 is a real trim
             if cur:
                 e["episodes"][ep] = cur
             else:

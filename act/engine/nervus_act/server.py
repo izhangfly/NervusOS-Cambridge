@@ -112,7 +112,15 @@ class Engine:
         # which is the length the ACT authors recommend ("one chunk ~ 1-2 s of robot motion").
         spec["n_action_steps"] = spec["chunk_size"]
         spec["worker"] = body.get("worker", "mac")
+        if spec["worker"] not in ("mac", "any"):
+            raise ValueError("worker is mac or any")
         return self.store.new_job(spec)
+
+    def promote(self, name: str):
+        """Ask the Mac to make a policy CURRENT now. The Mac writes CURRENT.json (one writer per file)."""
+        if name not in [p["name"] for p in self.store.policies()]:
+            raise ValueError(f"unknown policy {name!r}")
+        write_json(self.store.root / "posttrain" / "PROMOTE", {"name": name, "time": utc_now()})
 
     def close(self):
         self.runner.close()
@@ -256,6 +264,9 @@ def make_handler(eng: Engine):
             if len(parts) == 4 and parts[:2] == ["api", "jobs"] and parts[3] == "cancel":
                 eng.store.cancel_job(parts[2])
                 return None
+            if path == "/api/policies/promote":
+                eng.promote(str(b.get("name", "")))
+                return {"message": "Asked the Mac to make it CURRENT; it changes within a minute while the Mac is online."}
             if path == "/api/posttrain/request":
                 write_json(eng.store.root / "posttrain" / "REQUEST", {"time": utc_now(), "note": b.get("note", "")})
                 return None

@@ -127,7 +127,11 @@ class Store:
 
     # ---- jobs ----
     def new_job(self, spec: dict) -> str:
-        job_id = datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + safe_name(spec["name"])
+        name = safe_name(spec["name"])
+        if len(name) > 40:
+            # The id adds a 16-character timestamp, and ids are names too (63 characters at most).
+            raise ValueError("job names are at most 40 characters")
+        job_id = datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + name
         d = self.job_dir(job_id)
         d.mkdir(parents=True, exist_ok=False)
         write_json(d / "job.json", dict(spec, id=job_id, created=utc_now(), contract=CONTRACT["version"]))

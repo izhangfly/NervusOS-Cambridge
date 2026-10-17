@@ -232,6 +232,7 @@ class Recorder:
 
             if self._want_start.is_set():
                 self._want_start.clear()
+                self._discard = False
                 # Every buffer that belongs to a take is reset HERE, the one place all takes pass through.
                 prev, gap, trace, snaps = None, 0, [], {c: [] for c in self.cams}
                 with self.lock:
@@ -279,6 +280,8 @@ class Recorder:
             if self._want_stop.is_set():
                 self._want_stop.clear()
                 discard, self._discard = self._discard, False
+                if self.state != "recording":
+                    continue  # the take was already aborted (lost a camera or the arm): keep that message
                 n = self.ep_frames
                 with self.lock:
                     self.state, self.message = "saving", "Saving episode…"

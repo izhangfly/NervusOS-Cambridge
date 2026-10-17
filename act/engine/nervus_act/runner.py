@@ -696,14 +696,18 @@ class Runner:
                 # Intervention FIRST, before any stale check: the explicit Correct button is the reliable
                 # trigger; the arm reporting drag-teach is the backup.
                 if segment == "policy" and (self.correct_flag.is_set() or self.arm.teaching()):
+                    asked = self.correct_flag.is_set()
                     self.correct_flag.clear()
-                    if rec is not None and p["intervene_on_teach"]:
+                    if p["intervene_on_teach"]:
+                        # Hand over: stop commanding, so the arm is never stiffened in the operator's hands.
                         segment = "human"
                         r["interventions"] += 1
                         r["intervened_at_s"] = round(tick - t_start, 2)
-                        self.message = "HUMAN CORRECTION recording: drag the arm to finish, then Stop and mark the result."
+                        self.message = ("HUMAN CORRECTION recording: drag the arm to finish, then Stop and mark the result."
+                                        if rec is not None else
+                                        "Correction: the policy has let go (rollout recording is off, so nothing is recorded).")
                     elif not p["dry_run"]:
-                        reason = "the arm entered drag-teach"
+                        reason = "correction requested" if asked else "the arm entered drag-teach"
                         break
                 r["segment"] = segment
                 if tick - self.last_heartbeat > p["heartbeat_s"]:
