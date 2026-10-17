@@ -60,7 +60,7 @@ class StudioUiTest {
                 waitUntil(timeoutMillis = 60_000L) { onAllNodes(hasText("START", substring = true) and isEnabled()).fetchSemanticsNodes().isNotEmpty() }
                 val sim = EngineClient(studio.status["engine"]["sim_driver"].str ?: error("the engine is not running --sim"))
                 sim.post("/sim/teach", mapOf("on" to true))
-                onNodeWithText("START", substring = true).performClick()
+                onNodeWithText("START  (space)").performClick()
                 waitUntil(timeoutMillis = 10_000L) { studio.status["recorder"]["state"].str == "recording" }
                 // Move the simulated arm by hand for about three seconds.
                 for (i in 0..60) {
@@ -68,7 +68,7 @@ class StudioUiTest {
                     sim.post("/sim/drag", mapOf("joints" to listOf(20 * w, 45 + 20 * w, -60 - 20 * w, 0, 45, 0), "gripper_mm" to 10 + 30 * w))
                     Thread.sleep(50)
                 }
-                onNodeWithText("STOP", substring = true).performClick()
+                onNodeWithText("STOP  (space)").performClick()
                 waitUntil(timeoutMillis = 60_000L) { studio.status["recorder"]["saved_episodes"].int == 1 && studio.status["recorder"]["state"].str == "idle" }
                 sim.post("/sim/teach", mapOf("on" to false))
                 waitUntil(timeoutMillis = 10_000L) { seen("Saved episode 1") }
