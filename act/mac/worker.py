@@ -127,6 +127,8 @@ def process_is(pid, needle: str) -> bool:
 def sync_settled() -> tuple[bool, str]:
     """Has Syncthing finished bringing the shared folder to this Mac? A dataset whose info.json has arrived
     can still be missing videos; building from it would fail halfway or, worse, silently skip frames."""
+    if os.environ.get("NERVUS_ACT_SYNC_CHECK", "1") == "0":
+        return True, ""  # tests, or a shared folder that isn't synced
     cfg = Path("~/Library/Application Support/Syncthing/config.xml").expanduser()
     try:
         xml = cfg.read_text()

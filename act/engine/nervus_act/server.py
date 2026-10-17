@@ -32,12 +32,21 @@ class Engine:
     def __init__(self, args):
         self.args = args
         self.store = Store(Path(args.shared))
+        self.sim = None
+        if getattr(args, "sim", False):
+            from .sim import SimDriver
+            self.sim = SimDriver()
+            args.driver = self.sim.url
         self.arm = Arm(args.driver)
         self.cameras: dict[str, Camera] = {}
         for spec in args.cameras.split(","):
             if "=" in spec:
-                role, match = spec.split("=", 1)
-                self.cameras[role.strip()] = Camera(role.strip(), match.strip(), fps=args.fps)
+                role, match = (x.strip() for x in spec.split("=", 1))
+                if self.sim:
+                    from .sim import SimCamera
+                    self.cameras[role] = SimCamera(role, self.sim.arm, fps=args.fps)
+                else:
+                    self.cameras[role] = Camera(role, match, fps=args.fps)
         self.datasets = Datasets(self.store)
         self.recorder = Recorder(self.store, self.arm, self.cameras, fps=args.fps)
         self.runner = Runner(self.store, self.datasets, self.arm, self.cameras, threads=args.threads)
@@ -53,7 +62,7 @@ class Engine:
 
     def status(self) -> dict:
         return {
-            "time": utc_now(), "engine": {"started": self.started, "pid": os.getpid()},
+            "time": utc_now(), "engine": {"started": self.started, "pid": os.getpid(), "sim": self.sim is not None},
             "arm": self.arm.info(),
             "cameras": {r: c.info() for r, c in self.cameras.items()},
             "recorder": self.recorder.status(),
@@ -116,6 +125,8 @@ class Engine:
             c.close()
         self.arm.release()
         self.arm.close()
+        if self.sim:
+            self.sim.close()
 
 
 def make_handler(eng: Engine):
@@ -293,6 +304,7 @@ def main():
     ap.add_argument("--threads", type=int, default=4, help="torch threads for inference")
     ap.add_argument("--bind", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8795)
+    ap.add_argument("--sim", action="store_true", help="a simulated arm and cameras, for trying it without hardware")
     args = ap.parse_args()
     if args.bind not in ("127.0.0.1", "localhost", "::1"):
         raise SystemExit("the engine moves the arm and has no authentication: it listens on loopback only")
