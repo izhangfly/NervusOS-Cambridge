@@ -65,6 +65,8 @@ The installer:
   NervusOS, and the NervusOS / Quit NervusOS launchers with `Ctrl+Alt+N` / `Ctrl+Alt+Q`;
 - sets up the PiPER layer: the `can-up` script, `nervus-can.service`, the udev rule, and a Python venv for the driver
   in `/opt/nervus/piper/venv`;
+- installs the ACT engine (`nervus-act.service`, run as you, with its own venv in `/opt/nervus/act/venv`: CPU torch and
+  LeRobot 0.4.4, a few minutes the first time) and makes sure `~/Shared/NervusACT` exists;
 - copies the App Store catalog and packages to `/usr/share/nervus/store/`.
 
 It finishes with a check list. Every line should say `ok`.
@@ -92,6 +94,38 @@ curl -s http://127.0.0.1:8770/api/state     # joint angles, gripper, enable stat
 
 If `can0` is missing, the adapter is unplugged or the arm is off. Plugging it back in brings `can0` up again on its own.
 
+## 7. Apps
+
+Install from the App Store inside NervusOS, or over SSH (the permissions listed are granted on the user's behalf):
+
+```sh
+sudo nervusctl install out/store/packages/com.nervus.handteleop-1.0.1.nspkg perm.camera.capture,perm.manipulator.control
+sudo nervusctl install out/store/packages/com.nervus.act-1.0.1.nspkg perm.camera.capture,perm.manipulator.control
+sudo nervusctl list
+```
+
+## 8. ACT: training on a Mac
+
+ACT Studio records on the Dell and trains on a Mac (Apple silicon, 16 GB or more). The two share `~/Shared` through
+Syncthing (folder ID `mac-dell-shared`); when they are on different networks it goes through a relay, see `server/`.
+
+On the Dell, the robot cameras are found by their `/dev/v4l/by-id` names: the Orbbec Dabai DC1 on the wrist, the
+Logitech C270 for the scene. Plug the C270 into a **USB-A** port (on the USB-C/Thunderbolt side it delivers no frames).
+
+```sh
+journalctl -u nervus-act -f                         # the engine
+curl -s http://127.0.0.1:8795/api/status | head -c 600
+```
+
+On the Mac, from a clone of this repository:
+
+```sh
+act/mac/install.sh                                  # launchd agent com.nervus.act-worker
+tail -f ~/NervusACT-work/worker.log
+```
+
+Everything else (the shared-folder layout, what the worker does, troubleshooting) is in [act/README.md](../act/README.md).
+
 ## Updating
 
 Pull or copy the new sources, then run `scripts/build.sh` and `sudo hosted/install-hosted.sh` again, and restart the
@@ -104,4 +138,12 @@ export PATH=$HOME/.local/opt/go/bin:$PATH
 for m in nervus-ipc nervud nervus-system-server; do (cd src/$m && go vet ./... && go test ./...); done
 ```
 
-The Go modules only build on Linux (`GOOS=linux go vet ./...` works for checking on a Mac).
+The Go modules only build on Linux (`GOOS=linux go vet ./...` works for checking on a Mac). GitHub Actions runs the same
+suites on every push (`.github/workflows/ci.yml`), plus the ACT unit tests and the secret scan.
+
+The whole ACT pipeline can be tested without the arm, on any machine with LeRobot 0.4.4:
+
+```sh
+python act/tests/test_units.py
+python act/tests/e2e_sim.py           # record, train, run, correct, post-train, promote on a simulated arm
+```
