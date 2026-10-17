@@ -1,0 +1,3 @@
+# /etc/default/syncthing-discosrv: a private global discovery server (device ID -> last known address only).
+# Port 8444 because 8443 is taken by another service on the same host.
+STDISCOSRV_OPTS=-listen=:8444

@@ -1,0 +1,6 @@
+# /etc/default/syncthing-relaysrv: a private relay for the Mac <-> Dell sync.
+# NAT=false: a dedicated host with a public IP, no port mapping needed.
+NAT=false
+# -pools="" keeps this relay OUT of the public Syncthing relay pool,
+# so only devices that explicitly configure it can use it.
+STRELAYSRV_OPTS=-listen=:22067 -status-srv=:22070 -pools= -provided-by="NervusOS private relay"
