@@ -52,6 +52,24 @@ class Engine:
         self.runner = Runner(self.store, self.datasets, self.arm, self.cameras, threads=args.threads)
         self.link = SyncLink(Path.home())
         self.started = utc_now()
+        self.last_request = time.monotonic()
+        threading.Thread(target=self._camera_demand, daemon=True, name="camera-demand").start()
+
+    CAMERA_IDLE_S = 60
+
+    def touch(self):
+        self.last_request = time.monotonic()
+
+    def _camera_demand(self):
+        """Cameras run while ACT Studio is open (it polls every second or so) or a take or a run needs them,
+        and are released a minute after the last of those. Waking them takes about a second."""
+        while True:
+            busy = self._busy_recording() or self._busy_running()
+            want = busy or time.monotonic() - self.last_request < self.CAMERA_IDLE_S
+            for c in self.cameras.values():
+                if c.active != want:
+                    c.want(want)
+            time.sleep(1.0)
 
     # ---- exclusivity: one user of the arm and cameras at a time ----
     def _busy_recording(self) -> bool:
@@ -159,6 +177,7 @@ def make_handler(eng: Engine):
             self._json({"error": str(e)}, code)
 
         def do_GET(self):
+            eng.touch()
             u = urlparse(self.path)
             parts = [p for p in u.path.split("/") if p]
             try:
@@ -201,6 +220,7 @@ def make_handler(eng: Engine):
                 return self._err(e, 500)
 
         def do_POST(self):
+            eng.touch()
             n = int(self.headers.get("Content-Length", 0) or 0)
             try:
                 body = json.loads(self.rfile.read(n) or b"{}")

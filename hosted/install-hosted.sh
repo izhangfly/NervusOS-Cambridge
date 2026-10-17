@@ -115,6 +115,26 @@ systemctl daemon-reload
 systemctl enable --now nervus-can.service >/dev/null 2>&1 || warn "nervus-can.service failed (is the CAN adapter plugged in?)"
 ip -br link show can0 2>/dev/null | sed 's/^/    /' || warn "can0 not present"
 
+# ------------------------------------------------------------------ ACT engine
+step "ACT engine (record, run, post-train)"
+install -d -m 0755 /opt/nervus/act
+rm -rf /opt/nervus/act/nervus_act
+cp -r "$REPO/act/engine/nervus_act" /opt/nervus/act/nervus_act
+find /opt/nervus/act/nervus_act -name __pycache__ -prune -exec rm -rf {} +
+install -m 0644 "$REPO/act/README.md" /opt/nervus/act/README.md 2>/dev/null || true
+if [[ ! -x /opt/nervus/act/venv/bin/python ]]; then
+	python3 -m venv /opt/nervus/act/venv
+	/opt/nervus/act/venv/bin/pip install -q --upgrade pip >/dev/null
+	echo "    installing torch (CPU) and LeRobot: a few minutes the first time"
+	/opt/nervus/act/venv/bin/pip install -q --index-url https://download.pytorch.org/whl/cpu torch==2.10.0 torchvision==0.25.0
+fi
+/opt/nervus/act/venv/bin/pip install -q -r "$REPO/act/engine/requirements.txt"
+ok "engine venv: $(/opt/nervus/act/venv/bin/python -c 'import torch,lerobot,cv2;print("torch",torch.__version__,"lerobot",lerobot.__version__,"opencv",cv2.__version__)')"
+install -d -o "$DESKTOP_USER" -g "$DESKTOP_USER" -m 0755 "$DESKTOP_HOME/Shared" "$DESKTOP_HOME/Shared/NervusACT"
+sed "s/@USER@/$DESKTOP_USER/g; s#@HOME@#$DESKTOP_HOME#g" "$HOSTED/systemd/nervus-act.service.in" >/etc/systemd/system/nervus-act.service
+systemctl daemon-reload
+ok "nervus-act.service: runs with NervusOS, as $DESKTOP_USER, on 127.0.0.1:8795"
+
 # ------------------------------------------------------------------ store
 step "App Store catalog"
 if [[ -f "$STORE_SRC/catalog.ini" ]]; then
@@ -187,6 +207,6 @@ NervusOS is installed in hosted mode.
   Open:   "NervusOS" in the app grid or dock, Ctrl+Alt+N, or: nervus-session start
   Quit:   Ctrl+Alt+Q, "Quit NervusOS", the NervusOS power button, or: nervus-session stop
   Status: nervus-session status
-  Logs:   journalctl -u nervud -f      journalctl -u nervus-piper -f
+  Logs:   journalctl -u nervud -f      journalctl -u nervus-piper -f      journalctl -u nervus-act -f
   Remove: sudo hosted/uninstall-hosted.sh
 EOF

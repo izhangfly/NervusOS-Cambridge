@@ -197,9 +197,22 @@ class Camera:
         self.error: str | None = None
         self.device: str | None = None
         self._stop = threading.Event()
+        self._wanted = threading.Event()
+        self._wanted.set()
         self._jpeg: tuple[int, bytes] | None = None
         self._lock = threading.Lock()
         threading.Thread(target=self._run, daemon=True, name=f"cam-{role}").start()
+
+    def want(self, on: bool):
+        """Open the device while someone needs frames; release it (and its USB bandwidth) when nobody does."""
+        if on:
+            self._wanted.set()
+        else:
+            self._wanted.clear()
+
+    @property
+    def active(self) -> bool:
+        return self._wanted.is_set()
 
     def _resolve(self) -> str:
         hits = sorted(glob.glob(f"/dev/v4l/by-id/*{self.by_id}*-video-index0"))
@@ -216,6 +229,12 @@ class Camera:
     def _run(self):
         import cv2
         while not self._stop.is_set():
+            if not self._wanted.is_set():
+                with self._lock:
+                    self.frame, self.stamp = None, 0.0
+                self.times.clear()
+                self._wanted.wait(1.0)
+                continue
             cap = None
             try:
                 dev = self._resolve()
@@ -232,7 +251,7 @@ class Camera:
                     raise RuntimeError(f"{self.role} camera {dev} did not open")
                 self.error = None
                 misses = 0
-                while not self._stop.is_set():
+                while not self._stop.is_set() and self._wanted.is_set():
                     ok, bgr = cap.read()
                     if not ok:
                         misses += 1
@@ -255,7 +274,8 @@ class Camera:
             finally:
                 if cap is not None:
                     cap.release()
-            self._stop.wait(2.0)
+            if self._wanted.is_set():
+                self._stop.wait(2.0)  # it failed: try again shortly
 
     def latest(self) -> tuple[np.ndarray | None, float]:
         with self._lock:
@@ -287,7 +307,7 @@ class Camera:
         _, age = self.latest()
         return {"role": self.role, "device": self.device, "match": self.by_id, "fps": round(self.fps(), 1),
                 "age_ms": None if math.isinf(age) else round(age * 1000), "error": self.error,
-                "size": [self.w, self.h]}
+                "size": [self.w, self.h], "active": self.active}
 
     def close(self):
         self._stop.set()

@@ -238,6 +238,7 @@ class SimCamera:
         self._stop = threading.Event()
         self._lock = threading.Lock()
         self._jpeg = None
+        self.active = True
         yy, xx = np.mgrid[0:height, 0:width]
         self._bg = np.stack([60 + 40 * yy / height, 70 + 30 * xx / width, 80 + 0 * xx], axis=-1).astype(np.uint8)
         threading.Thread(target=self._run, daemon=True, name=f"simcam-{role}").start()
@@ -286,6 +287,9 @@ class SimCamera:
                 nxt = time.monotonic()  # fell behind (a slow first frame): don't burst to catch up
             time.sleep(max(0.0, nxt - time.monotonic()))
 
+    def want(self, on: bool):
+        self.active = bool(on)  # rendering is cheap; the flag is only reported
+
     def latest(self):
         with self._lock:
             return self.frame, (time.monotonic() - self.stamp) if self.stamp else math.inf
@@ -314,7 +318,7 @@ class SimCamera:
         _, age = self.latest()
         return {"role": self.role, "device": self.device, "match": self.by_id, "fps": round(self.fps(), 1),
                 "age_ms": None if math.isinf(age) else round(age * 1000), "error": None,
-                "size": [self.w, self.h], "sim": True}
+                "size": [self.w, self.h], "sim": True, "active": self.active}
 
     def close(self):
         self._stop.set()
