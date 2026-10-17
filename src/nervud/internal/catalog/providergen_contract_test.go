@@ -10,8 +10,6 @@ import (
 	"github.com/nervus-os/nervud/internal/identity"
 )
 
-//
-
 func providergenStyleArtifacts(t *testing.T) *ipcregistry.ProviderArtifacts {
 	t.Helper()
 	bundle, err := ipcregistry.BuildSchemaBundle(
@@ -42,8 +40,6 @@ func providergenStyleArtifacts(t *testing.T) *ipcregistry.ProviderArtifacts {
 	}
 	return artifacts
 }
-
-//
 
 func TestProvidergenArtifactsMatchBootstrapContract(t *testing.T) {
 	registry := mustDefaultRegistry(t)

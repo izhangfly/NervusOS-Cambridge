@@ -16,7 +16,9 @@ import io.github.nervusos.iface.pkgmanager.v1.ListRequest
 import io.github.nervusos.iface.pkgmanager.v1.ListResult
 import io.github.nervusos.iface.pkgmanager.v1.PackageInfo
 import io.github.nervusos.iface.pkgmanager.v1.PackageManagerErrorDetail
+import io.github.nervusos.iface.pkgmanager.v1.PackageManagerReason
 import io.github.nervusos.iface.pkgmanager.v1.UninstallRequest
+import io.github.nervusos.ipc.v1.StatusCode
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -101,9 +103,10 @@ class Store(config: ComponentConfig) : NervusApp(config) {
             timeoutSeconds = 300,
         )
         if (!outcome.isSuccess) {
-            val reason = runCatching { PackageManagerErrorDetail.parseFrom(outcome.errorDetail).reason.name }
+            val reason = runCatching { PackageManagerErrorDetail.parseFrom(outcome.errorDetail).reason }
                 .getOrNull()
-            throw RuntimeException("install failed: ${outcome.code}${reason?.let { " ($it)" } ?: ""}")
+                ?.takeIf { it != PackageManagerReason.PACKAGE_MANAGER_REASON_UNSPECIFIED }
+            throw RuntimeException(installFailureText(outcome.code, reason))
         }
         return InstallResult.parseFrom(outcome.result).`package`
     }
@@ -129,6 +132,31 @@ class Store(config: ComponentConfig) : NervusApp(config) {
     companion object {
         val USER_DATA: Path = Paths.get("/var/lib/nervus/user-data")
         val STAGING_DIR: Path = USER_DATA.resolve(".store")
+    }
+}
+
+/**
+ * What the user reads when an install fails. The kernel doesn't forward a Provider's typed reason yet,
+ * so most failures arrive as a bare status code; say what that code usually means here rather than
+ * printing the enum name.
+ */
+internal fun installFailureText(code: StatusCode, reason: PackageManagerReason?): String {
+    reason?.let {
+        return when (it) {
+            PackageManagerReason.PACKAGE_MANAGER_REASON_SIGNATURE_INVALID -> "the package signature is not valid"
+            PackageManagerReason.PACKAGE_MANAGER_REASON_DIGEST_MISMATCH -> "the package is damaged; download it again"
+            PackageManagerReason.PACKAGE_MANAGER_REASON_DOWNGRADE -> "a newer version is already installed"
+            PackageManagerReason.PACKAGE_MANAGER_REASON_ABI_MISMATCH -> "the package was built for another kind of device"
+            else -> "install failed (${it.name.removePrefix("PACKAGE_MANAGER_REASON_").lowercase().replace('_', ' ')})"
+        }
+    }
+    return when (code) {
+        StatusCode.STATUS_CODE_INVALID_ARGUMENT -> "the package file is not a valid NervusOS package"
+        StatusCode.STATUS_CODE_FAILED_PRECONDITION ->
+            "the system refused the package (signature, version or device type); see the system log"
+        StatusCode.STATUS_CODE_NOT_FOUND -> "the package file was not found"
+        StatusCode.STATUS_CODE_DEADLINE_EXCEEDED -> "the install took too long and was stopped"
+        else -> "install failed (${code.name.removePrefix("STATUS_CODE_").lowercase().replace('_', ' ')})"
     }
 }
 

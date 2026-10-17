@@ -12,8 +12,6 @@ const (
 	testSharedPersistRoot = "/var/lib/nervus/shared"
 )
 
-//
-
 func TestProvision_CreatesSharedDirs(t *testing.T) {
 	mod, installer, _, _, _ := newTestInstallerWithPerm(t)
 	mod.SetSharedRoots(testSharedRuntimeRoot, testSharedPersistRoot)
@@ -94,8 +92,6 @@ func TestProvision_NoSharedDirsWhenRootsUnset(t *testing.T) {
 		t.Fatalf("unexpected package registry result; value = %+v", installer.dataDirs)
 	}
 }
-
-//
 
 func TestProvision_NoSharedDirsWithoutPermission(t *testing.T) {
 	mod, installer, _, _, _ := newTestInstallerWithPerm(t)

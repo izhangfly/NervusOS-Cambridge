@@ -13,9 +13,6 @@ import (
 	"github.com/nervus-os/nervud/internal/identity"
 )
 
-//
-//
-
 type lineageChain struct {
 	keys []ed25519.PrivateKey
 }

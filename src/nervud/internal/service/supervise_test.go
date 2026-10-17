@@ -30,8 +30,6 @@ func jvmAppFixture(t *testing.T) (*Manager, pkgregistry.Entry, pkgregistry.Compo
 
 func TestCodeDir_DiffersBySource(t *testing.T) {
 
-	//
-
 	inv := authority.DefaultInvariants()
 
 	sys := pkgregistry.Entry{
@@ -74,8 +72,6 @@ func TestCodeDir_SystemPathPassesInvariantCheck(t *testing.T) {
 		t.Error("unexpected service result; /etc/shadow")
 	}
 }
-
-//
 
 func TestBuildStartReq_JVMGetsWritableTmpAndHome(t *testing.T) {
 	m, e, c := jvmAppFixture(t)

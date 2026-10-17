@@ -10,27 +10,11 @@ import (
 	"github.com/nervus-os/nervud/internal/identity"
 )
 
-//
-
-//
-
-//
-
-//
-
-//
-
-//
-
 const (
 	testCameraInterface = "nervus.interface.camera"
 	testCameraResource  = "nervus.resource.camera"
 	testCameraPerm      = "perm.camera.capture"
 )
-
-//
-
-//
 
 func cameradSource(t *testing.T, roles ...string) Source {
 	t.Helper()
@@ -129,8 +113,6 @@ func noBundles() *ipcv1.InterfaceSchemaBundleSet {
 	return &ipcv1.InterfaceSchemaBundleSet{}
 }
 
-//
-
 func TestVendorCamera_CannotIntroduceUnknownStandardType(t *testing.T) {
 	registry := mustDefaultRegistry(t)
 	_, err := registry.Prepare([]Source{
@@ -143,8 +125,6 @@ func TestVendorCamera_CannotIntroduceUnknownStandardType(t *testing.T) {
 		t.Fatalf("unexpected catalog result; err = %v; expected rejection", err)
 	}
 }
-
-//
 
 func TestVendorCamera_MayAddInstanceOnceTypeIsKnown(t *testing.T) {
 	registry := mustDefaultRegistry(t)
@@ -181,10 +161,6 @@ func TestVendorCamera_MayAddInstanceOnceTypeIsKnown(t *testing.T) {
 	}
 }
 
-//
-
-//
-
 func TestVendorCamera_TwoVendorsCannotClaimSameRole(t *testing.T) {
 	registry := mustDefaultRegistry(t)
 	_, err := registry.Prepare([]Source{
@@ -220,8 +196,6 @@ func TestVendorCamera_DifferentRolesCoexist(t *testing.T) {
 	}
 }
 
-//
-
 func TestVendorCamera_ConflictingContractOnSameRoleIsRejected(t *testing.T) {
 	registry := mustDefaultRegistry(t)
 	_, err := registry.Prepare([]Source{
@@ -239,10 +213,6 @@ func TestVendorCamera_ConflictingContractOnSameRoleIsRejected(t *testing.T) {
 	}
 }
 
-//
-
-//
-
 func TestVendorCamera_CannotHijackPlatformRole(t *testing.T) {
 	registry := mustDefaultRegistry(t)
 	_, err := registry.Prepare([]Source{
@@ -257,8 +227,6 @@ func TestVendorCamera_CannotHijackPlatformRole(t *testing.T) {
 		t.Fatalf("unexpected catalog result; err = %v, want nervus.camerad", err)
 	}
 }
-
-//
 
 func TestVendorCamera_CannotHijackPlatformRoleByCopyingLabels(t *testing.T) {
 	registry := mustDefaultRegistry(t)
@@ -275,10 +243,6 @@ func TestVendorCamera_CannotHijackPlatformRoleByCopyingLabels(t *testing.T) {
 		t.Fatalf("unexpected catalog result; err = %v; expected rejection", err)
 	}
 }
-
-//
-
-//
 
 func TestVendorCamera_CannotLabelStandardResourceAsPlatformSemantic(t *testing.T) {
 	registry := mustDefaultRegistry(t)

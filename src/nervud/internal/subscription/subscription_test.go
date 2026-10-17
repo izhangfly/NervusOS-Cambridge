@@ -55,8 +55,6 @@ func TestSubscribeAndPublish(t *testing.T) {
 	}
 }
 
-//
-
 func TestSequenceIsPerSubscription(t *testing.T) {
 	r := New()
 	first := &fakeSink{}
@@ -78,8 +76,6 @@ func TestSequenceIsPerSubscription(t *testing.T) {
 		t.Fatalf("unexpected subscription result; 1: %+v", second.events)
 	}
 }
-
-//
 
 func TestSubscriptionIDNeverReused(t *testing.T) {
 	r := New()
@@ -186,8 +182,6 @@ func TestDroppedResetsAfterDelivery(t *testing.T) {
 			sink.events[1].GetDropped())
 	}
 }
-
-//
 
 func TestUnspecifiedDeliveryClassFailsClosed(t *testing.T) {
 	if got := DeliveryClassOf(&ipcv1.EventMeta{}); got !=

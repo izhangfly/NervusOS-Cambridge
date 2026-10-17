@@ -684,6 +684,12 @@ func (co *conn) handleRequest(req *ipcv1.Request) bool {
 			return co.enqueue(responseEnvelope(failureResponse(
 				req.GetRequestId(), ipcv1.StatusCode_STATUS_CODE_FAILED_PRECONDITION)))
 		}
+		// The command is the operator's fresh input: feed the lease's deadman. A failure here means
+		// the lease lapsed between the check and now, which is a refusal like any other.
+		if err := co.s.leases.Refresh(leaseProof.ID, co.leaseConnID()); err != nil {
+			return co.enqueue(responseEnvelope(failureResponse(
+				req.GetRequestId(), ipcv1.StatusCode_STATUS_CODE_FAILED_PRECONDITION)))
+		}
 	}
 	if code := co.reserveRequest(req.GetRequestId(), len(payload)); code != ipcv1.StatusCode_STATUS_CODE_UNSPECIFIED {
 		return co.enqueue(responseEnvelope(failureResponse(req.GetRequestId(), code)))
@@ -905,9 +911,10 @@ func (co *conn) handleDispatchResult(dr *ipcv1.DispatchResult) bool {
 	}
 
 	resp, valid := co.s.validateDispatchResult(e, dr)
-	if valid {
-		co.s.convergeSynchronousOperation(e, resp)
-	}
+	// Close a long task's operation whatever the outcome. A rejected result reaches the caller as
+	// INTERNAL, and its operation has to end with it: before, it stayed PENDING until the deadline, so
+	// a typed install failure showed up in the App Store as a timeout.
+	co.s.convergeSynchronousOperation(e, resp)
 	sourceOK := resolveRoute(e, resp)
 	if !valid {
 		co.log.Warn("ipc: Provider violated method result contract, closing",

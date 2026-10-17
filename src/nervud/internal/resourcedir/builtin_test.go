@@ -15,8 +15,6 @@ import (
 
 const camType = "nervus.resource.camera"
 
-//
-
 func deviceRegistry(t *testing.T) *catalog.Registry {
 	t.Helper()
 
@@ -110,8 +108,6 @@ func roles(out *resourcedirv1.ResourceList) []string {
 	return got
 }
 
-//
-
 func TestListResources_EmptyRequestListsAll(t *testing.T) {
 	m := New(deviceRegistry(t), nil)
 	out := list(t, m, &resourcedirv1.ListResourcesRequest{})
@@ -166,8 +162,6 @@ func TestListResources_LabelsAreAnded(t *testing.T) {
 	}
 }
 
-//
-
 func TestListResources_NoMatchIsEmptySuccess(t *testing.T) {
 	m := New(deviceRegistry(t), nil)
 	out := list(t, m, &resourcedirv1.ListResourcesRequest{
@@ -215,8 +209,6 @@ func TestListResources_MalformedRequestIsRejected(t *testing.T) {
 	}
 }
 
-//
-
 func TestListResources_UnknownMethodIsNotFound(t *testing.T) {
 	m := New(deviceRegistry(t), nil)
 	result := m.BuiltinHandler()(endpoint.BuiltinCall{MethodID: 9999})
@@ -224,8 +216,6 @@ func TestListResources_UnknownMethodIsNotFound(t *testing.T) {
 		t.Fatalf("code = %v, want NOT_FOUND", result.Code)
 	}
 }
-
-//
 
 func TestListResources_NilRegistryIsUnavailable(t *testing.T) {
 	m := New(nil, nil)

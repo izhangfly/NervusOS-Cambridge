@@ -11,8 +11,6 @@ import (
 	"github.com/nervus-os/nervud/internal/endpoint"
 )
 
-//
-
 func detailRoute(t *testing.T, errorDetailType string) endpoint.RouteInfo {
 	t.Helper()
 	detailDescriptor := (&operationv1.OperationErrorDetail{}).ProtoReflect().Descriptor()
@@ -44,8 +42,6 @@ func mustDetailBytes(t *testing.T, reason operationv1.OperationReason) []byte {
 	}
 	return wire
 }
-
-//
 
 func TestBuiltinDetail_ForwardedToCaller(t *testing.T) {
 	s := &Server{log: discardLog()}
@@ -93,8 +89,6 @@ func TestBuiltinDetail_AbsentIsFine(t *testing.T) {
 	}
 }
 
-//
-
 func TestBuiltinDetail_RejectedWhenContractDeclaresNone(t *testing.T) {
 	s := &Server{log: discardLog()}
 	route := detailRoute(t, "")
@@ -111,8 +105,6 @@ func TestBuiltinDetail_RejectedWhenContractDeclaresNone(t *testing.T) {
 		t.Fatalf("unexpected ipc result; code = %v, want INTERNAL bug", resp.GetFailure().GetCode())
 	}
 }
-
-//
 
 func TestBuiltinDetail_MalformedIsRejected(t *testing.T) {
 	s := &Server{log: discardLog()}
@@ -131,8 +123,6 @@ func TestBuiltinDetail_MalformedIsRejected(t *testing.T) {
 		t.Fatalf("code = %v, want INTERNAL", resp.GetFailure().GetCode())
 	}
 }
-
-//
 
 func TestBuiltinDetail_SuccessIgnoresErrorDetail(t *testing.T) {
 	s := &Server{log: discardLog()}

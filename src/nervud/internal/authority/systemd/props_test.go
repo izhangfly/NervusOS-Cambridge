@@ -202,9 +202,20 @@ func TestBuildProperties_DeviceAccessOptIn(t *testing.T) {
 	}
 }
 
-func TestBuildProperties_CollectModeIsSet(t *testing.T) {
+func TestBuildProperties_DeviceGroupsOnlyWithDeviceAccess(t *testing.T) {
+	spec := validSpec()
+	spec.Sandbox.DeviceGroups = []string{"video"}
+	if _, ok := propMap(t, spec)["SupplementaryGroups"]; ok {
+		t.Fatal("device groups granted without device access")
+	}
+	spec.Sandbox.AllowDeviceAccess = true
+	got, ok := propMap(t, spec)["SupplementaryGroups"].([]string)
+	if !ok || len(got) != 1 || got[0] != "video" {
+		t.Fatalf("SupplementaryGroups = %v, want [video]", got)
+	}
+}
 
-	//
+func TestBuildProperties_CollectModeIsSet(t *testing.T) {
 
 	m := propMap(t, validSpec())
 	if got := m["CollectMode"]; got != "inactive-or-failed" {

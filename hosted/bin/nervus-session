@@ -62,9 +62,31 @@ host_display_ok() {
 
 # Runs in the background for the life of the session: waits for Xephyr to go
 # away (window closed, Quit, or the NervusOS power button) and cleans up.
+#
+# It also works the other way round: if nervud stops while the display is still
+# open (the power hook could not close it, the kernel crashed for good, or
+# someone ran systemctl stop), an empty fullscreen display would hide the Ubuntu
+# desktop behind a black screen with only a cursor on it. So once nervud has
+# been inactive for STOPPED_GRACE checks in a row, close the display too.
+# A restart (Power → Restart NervusOS) passes through "activating" and is far
+# shorter than the grace, so it never trips this.
+STOPPED_GRACE=4
 supervise() {
-	local xpid="$1"
-	while kill -0 "$xpid" 2>/dev/null; do sleep 1; done
+	local xpid="$1" stopped=0 st
+	while kill -0 "$xpid" 2>/dev/null; do
+		sleep 1
+		st="$(systemctl is-active nervud.service 2>/dev/null)"
+		if [[ "$st" == inactive || "$st" == failed ]]; then
+			stopped=$((stopped + 1))
+			if (( stopped >= STOPPED_GRACE )); then
+				log "nervud is $st; closing display $NERVUS_DISPLAY"
+				kill "$xpid" 2>/dev/null
+				break
+			fi
+		else
+			stopped=0
+		fi
+	done
 	log "display $NERVUS_DISPLAY closed; stopping NervusOS"
 	systemctl stop nervud.service >>"$LOG" 2>&1 || log "systemctl stop nervud failed"
 	local wm; wm="$(cat "$RUN_DIR/openbox.pid" 2>/dev/null)"

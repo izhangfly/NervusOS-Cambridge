@@ -176,6 +176,7 @@ func (g *Gate) osStartSandboxedProcess(ctx context.Context, req StartSandboxedPr
 			ReadOnlyPaths:        req.ReadOnlyPaths,
 			InaccessiblePaths:    req.InaccessiblePaths,
 			AllowDeviceAccess:    req.AllowDeviceAccess,
+			DeviceGroups:         g.deviceGroupsFor(req.AllowDeviceAccess),
 			BindReadOnlyPaths:    req.BindReadOnlyPaths,
 			AmbientCapabilities:  req.AmbientCapabilities,
 			ExtraAddressFamilies: req.ExtraAddressFamilies,
@@ -185,6 +186,14 @@ func (g *Gate) osStartSandboxedProcess(ctx context.Context, req StartSandboxedPr
 		return ProcessHandle{}, err
 	}
 	return ProcessHandle{unit: req.UnitName}, nil
+}
+
+// deviceGroupsFor returns the supplementary groups for a component: none unless it has device access.
+func (g *Gate) deviceGroupsFor(deviceAccess bool) []string {
+	if !deviceAccess || len(g.deviceGroups) == 0 {
+		return nil
+	}
+	return append([]string(nil), g.deviceGroups...)
 }
 
 // ---- StopProcess ----------------------------------------------------------

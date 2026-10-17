@@ -79,8 +79,6 @@ func TestFileRecorder_ChainVerifies(t *testing.T) {
 	}
 }
 
-//
-
 func TestFileRecorder_DetectsModifiedRecord(t *testing.T) {
 	r, dir := newTestRecorder(t, DefaultMaxBytes)
 	r.Record(context.Background(), Event{Action: "a", Subject: "s", Denied: true})
@@ -140,8 +138,6 @@ func TestFileRecorder_DetectsReordering(t *testing.T) {
 	}
 }
 
-//
-
 func TestFileRecorder_ResumesChainAcrossRestart(t *testing.T) {
 	dir := t.TempDir()
 	at := time.Date(2026, 8, 8, 12, 0, 0, 0, time.UTC)
@@ -192,8 +188,6 @@ func TestFileRecorder_ResumesChainAcrossRestart(t *testing.T) {
 	}
 }
 
-//
-
 func TestFileRecorder_MarksNewChainWhenFileMissing(t *testing.T) {
 	dir := t.TempDir()
 	at := time.Date(2026, 8, 8, 12, 0, 0, 0, time.UTC)
@@ -234,8 +228,6 @@ func TestFileRecorder_MarksNewChainWhenFileMissing(t *testing.T) {
 	}
 }
 
-//
-
 func TestFileRecorder_RotationCarriesChain(t *testing.T) {
 
 	r, dir := newTestRecorder(t, 400)
@@ -269,8 +261,6 @@ func TestFileRecorder_RotationCarriesChain(t *testing.T) {
 		t.Fatalf("unexpected audit result; Rotated: %q", current[0].Detail)
 	}
 }
-
-//
 
 func truncateLastLine(t *testing.T, path string) {
 	t.Helper()
@@ -400,14 +390,6 @@ func TestFileRecorder_FileIsOwnerOnly(t *testing.T) {
 		t.Fatalf("unexpected audit result; value = %o, want %o", perm, filePerm)
 	}
 }
-
-//
-
-//
-
-//
-
-//
 
 func simulatePowerLoss(t *testing.T, dir string, lose int) {
 	t.Helper()
@@ -569,10 +551,6 @@ func TestFileRecorder_MissingFileIsNewChainNotUnclean(t *testing.T) {
 	}
 }
 
-//
-
-//
-
 func waitRecords(t *testing.T, r *FileRecorder, n uint64) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
@@ -694,8 +672,6 @@ func TestFileRecorder_CloseSyncs(t *testing.T) {
 	}
 }
 
-//
-
 func TestFileRecorder_RotationSyncs(t *testing.T) {
 	dir := t.TempDir()
 	at := time.Date(2026, 8, 8, 12, 0, 0, 0, time.UTC)
@@ -721,8 +697,6 @@ func TestFileRecorder_RotationSyncs(t *testing.T) {
 		t.Fatalf("unexpected audit result; fsync %d -> %d", before, after)
 	}
 }
-
-//
 
 func TestFileRecorder_IdleDoesNotSync(t *testing.T) {
 	r, _ := newClockedRecorder(t)

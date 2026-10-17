@@ -41,6 +41,7 @@ SERVICES=(
 	"nervus.pkgmanagerd:pkgmanagerd"
 	"nervus.safety.recovery:safetyrecoveryd"
 	"nervus.camerad:camerad"
+	"nervus.piperd:piperd"
 )
 
 # Board camera configuration. camerad's resource declarations are generated from it, so [a different board needs a new package]:

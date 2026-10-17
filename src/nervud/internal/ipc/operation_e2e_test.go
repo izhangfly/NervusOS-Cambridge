@@ -12,13 +12,11 @@ import (
 	"github.com/nervus-os/nervud/internal/operation"
 )
 
-//
 //	App -> nervud: Request(returns_operation)
 
 //	                nervud -> Provider: Dispatch
 //	                nervud <--DispatchResult{ACCEPTED}-- Provider
 //	App <--Response{ACCEPTED, OperationHandle}-- nervud
-//
 
 func newOperationTestServer(t *testing.T, re *routingEndpoints) (*Server, *operation.Manager, string) {
 	t.Helper()
@@ -44,10 +42,6 @@ func operationRequest(reqID uint64) *ipcv1.Envelope {
 		RequestId: reqID, EndpointId: 1, MethodId: 1,
 	}}}
 }
-
-//
-
-//
 
 func TestOperation_IDReachesProviderBeforeDispatchResult(t *testing.T) {
 	re := &routingEndpoints{
@@ -139,8 +133,6 @@ func TestOperation_AcceptedResponseCarriesKernelHandle(t *testing.T) {
 	}
 }
 
-//
-
 func TestOperation_ProviderCannotForgeHandle(t *testing.T) {
 	re := &routingEndpoints{
 		registerResult: registerSuccessResult(55),
@@ -221,8 +213,6 @@ func TestOperation_PlainMethodCannotReturnAccepted(t *testing.T) {
 	}
 }
 
-//
-
 func TestOperation_RejectedWhenManagerNotWired(t *testing.T) {
 	re := &routingEndpoints{
 		registerResult: registerSuccessResult(55),
@@ -249,8 +239,6 @@ func TestOperation_RejectedWhenManagerNotWired(t *testing.T) {
 		t.Fatalf("unexpected ipc result; code = %v, want UNAVAILABLE", code)
 	}
 }
-
-//
 
 func TestOperation_ConvergedWhenDispatchFails(t *testing.T) {
 	re := &routingEndpoints{
@@ -381,5 +369,53 @@ func TestOperation_SynchronousFailureFails(t *testing.T) {
 	if op.State != operation.StateFailed ||
 		op.TerminalStatus != ipcv1.StatusCode_STATUS_CODE_FAILED_PRECONDITION {
 		t.Fatalf("state = %v / %v, want FAILED / FAILED_PRECONDITION", op.State, op.TerminalStatus)
+	}
+}
+
+// A Provider result the kernel rejects (here: an error_detail, which has no authorized status
+// mapping yet) must still end the long task. The caller gets INTERNAL, and the operation fails
+// with it instead of waiting for its deadline.
+func TestOperation_RejectedResultFailsOperation(t *testing.T) {
+	re := &routingEndpoints{
+		registerResult: registerSuccessResult(57),
+		returnsOper:    true,
+	}
+	_, ops, sock := newOperationTestServer(t, re)
+
+	svc := dial(t, sock)
+	handshakeService(t, svc)
+	registerService(t, svc, 57)
+
+	caller := dial(t, sock)
+	handshake(t, caller)
+	if err := WriteFrame(caller, mustMarshal(t, operationRequest(2))); err != nil {
+		t.Fatal(err)
+	}
+	dispatch := readEnv(t, svc).GetDispatch()
+	operationID := dispatch.GetExecutionContext().GetOperationId()
+
+	fail := &ipcv1.Envelope{Body: &ipcv1.Envelope_DispatchResult{
+		DispatchResult: &ipcv1.DispatchResult{
+			RouteId: dispatch.GetRouteId(),
+			Outcome: &ipcv1.DispatchResult_Failure{Failure: &ipcv1.Failure{
+				Code:        ipcv1.StatusCode_STATUS_CODE_FAILED_PRECONDITION,
+				ErrorDetail: []byte{0x08, 0x01},
+			}},
+		},
+	}}
+	if err := WriteFrame(svc, mustMarshal(t, fail)); err != nil {
+		t.Fatal(err)
+	}
+	if code := readEnv(t, caller).GetResponse().GetFailure().GetCode(); code != ipcv1.StatusCode_STATUS_CODE_INTERNAL {
+		t.Fatalf("caller code = %v, want INTERNAL for a rejected Provider result", code)
+	}
+
+	op, ok := ops.Get(systemView(), operationID)
+	if !ok {
+		t.Fatalf("operation %d not found", operationID)
+	}
+	if op.State != operation.StateFailed ||
+		op.TerminalStatus != ipcv1.StatusCode_STATUS_CODE_INTERNAL {
+		t.Fatalf("state = %v / %v, want FAILED / INTERNAL", op.State, op.TerminalStatus)
 	}
 }

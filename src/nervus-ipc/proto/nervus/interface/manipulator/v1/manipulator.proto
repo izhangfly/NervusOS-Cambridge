@@ -15,6 +15,12 @@
 //   operation.Create (B5), and success is answered with STATUS_CODE_ACCEPTED + operation_id;
 //   SetGripper / Stop are short commands, not operations.
 //
+// Teleoperation: ServoToPose streams a Cartesian target for the end effector, the arm's counterpart of
+//   BaseMotion.SetVelocity. It's a short command under a ControlLease, with no confirmation dialog and no operation:
+//   each call replaces the previous target (latest wins), and the Provider moves toward it at its own speed limit
+//   rather than jumping. When the stream stops (the caller stops sending, or the lease's deadman lapses) the arm holds
+//   where it is. MoveToPose is the opposite shape: one goal, a long task, and a result the caller waits for.
+//
 // Units and frames (NRCP §17.1; keep them in the comments):
 //   joint angle = rad; joint angular velocity = rad/s; Cartesian position = m; quaternions are dimensionless;
 //   frames always use an explicit frame string (such as "base_link"); vague or implicit defaults are **forbidden**.
@@ -138,6 +144,20 @@ enum ManipulatorMethod {
     response_type: ""
     error_detail_type: "nervus.interface.manipulator.v1.ManipulatorErrorDetail"
   }];
+  // Streamed Cartesian target for teleoperation (a short command, latest wins). Needs a lease, and the lease's
+  // deadman is what stops the arm when the operator lets go; so no user confirmation per call, the same as
+  // BaseMotion.SetVelocity. The Provider clamps the target to its workspace and approaches it at a bounded speed.
+  MANIPULATOR_METHOD_SERVO_TO_POSE = 8 [(nervus.ipc.v1.method_meta) = {
+    method_id: 8
+    required_permission: "perm.manipulator.control"
+    risk_class: RISK_CLASS_PHYSICAL_CONTROL
+    requires_control_lease: true
+    returns_operation: false
+    needs_user_confirmation: false
+    request_type: "nervus.interface.manipulator.v1.ServoToPoseRequest"
+    response_type: "nervus.interface.manipulator.v1.ServoToPoseResult"
+    error_detail_type: "nervus.interface.manipulator.v1.ManipulatorErrorDetail"
+  }];
 }
 
 // =============================================================================
@@ -211,6 +231,18 @@ message SetGripperRequest {
 }
 
 message StopRequest {}
+
+// ServoToPoseRequest: the latest teleoperation target for the end effector.
+message ServoToPoseRequest {
+  Pose target = 1;
+  double max_vel_scale = 2;  // velocity scale, 0..1; out of range → INVALID_ARGUMENT; 0 = the Provider default
+}
+
+// ServoToPoseResult: what the Provider will actually steer toward.
+message ServoToPoseResult {
+  Pose accepted_target = 1;  // the target after clamping to the Provider's workspace
+  bool clamped = 2;          // true when accepted_target differs from the request
+}
 
 // ManipulatorMoveResult: the success terminal payload of motion operations (NRCP §11).
 // The operation's terminal payload type is decided by the origin method binding (method_meta.response_type).

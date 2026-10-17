@@ -12,8 +12,6 @@ func entryFor(pkgID string) pkgregistry.Entry {
 	return pkgregistry.Entry{Manifest: pkgregistry.Manifest{PackageID: pkgID}}
 }
 
-//
-
 func newPathsManager() *Manager {
 	return &Manager{inv: authority.DefaultInvariants(), perms: &fakePermissions{}}
 }
@@ -35,8 +33,6 @@ func newStagingManager(holder string) *Manager {
 	m.GrantStagingAccess("/var/lib/nervus/staging")
 	return m
 }
-
-//
 
 func TestReadWritePaths_PermissionHolderGetsStagingRoot(t *testing.T) {
 	m := newStagingManager("nervus.pkgmanagerd")
@@ -122,8 +118,6 @@ func TestReadWritePaths_NoStorageUserNoUserDataRoot(t *testing.T) {
 		t.Fatalf("unexpected service result; value = %s: %v", permStorageUser, got)
 	}
 }
-
-//
 
 func TestReadWritePaths_UsesGrantedNotRequested(t *testing.T) {
 	m := newPathsManager()

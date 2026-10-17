@@ -2,6 +2,7 @@ package com.nervus.sdk.component
 
 import com.nervus.sdk.annotations.Interface
 import com.nervus.sdk.ipc.ConnectionState
+import com.nervus.sdk.ipc.NervusCallException
 import com.nervus.sdk.ipc.NervusClient
 import com.nervus.sdk.ipc.describeFailure
 import com.nervus.sdk.operation.*
@@ -272,6 +273,25 @@ abstract class NervusApp(
      *
      * @return true if the component was already running before this request
      */
+    /**
+     * Acquires a ControlLease on one resource, for calling lease-gated methods (see [ControlLease]).
+     *
+     * The resource must be named explicitly (protocol v2 has no implicit default): an arm is
+     * `nervus.resource.manipulator.arm` with role `arm.main`. HUMAN is the class for a person
+     * steering live (teleoperation); it pre-empts AI leases and carries a deadman.
+     */
+    protected fun acquireControl(
+        resourceType: String,
+        resourceRole: String,
+        controllerClass: ControllerClass = ControllerClass.CONTROLLER_CLASS_HUMAN,
+        timeoutSeconds: Long = 5,
+    ): ControlLease {
+        val c = client ?: throw IllegalStateException("component not started")
+        val selector = ResourceSelector.newBuilder().setType(resourceType).setRole(resourceRole).build()
+        val success = c.acquireControl(selector, controllerClass).get(timeoutSeconds, TimeUnit.SECONDS)
+        return ControlLease(c, selector, controllerClass, success)
+    }
+
     protected fun launchComponent(
         packageId: String,
         componentId: String,
@@ -455,12 +475,14 @@ abstract class NervusApp(
                         "${retryEndpoint.endpointId} after re-resolve: " +
                         "code=${retry.failure.code} msg='${retry.failure.publicMessage}'"
                 )
-                throw RuntimeException(
+                throw NervusCallException(
+                    retry.failure.code,
                     "call $interfaceId#$methodId failed after re-resolve: " +
                         "${retry.failure.publicMessage} (code=${retry.failure.code})"
                 )
             }
-            throw RuntimeException(
+            throw NervusCallException(
+                response.failure.code,
                 "call $interfaceId#$methodId failed: ${response.failure.publicMessage} " +
                     "(code=${response.failure.code})"
             )

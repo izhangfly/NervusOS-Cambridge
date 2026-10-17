@@ -199,20 +199,18 @@ func invalidArgument() error {
 //
 // The original error only goes to the local log: handing internal error text to Apps would leak nervud's
 // implementation details.
+//
+// # Why the typed detail isn't sent
+//
+// nervud doesn't forward Provider error details yet: there is no machine-readable authorization of which
+// reason may accompany which StatusCode, so it treats a failure carrying one as a contract violation,
+// answers the caller INTERNAL and drops this connection. Sending PackageManagerErrorDetail therefore
+// turned every typed install failure into INTERNAL and knocked pkgmanagerd off the bus. Until the kernel
+// grows that mapping, the outer code (chosen by codeFor) is what Apps get, and the reason stays in the log.
 func mapErr(err error, log *slog.Logger, op string) error {
-	log.Warn("pkgmanager: operation failed", "op", op, "err", err)
-
 	reason := classify(err.Error())
-	detail, merr := proto.Marshal(&pkgv1.PackageManagerErrorDetail{Reason: reason})
-	if merr != nil {
-		// Failing even to encode the detail is a bug on our side, and mustn't hide the original failure
-		log.Error("pkgmanager: marshal error detail failed", "err", merr)
-		return &sdk.StatusError{Code: ipcv1.StatusCode_STATUS_CODE_INTERNAL}
-	}
-	return &sdk.StatusError{
-		Code:   codeFor(reason),
-		Detail: detail,
-	}
+	log.Warn("pkgmanager: operation failed", "op", op, "reason", reason.String(), "err", err)
+	return &sdk.StatusError{Code: codeFor(reason)}
 }
 
 // classify works out the reason from nervud's error text. See mapErr on the technical debt.

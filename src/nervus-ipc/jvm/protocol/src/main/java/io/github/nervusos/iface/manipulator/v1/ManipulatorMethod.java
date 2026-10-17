@@ -78,6 +78,16 @@ public enum ManipulatorMethod
    * <code>MANIPULATOR_METHOD_STOP = 7 [(.nervus.ipc.v1.method_meta) = { ... }</code>
    */
   MANIPULATOR_METHOD_STOP(7),
+  /**
+   * <pre>
+   * Streamed Cartesian target for teleoperation (a short command, latest wins). Needs a lease, and the lease's
+   * deadman is what stops the arm when the operator lets go; so no user confirmation per call, the same as
+   * BaseMotion.SetVelocity. The Provider clamps the target to its workspace and approaches it at a bounded speed.
+   * </pre>
+   *
+   * <code>MANIPULATOR_METHOD_SERVO_TO_POSE = 8 [(.nervus.ipc.v1.method_meta) = { ... }</code>
+   */
+  MANIPULATOR_METHOD_SERVO_TO_POSE(8),
   UNRECOGNIZED(-1),
   ;
 
@@ -150,6 +160,16 @@ public enum ManipulatorMethod
    * <code>MANIPULATOR_METHOD_STOP = 7 [(.nervus.ipc.v1.method_meta) = { ... }</code>
    */
   public static final int MANIPULATOR_METHOD_STOP_VALUE = 7;
+  /**
+   * <pre>
+   * Streamed Cartesian target for teleoperation (a short command, latest wins). Needs a lease, and the lease's
+   * deadman is what stops the arm when the operator lets go; so no user confirmation per call, the same as
+   * BaseMotion.SetVelocity. The Provider clamps the target to its workspace and approaches it at a bounded speed.
+   * </pre>
+   *
+   * <code>MANIPULATOR_METHOD_SERVO_TO_POSE = 8 [(.nervus.ipc.v1.method_meta) = { ... }</code>
+   */
+  public static final int MANIPULATOR_METHOD_SERVO_TO_POSE_VALUE = 8;
 
 
   public final int getNumber() {
@@ -184,6 +204,7 @@ public enum ManipulatorMethod
       case 5: return MANIPULATOR_METHOD_GO_HOME;
       case 6: return MANIPULATOR_METHOD_SET_GRIPPER;
       case 7: return MANIPULATOR_METHOD_STOP;
+      case 8: return MANIPULATOR_METHOD_SERVO_TO_POSE;
       default: return null;
     }
   }

@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"os/user"
+	"strings"
 	"syscall"
 	"time"
 
@@ -289,9 +291,10 @@ func assemble(
 	}
 
 	auth, err := authority.New(authority.Config{
-		Auditor: aud,
-		Log:     logger,
-		Spawner: spawner,
+		Auditor:      aud,
+		Log:          logger,
+		Spawner:      spawner,
+		DeviceGroups: deviceGroupsFromEnv(logger),
 		// Leaving Invariants empty = DefaultInvariants, the production-safe values.
 		// Even if a development machine wants a different DataRoot, don't add a flag: a production binary must not expose
 		// a switch that changes the baseline for directory ownership and permission checks.
@@ -698,4 +701,31 @@ func assemble(
 	k.Register(adminSrv)
 
 	return k, cleanup, nil
+}
+
+// deviceGroupsFromEnv reads NERVUS_DEVICE_GROUPS (comma separated), the host groups given to components
+// with device access (see authority.Config.DeviceGroups). Hosted mode sets it to "video" in the nervud
+// drop-in. A group the host doesn't have is dropped with a warning: systemd refuses to start a unit that
+// names an unknown group, and one missing group must not take down every device Provider.
+func deviceGroupsFromEnv(logger *slog.Logger) []string {
+	raw := os.Getenv("NERVUS_DEVICE_GROUPS")
+	if raw == "" {
+		return nil
+	}
+	var out []string
+	for _, g := range strings.Split(raw, ",") {
+		g = strings.TrimSpace(g)
+		if g == "" {
+			continue
+		}
+		if _, err := user.LookupGroup(g); err != nil {
+			logger.Warn("device group not found on this host; skipped", "group", g, "err", err)
+			continue
+		}
+		out = append(out, g)
+	}
+	if len(out) > 0 {
+		logger.Info("device providers get supplementary groups", "groups", out)
+	}
+	return out
 }

@@ -1,90 +1,140 @@
 #!/usr/bin/env python3
 """
-PiPER web control panel: per-joint sliders, Cartesian jog and gripper control.
+PiPER arm driver: the NervusOS hardware layer for the AgileX PiPER.
 
-This is the NervusOS hardware layer for the AgileX PiPER arm. It owns the SocketCAN
-bus (can0) and serves a small HTTP API that NervusOS apps (the Robot Arm app) call.
-On the Ubuntu host it runs as nervus-piper.service, starts and stops together with
-NervusOS, and listens on loopback only, so arm control is never exposed to the
-network. To use the browser panel from another machine, tunnel it:
+It is the only program that touches the CAN bus (can0). Everything else talks to
+it over a small HTTP API on loopback:
+
+    Robot Arm app        sliders, Cartesian jog, gripper      (client "panel")
+    nervus.piperd        Manipulator@1 Provider; ServoToPose  (client "piperd")
+    ACT engine           joint streaming for learned policies (client "act")
+    browser panel        http://127.0.0.1:8770                (client "panel")
+
+On the Ubuntu host it runs as nervus-piper.service, starts and stops together
+with NervusOS, and listens on loopback only, so arm control is never exposed to
+the network. To use the browser panel from another machine, tunnel it:
 
     ssh -L 8770:localhost:8770 <ubuntu-host>
-    open http://localhost:8770
 
-Safety design:
-  * Motors start DISABLED. Nothing moves until you press ENABLE.
-  * The client sends a heartbeat; if it stops for >1.5 s the control loop stops
-    streaming JointCtrl and the arm halts. Closing the tab stops the arm.
-  * E-STOP button sends EmergencyStop (CAN 0x150).
-  * Targets are clamped to the manual's joint limits, server-side.
+Safety design
+  * Motors start in whatever state the arm is in; nothing moves until a client
+    enables them and sends a target. Stopping this service never disables the
+    motors: a disabled PiPER drops under gravity.
+  * Every motion source has a deadman. The panel and Robot Arm app send a
+    heartbeat (1.5 s); servo targets expire after 0.4 s and joint streams after
+    0.5 s. When it expires the arm holds where it is.
+  * One controller at a time. A client that moves the arm owns it until its
+    deadman lapses or it releases it; others get HTTP 409 until then. Stop and
+    E-stop are always accepted from anyone.
+  * Targets are clamped server-side: joints to the manual's limits, Cartesian
+    targets to a conservative workspace box, servo steps to a short leash.
+  * /api/state reports how old the arm's feedback is. Feedback that is not
+    flowing is reported as stale, never as a valid pose: the SDK returns its
+    cached values forever, and cached zeros look like a plausible pose.
 
-Units: degrees are authoritative (the arm speaks 0.001 deg). Percent is only a
-convenience mapping over each joint's asymmetric range.
+Hard-won arm facts (see README.md): joint zero is a kinematic singularity where
+only Z can move, so HOME goes to the READY pose instead; streamed MOVE P is
+fastest with the target about one control period ahead, so Cartesian targets
+lead the measured pose by a few millimetres rather than jumping to the goal.
+
+Units: degrees and millimetres throughout (the arm speaks 0.001 deg / mm).
 
     python3 piper_webctl.py [--bind 127.0.0.1] [--port 8770] [--iface can0] [--speed 15]
 """
 
 import argparse
 import json
+import math
+import os
+import signal
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlparse, parse_qs
 
 try:
     from piper_sdk import C_PiperInterface_V2
 except ImportError:
     raise SystemExit("piper_sdk not importable; use the venv at /opt/nervus/piper/venv")
 
+HERE = os.path.dirname(os.path.abspath(__file__))
 MDEG = 1000.0
 GRIP_UNIT = 1000.0
 JOINT_LIMITS = {1: (-154.0, 154.0), 2: (0.0, 195.0), 3: (-175.0, 0.0),
                 4: (-106.0, 106.0), 5: (-75.0, 75.0), 6: (-100.0, 100.0)}
-GRIPPER_MM = (0.0, 70.0)
+# Commanded gripper opening. The jaws measure up to ~101 mm when pulled open by
+# hand, but 95 mm is the widest opening that was commanded reliably.
+GRIPPER_MM = (0.0, 95.0)
+GRIPPER_EFFORT = (0, 5000)          # 0.001 N*m
+GRIPPER_EFFORT_DEFAULT = 1000
+# Elbow bent, wrist clear of the +-90 deg Euler singularity: all six Cartesian
+# axes can jog from here (README section 4). Joint zero is NOT a usable home.
+READY_POSE = [0.0, 45.0, -60.0, 0.0, 45.0, 0.0]
+# Conservative Cartesian box for servo targets (mm). The arm enforces its true,
+# joint-limited workspace on top of this.
+WORKSPACE_MM = {"x": (60.0, 480.0), "y": (-320.0, 320.0), "z": (80.0, 600.0)}
 # move_spd_rate_ctrl (CAN 0x151) is a percentage of the arm's RATED speed.
-# Floor is 1, not 0: zero stalls motion mid-travel, which the calibration probe
-# would then misread as a blocked joint.
+# Floor is 1, not 0: zero stalls motion mid-travel.
 SPEED_MIN, SPEED_MAX = 1, 100
 STREAM_HZ = 20
-HEARTBEAT_TIMEOUT = 1.5
+HEARTBEAT_TIMEOUT = 1.5     # panel / Robot Arm app
+SERVO_DEADMAN = 0.4         # piperd ServoToPose
+STREAM_DEADMAN = 0.5        # ACT joint streaming
+FEEDBACK_STALE = 0.3        # joint feedback older than this is not a pose
 
-# Cartesian jog is LEASHED, closed-loop rate control: while a key is held, the
-# streamed TCP target is only ever (measured pose + a small constant lead) on the
-# held axis. Because the target is re-derived from the ACTUAL pose every tick, it
-# can never run away from the arm, so a hand-pose near the workspace edge can no
-# longer latch TARGET_POS_EXCEEDS_LIMIT from accumulated drift, and a blocked axis
-# never freezes the others. The lead just has to be big enough to keep the servo
-# from stalling exactly on target; the speed slider (move_spd_rate_ctrl) sets the
-# actual velocity.
-JOG_LEAD_MM = 6.0    # translation target leads the measured pose by 6 mm
-JOG_LEAD_DEG = 5.0   # rotation target leads by 5 deg
-# Coarse runaway guard on the leashed target (the arm still enforces its true,
-# joint-limited workspace on top of this).
+# Leashed Cartesian control: the streamed TCP target is the MEASURED pose plus
+# a short lead toward where we want to go, re-derived every tick. It can never
+# run away from the arm, and a blocked axis doesn't freeze the others.
+JOG_LEAD_MM = 6.0
+JOG_LEAD_DEG = 5.0
+SERVO_LEAD_MM = 6.0
+SERVO_LEAD_DEG = 5.0
 POSE_CLAMP_MM = 900.0
 POSE_CLAMP_DEG = 185.0
+JOINT_JOG_STEP = 0.6        # deg per tick while a wrist key is held (~12 deg/s)
 
-# WRIST joint jog: held-key direct joint control (MOVE J) used to articulate the
-# wrist (J4/J5/J6) while J1-3 stay put — the tip is NOT held fixed (unlike the
-# Cartesian gimbal). Each tick advances the held joint's target by this many deg;
-# clamped to the joint's limit, so it can never exceed the mechanical range.
-JOINT_JOG_STEP = 0.6   # deg per 20 Hz tick -> ~12 deg/s while held
+CTRL_MODES = {0x00: "STANDBY", 0x01: "CAN_CTRL", 0x02: "TEACHING_MODE",
+              0x03: "ETHERNET_CTRL", 0x04: "WIFI_CTRL", 0x05: "REMOTE_CTRL",
+              0x06: "LINKAGE_TEACHING_INPUT", 0x07: "OFFLINE_TRAJECTORY"}
+ARM_STATUS = {0x00: "NORMAL", 0x01: "EMERGENCY_STOP", 0x02: "NO_SOLUTION",
+              0x03: "SINGULARITY_POINT", 0x04: "TARGET_POS_EXCEEDS_LIMIT",
+              0x05: "JOINT_COMMUNICATION_EXCEPTION", 0x06: "JOINT_BRAKE_NOT_RELEASED",
+              0x07: "COLLISION_DETECTED", 0x08: "TEACHING_OVERSPEED",
+              0x09: "JOINT_STATUS_ABNORMAL", 0x0A: "OTHER_EXCEPTION",
+              0x0B: "TEACHING_RECORD", 0x0C: "TEACHING_EXECUTION",
+              0x0D: "TEACHING_PAUSE", 0x0E: "MAIN_CONTROL_NTC_OVERHEAT",
+              0x0F: "RELEASE_RESISTOR_NTC_OVERHEAT"}
+# Soft faults clear themselves ~1.3 s after you stop pushing; only hard faults
+# need Recover (README section 4, fault taxonomy).
+SOFT_FAULTS = {0x02, 0x03, 0x04}
 
-state_lock = threading.Lock()
+# The panel and app logs are written from HTTP threads and the control loop, and
+# log_call() is called while state is being changed. A plain Lock here once
+# deadlocked the whole server (README section 5), so it is reentrant.
+state_lock = threading.RLock()
+io_lock = threading.Lock()
 STATE = {
     "targets": [0.0] * 6,
-    "mode": "joint",          # "joint" (per-joint jog) | "cartesian" (WASD end-effector jog)
-    "pose": [0.0] * 6,        # last streamed TCP target: X,Y,Z (mm), RX,RY,RZ (deg) — for display
-    "jog": [0.0] * 6,         # per-axis held-key command: +lead / -lead / 0. Drives leashed cartesian jog.
-    "jjog": [0.0] * 6,        # per-JOINT held-key command (deg/tick): drives wrist joint jog in MOVE J.
+    "mode": "joint",          # joint | cartesian | servo | stream
+    "pose": [0.0] * 6,        # last streamed TCP target (mm, deg), for display
+    "jog": [0.0] * 6,         # per-axis held-key lead: +lead / -lead / 0
+    "jjog": [0.0] * 6,        # per-joint held-key step (deg/tick)
+    "servo_goal": None,       # absolute TCP goal from the servo client
     "gripper_mm": 0.0,
+    "gripper_effort": GRIPPER_EFFORT_DEFAULT,
     "enabled": False,
     "estopped": False,
     "last_heartbeat": 0.0,
     "speed": 15,
-    # move_spd_rate_ctrl range. Never allow 0 — that stalls motion mid-travel.
-    "speed_min": 1,
-    "speed_max": 100,
+    "owner": None,            # {"client", "kind", "last"}
     "log": [],
 }
+
+
+class Busy(Exception):
+    def __init__(self, owner):
+        super().__init__(f"arm is controlled by {owner}")
+        self.owner = owner
 
 
 def log_call(fn, params):
@@ -99,6 +149,35 @@ def clamp(j, deg):
     return max(lo, min(hi, deg))
 
 
+# The deadman a client's gripper commands ride on: the same as its motion source.
+CLIENT_KIND = {"piperd": "servo", "act": "stream"}
+
+
+def deadman_for(kind):
+    return {"servo": SERVO_DEADMAN, "stream": STREAM_DEADMAN}.get(kind, HEARTBEAT_TIMEOUT)
+
+
+def owner_fresh(now=None):
+    """The current owner, or None if nobody holds the arm or their deadman lapsed."""
+    now = now or time.time()
+    o = STATE["owner"]
+    if o and now - o["last"] < deadman_for(o["kind"]):
+        return o
+    return None
+
+
+def claim(client, kind):
+    """Take or refresh ownership for `client`. Raises Busy if someone else holds it."""
+    with state_lock:
+        now = time.time()
+        o = owner_fresh(now)
+        if o and o["client"] != client:
+            raise Busy(o["client"])
+        STATE["owner"] = {"client": client, "kind": kind, "last": now}
+        if kind in ("panel",):
+            STATE["last_heartbeat"] = now
+
+
 class Arm:
     def __init__(self, iface, speed):
         self.piper = C_PiperInterface_V2(iface)
@@ -111,59 +190,124 @@ class Arm:
             raise SystemExit(f"CAN thread unhealthy on {iface}")
         time.sleep(0.5)
         self.speed = speed
-        threading.Thread(target=self._loop, daemon=True).start()
+        self.move_mode = 0x01      # last MotionCtrl_2 move mode sent (0x00 P, 0x01 J)
+        self.firmware = None
+        self._last_grip = (None, None, 0.0)
+        self._stop = threading.Event()
+        threading.Thread(target=self._loop, daemon=True, name="control").start()
 
-    def set_speed(self, v):
-        """Change move_spd_rate_ctrl (CAN 0x151) live, mid-session."""
-        self.speed = int(v)
-        self.piper.MotionCtrl_2(0x01, 0x01, self.speed, 0x00)
-        log_call("MotionCtrl_2", {"ctrl_mode": "0x01 CAN", "move_mode": "0x01 MOVE J",
-                                  "move_spd_rate_ctrl": self.speed, "can_id": "0x151"})
+    # ---------------------------------------------------------------- feedback
+    def feedback_age(self):
+        try:
+            ts = self.piper.GetArmJointMsgs().time_stamp
+        except Exception:
+            return math.inf
+        return time.time() - ts if ts else math.inf
 
     def joints(self):
         j = self.piper.GetArmJointMsgs().joint_state
         return [getattr(j, f"joint_{n}") / MDEG for n in range(1, 7)]
 
     def end_pose(self):
-        """Current TCP pose: [X,Y,Z] mm, [RX,RY,RZ] deg (SDK reports 0.001 mm / 0.001 deg)."""
         e = self.piper.GetArmEndPoseMsgs().end_pose
         return [e.X_axis / 1000.0, e.Y_axis / 1000.0, e.Z_axis / 1000.0,
                 e.RX_axis / 1000.0, e.RY_axis / 1000.0, e.RZ_axis / 1000.0]
 
-    def arm_status(self):
-        """Controller status string — surfaces e.g. TARGET_POS_EXCEEDS_LIMIT, which blocks
-        Cartesian moves when the arm is hand-posed outside its valid workspace."""
+    def status(self):
+        """Controller status, decoded. Values from a feedback stream that has stopped
+        are not trusted (STANDBY doesn't broadcast; see README)."""
+        out = {}
         try:
-            return str(getattr(self.piper.GetArmStatus().arm_status, "arm_status", "?"))
+            msg = self.piper.GetArmStatus()
+            s = msg.arm_status
+            out["age_s"] = time.time() - msg.time_stamp if msg.time_stamp else math.inf
+            out["ctrl_mode_code"] = int(s.ctrl_mode)
+            out["ctrl_mode"] = CTRL_MODES.get(int(s.ctrl_mode), hex(int(s.ctrl_mode)))
+            out["arm_status_code"] = int(s.arm_status)
+            out["arm_status"] = ARM_STATUS.get(int(s.arm_status), hex(int(s.arm_status)))
+            out["teach_status"] = int(s.teach_status)
+            out["motion_status"] = int(s.motion_status)
+            out["mode_feed"] = int(s.mode_feed)
+            es = s.err_status
+            out["joint_limit"] = [bool(getattr(es, f"joint_{n}_angle_limit", False)) for n in range(1, 7)]
+            out["joint_comm"] = [bool(getattr(es, f"communication_status_joint_{n}", False)) for n in range(1, 7)]
+        except Exception as e:
+            out["error"] = str(e)
+        return out
+
+    def gripper_feedback(self):
+        try:
+            g = self.piper.GetArmGripperMsgs().gripper_state
+            return g.grippers_angle / GRIP_UNIT, g.grippers_effort / 1000.0
         except Exception:
-            return None
+            return None, None
+
+    def motors_enabled(self):
+        try:
+            return [bool(x) for x in self.piper.GetArmEnableStatus()]
+        except Exception:
+            return []
+
+    def can_fps(self):
+        try:
+            return float(self.piper.GetCanFps())
+        except Exception:
+            return 0.0
+
+    # ---------------------------------------------------------------- commands
+    def motion_ctrl(self, move_mode):
+        """MotionCtrl_2: CAN control + move mode (0x00 MOVE P, 0x01 MOVE J) + speed."""
+        with io_lock:
+            self.piper.MotionCtrl_2(0x01, move_mode, self.speed, 0x00)
+        self.move_mode = move_mode
+
+    def set_speed(self, v):
+        """Change move_spd_rate_ctrl live. Keeps the CURRENT move mode: always
+        sending MOVE J here used to drop a Cartesian jog into joint mode."""
+        self.speed = int(v)
+        self.motion_ctrl(self.move_mode)
+        log_call("MotionCtrl_2", {"move_mode": hex(self.move_mode),
+                                  "move_spd_rate_ctrl": self.speed, "can_id": "0x151"})
 
     def enter_joint(self):
-        """Per-joint jog (MOVE J). Re-seed joint targets from the live pose first."""
         with state_lock:
             STATE["mode"] = "joint"
             STATE["targets"] = self.joints()
-            STATE["jog"] = [0.0] * 6   # drop any held Cartesian keys
-            STATE["jjog"] = [0.0] * 6  # start wrist-jog clear (targets seeded to live joints)
-        self.piper.MotionCtrl_2(0x01, 0x01, self.speed, 0x00)
+            STATE["jog"] = [0.0] * 6
+            STATE["jjog"] = [0.0] * 6
+            STATE["servo_goal"] = None
+        self.motion_ctrl(0x01)
         log_call("MotionCtrl_2", {"move_mode": "0x01 MOVE J", "can_id": "0x151"})
 
-    def enter_cartesian(self):
-        """Cartesian WASD jog (MOVE P). Seed the target from the live TCP pose so the
-        arm does not jump when the mode flips."""
+    def enter_cartesian(self, mode="cartesian"):
         with state_lock:
-            STATE["mode"] = "cartesian"
+            STATE["mode"] = mode
             STATE["pose"] = self.end_pose()
-            STATE["jog"] = [0.0] * 6   # start held-keys clear
-            STATE["jjog"] = [0.0] * 6  # drop any held wrist-joint keys
-        self.piper.MotionCtrl_2(0x01, 0x00, self.speed, 0x00)
-        log_call("MotionCtrl_2", {"move_mode": "0x00 MOVE P", "can_id": "0x151"})
+            STATE["jog"] = [0.0] * 6
+            STATE["jjog"] = [0.0] * 6
+            if mode != "servo":
+                STATE["servo_goal"] = None
+        self.motion_ctrl(0x00)
+        log_call("MotionCtrl_2", {"move_mode": "0x00 MOVE P", "mode": mode, "can_id": "0x151"})
+
+    def enter_stream(self):
+        with state_lock:
+            STATE["mode"] = "stream"
+            STATE["jog"] = [0.0] * 6
+            STATE["jjog"] = [0.0] * 6
+            STATE["servo_goal"] = None
+        self.motion_ctrl(0x01)
+        log_call("MotionCtrl_2", {"move_mode": "0x01 MOVE J", "mode": "stream", "can_id": "0x151"})
 
     def enable(self):
-        self.piper.EnableArm(7, 0x02)
+        """README section 4: EnableArm, wait, then CAN control. This also pulls the
+        arm out of a latched drag-teach mode. Never send EmergencyStop "resume"
+        first: that leaves the motors disabled."""
+        with io_lock:
+            self.piper.EnableArm(7, 0x02)
         log_call("EnableArm", {"motor_num": 7, "enable_flag": "0x02", "can_id": "0x471"})
         time.sleep(1.2)
-        self.piper.MotionCtrl_2(0x01, 0x01, self.speed, 0x00)
+        self.motion_ctrl(0x01)
         log_call("MotionCtrl_2", {"ctrl_mode": "0x01 CAN", "move_mode": "0x01 MOVE J",
                                   "speed": self.speed, "can_id": "0x151"})
         with state_lock:
@@ -172,99 +316,169 @@ class Arm:
             STATE["mode"] = "joint"
             STATE["targets"] = self.joints()
             STATE["pose"] = self.end_pose()
+            STATE["servo_goal"] = None
 
     def disable(self):
         with state_lock:
             STATE["enabled"] = False
-        self.piper.DisableArm(7, 0x01)
+            STATE["owner"] = None
+        with io_lock:
+            self.piper.DisableArm(7, 0x01)
         log_call("DisableArm", {"motor_num": 7, "enable_flag": "0x01", "can_id": "0x471"})
 
     def estop(self):
         with state_lock:
             STATE["enabled"] = False
             STATE["estopped"] = True
-        self.piper.EmergencyStop(0x01)
+            STATE["owner"] = None
+            STATE["servo_goal"] = None
+        with io_lock:
+            self.piper.EmergencyStop(0x01)
         log_call("EmergencyStop", {"flag": "0x01", "can_id": "0x150"})
 
-    def recover(self):
-        """Clear a latched collision/fault WITHOUT unplugging the power cable.
+    def hold(self):
+        """Controlled stop: keep the motors on and hold the measured joints."""
+        try:
+            cur = self.joints()
+        except Exception:
+            return
+        with state_lock:
+            STATE["targets"] = cur
+            STATE["jog"] = [0.0] * 6
+            STATE["jjog"] = [0.0] * 6
+            STATE["servo_goal"] = None
+            STATE["mode"] = "joint"
+            enabled = STATE["enabled"]
+        if enabled and self.feedback_age() < FEEDBACK_STALE:
+            self.motion_ctrl(0x01)
+            with io_lock:
+                self.piper.JointCtrl(*[int(round(v * MDEG)) for v in cur])
+        log_call("hold", {"joints": [round(v, 1) for v in cur]})
 
-        A collision trips Piper's protection and latches a fault that EnableArm
-        alone cannot clear — which is why a power-cycle was the only way back.
-        ResetPiper (CAN 0x150) clears all errors and internal flags (the arm goes
-        limp for a moment, exactly like a power-cycle), then we re-enable and
-        resume streaming.
-        """
+    def recover(self):
+        """Clear a latched collision/fault without a power cycle: ResetPiper (CAN
+        0x150) clears errors and flags (the arm goes limp for a moment), then
+        re-enable."""
         with state_lock:
             STATE["enabled"] = False
             STATE["estopped"] = False
-        self.piper.ResetPiper()
+            STATE["owner"] = None
+        with io_lock:
+            self.piper.ResetPiper()
         log_call("ResetPiper", {"note": "clear all errors + flags", "can_id": "0x150"})
         time.sleep(0.5)
         self.enable()
 
-    def set_gripper(self, mm):
-        mm = max(GRIPPER_MM[0], min(GRIPPER_MM[1], mm))
+    def set_gripper(self, mm, effort=None, force=False):
+        """GripperCtrl, only when the target changes (>= 0.3 mm), the effort changes,
+        or every 2 s. Re-sending the same target at 15-20 Hz made a closed gripper
+        buzz against the object it was holding."""
+        mm = max(GRIPPER_MM[0], min(GRIPPER_MM[1], float(mm)))
+        effort = int(max(GRIPPER_EFFORT[0], min(GRIPPER_EFFORT[1],
+                     GRIPPER_EFFORT_DEFAULT if effort is None else effort)))
+        last_mm, last_eff, last_t = self._last_grip
+        now = time.time()
         with state_lock:
             STATE["gripper_mm"] = mm
-        self.piper.GripperCtrl(int(mm * GRIP_UNIT), 1000, 0x01, 0)
-        log_call("GripperCtrl", {"angle_mm": round(mm, 1), "effort": 1000,
-                                 "code": "0x01", "can_id": "0x159"})
+            STATE["gripper_effort"] = effort
+        if not force and last_mm is not None and abs(mm - last_mm) < 0.3 \
+                and effort == last_eff and now - last_t < 2.0:
+            return mm
+        with io_lock:
+            self.piper.GripperCtrl(int(mm * GRIP_UNIT), effort, 0x01, 0)
+        self._last_grip = (mm, effort, now)
+        log_call("GripperCtrl", {"mm": round(mm, 1), "effort": effort, "can_id": "0x159"})
+        return mm
+
+    def stream_joints(self, joints):
+        """Send one joint target now (ACT streaming). The caller rate-limits."""
+        tgt = [clamp(n + 1, float(v)) for n, v in enumerate(joints)]
+        with state_lock:
+            STATE["targets"] = tgt
+        with io_lock:
+            self.piper.JointCtrl(*[int(round(v * MDEG)) for v in tgt])
+        return tgt
+
+    # ---------------------------------------------------------------- loop
+    def _leash(self, actual, goal, lead_mm, lead_deg):
+        """target = actual + (goal - actual) clamped to the lead, per axis. Angles
+        take the short way round."""
+        out = []
+        for ax in range(6):
+            d = goal[ax] - actual[ax]
+            if ax >= 3:
+                d = (d + 180.0) % 360.0 - 180.0
+            lead = lead_mm if ax < 3 else lead_deg
+            v = actual[ax] + max(-lead, min(lead, d))
+            if ax < 3:
+                v = max(-POSE_CLAMP_MM, min(POSE_CLAMP_MM, v))
+            else:
+                v = (v + 180.0) % 360.0 - 180.0
+            out.append(v)
+        return out
 
     def _loop(self):
-        """Stream JointCtrl only while enabled AND the browser heartbeat is fresh."""
         period = 1.0 / STREAM_HZ
         streaming = False
-        while True:
+        while not self._stop.is_set():
             time.sleep(period)
+            now = time.time()
             with state_lock:
                 enabled = STATE["enabled"]
-                fresh = (time.time() - STATE["last_heartbeat"]) < HEARTBEAT_TIMEOUT
                 mode = STATE["mode"]
                 tgt = list(STATE["targets"])
                 jog = list(STATE["jog"])
                 jjog = list(STATE["jjog"])
-            if enabled and fresh:
-                if mode == "cartesian":
-                    # LEASHED closed-loop jog: re-derive the target from the arm's
-                    # MEASURED pose every tick, adding a small lead only on axes whose
-                    # key is held. Non-held axes are commanded to hold their current
-                    # value. The target therefore stays within one lead of reality —
-                    # it cannot drift out of the workspace and latch
-                    # TARGET_POS_EXCEEDS_LIMIT, and a blocked axis can't freeze the rest.
+                goal = STATE["servo_goal"]
+                owner = owner_fresh(now)
+                hb_fresh = (now - STATE["last_heartbeat"]) < HEARTBEAT_TIMEOUT
+            # Who keeps the loop streaming: the servo owner for servo mode, the
+            # heartbeat for the panel modes. Stream mode sends from the request.
+            if mode == "servo":
+                live = enabled and owner is not None and owner["kind"] == "servo" and goal is not None
+            elif mode == "stream":
+                live = False
+            else:
+                live = enabled and hb_fresh
+            if live and self.feedback_age() >= FEEDBACK_STALE:
+                live = False      # never steer from a pose we can't see
+            if live:
+                if mode in ("cartesian", "servo"):
                     actual = self.end_pose()
-                    target = []
-                    for ax in range(6):
-                        v = actual[ax] + jog[ax]
-                        if ax < 3:
-                            v = max(-POSE_CLAMP_MM, min(POSE_CLAMP_MM, v))
-                        else:
-                            v = max(-POSE_CLAMP_DEG, min(POSE_CLAMP_DEG, v))
-                        target.append(v)
+                    if mode == "cartesian":
+                        target = self._leash(actual, [actual[i] + jog[i] for i in range(6)],
+                                             JOG_LEAD_MM, JOG_LEAD_DEG)
+                    else:
+                        target = self._leash(actual, goal, SERVO_LEAD_MM, SERVO_LEAD_DEG)
                     with state_lock:
                         STATE["pose"] = target
-                    # EndPoseCtrl (CAN 0x152-0x154). MOVE P armed on mode entry.
-                    # Units: 0.001 mm / 0.001 deg.
-                    self.piper.EndPoseCtrl(*[int(round(v * 1000)) for v in target])
+                    with io_lock:
+                        self.piper.EndPoseCtrl(*[int(round(v * 1000)) for v in target])
                 else:
-                    # WRIST joint jog: advance each held joint's target by its per-tick
-                    # step, clamped to the joint limit. Non-held joints (jjog==0) hold —
-                    # so holding a wrist key moves J4/J5/J6 while J1-3 stay put.
                     if any(jjog):
                         with state_lock:
                             for jn in range(6):
                                 if jjog[jn]:
                                     STATE["targets"][jn] = clamp(jn + 1, STATE["targets"][jn] + jjog[jn])
                             tgt = list(STATE["targets"])
-                    self.piper.JointCtrl(*[int(round(v * MDEG)) for v in tgt])
+                    with io_lock:
+                        self.piper.JointCtrl(*[int(round(v * MDEG)) for v in tgt])
                 streaming = True
             elif streaming:
                 streaming = False
-                if enabled and not fresh:
-                    log_call("(deadman)", {"reason": "heartbeat lost", "action": "stopped streaming"})
+                reason = "feedback stale" if enabled else "disabled"
+                if enabled and mode == "servo":
+                    reason = "servo deadman"
+                elif enabled and mode not in ("stream",):
+                    reason = "heartbeat lost"
+                log_call("(deadman)", {"reason": reason, "action": "stopped streaming"})
+
+    def close(self):
+        self._stop.set()
 
 
 ARM = None
+PANEL_HTML = b""
 
 # Address of a direct point-to-point Ethernet link to a laptop, if there is one
 # (the RDK used 10.90.0.153 on eth0). Only `--bind auto` uses it. It must never be
@@ -273,11 +487,6 @@ DIRECT_LINK_IP = "10.90.0.153"
 
 
 def pick_bind_address():
-    """Prefer the direct Ethernet link; fall back to loopback if it isn't up.
-
-    Deliberately NOT 0.0.0.0: that would also publish arm control onto the venue
-    Wi-Fi, where other people are.
-    """
     import socket
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -288,7 +497,55 @@ def pick_bind_address():
         return "127.0.0.1"
 
 
+def finite(v):
+    return None if v is None or (isinstance(v, float) and not math.isfinite(v)) else v
+
+
+def state_json(lite=False):
+    now = time.time()
+    age = ARM.feedback_age()
+    fresh = age < FEEDBACK_STALE
+    st = ARM.status()
+    grip_mm, grip_eff = ARM.gripper_feedback()
+    try:
+        cur = ARM.joints()
+        pose_cur = ARM.end_pose()
+    except Exception:
+        cur, pose_cur = [0.0] * 6, [0.0] * 6
+    with state_lock:
+        o = owner_fresh(now)
+        body = {
+            "current": cur, "targets": STATE["targets"],
+            "mode": STATE["mode"], "pose": STATE["pose"], "pose_current": pose_cur,
+            "arm_status": st.get("arm_status", "?"),
+            "gripper_mm": STATE["gripper_mm"], "enabled": STATE["enabled"],
+            "estopped": STATE["estopped"], "speed": STATE["speed"],
+            "limits": JOINT_LIMITS, "gripper_range": list(GRIPPER_MM),
+            "speed_range": [SPEED_MIN, SPEED_MAX],
+            # --- added for piperd and the ACT engine ---
+            "time": now,
+            "feedback_fresh": fresh,
+            "feedback_age_ms": finite(round(age * 1000.0, 1)) if math.isfinite(age) else None,
+            "can_fps": ARM.can_fps(),
+            "status": {k: finite(v) for k, v in st.items()},
+            "teaching": st.get("ctrl_mode_code") == 0x02,
+            "soft_fault": st.get("arm_status_code") in SOFT_FAULTS,
+            "gripper_actual_mm": grip_mm, "gripper_effort_nm": grip_eff,
+            "motors_enabled": ARM.motors_enabled(),
+            "owner": ({"client": o["client"], "kind": o["kind"],
+                       "age_ms": round((now - o["last"]) * 1000.0)} if o else None),
+            "servo_goal": STATE["servo_goal"],
+            "ready_pose": READY_POSE, "workspace_mm": WORKSPACE_MM,
+            "firmware": ARM.firmware,
+        }
+        if not lite:
+            body["log"] = STATE["log"][:14]
+    return body
+
+
 class Handler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
     def log_message(self, *a):
         pass
 
@@ -297,100 +554,166 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(raw)))
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(raw)
 
+    def _json(self, code, obj):
+        return self._send(code, json.dumps(obj))
+
     def do_GET(self):
-        if self.path in ("/", "/index.html"):
-            return self._send(200, HTML, "text/html; charset=utf-8")
-        if self.path == "/api/state":
+        u = urlparse(self.path)
+        if u.path in ("/", "/index.html"):
+            return self._send(200, PANEL_HTML, "text/html; charset=utf-8")
+        if u.path == "/api/state":
             try:
-                cur = ARM.joints()
-                pose_cur = ARM.end_pose()
-                arm_st = ARM.arm_status()
+                lite = parse_qs(u.query).get("lite", ["0"])[0] == "1"
+                return self._json(200, state_json(lite))
             except Exception as e:
-                return self._send(500, json.dumps({"error": str(e)}))
-            with state_lock:
-                return self._send(200, json.dumps({
-                    "current": cur, "targets": STATE["targets"],
-                    "mode": STATE["mode"], "pose": STATE["pose"], "pose_current": pose_cur,
-                    "arm_status": arm_st,
-                    "gripper_mm": STATE["gripper_mm"], "enabled": STATE["enabled"],
-                    "estopped": STATE["estopped"], "speed": STATE["speed"],
-                    "limits": JOINT_LIMITS, "gripper_range": GRIPPER_MM,
-                    "speed_range": [SPEED_MIN, SPEED_MAX],
-                    "log": STATE["log"][:14],
-                }))
-        return self._send(404, json.dumps({"error": "not found"}))
+                return self._json(500, {"error": str(e)})
+        return self._json(404, {"error": "not found"})
 
     def do_POST(self):
-        n = int(self.headers.get("Content-Length", 0))
+        n = int(self.headers.get("Content-Length", 0) or 0)
         try:
             data = json.loads(self.rfile.read(n) or b"{}")
         except Exception:
-            data = {}
+            return self._json(400, {"error": "body is not JSON"})
+        client = str(data.get("client") or "panel")[:32]
+        try:
+            return self._dispatch(self.path, data, client)
+        except Busy as b:
+            return self._json(409, {"error": "busy", "owner": b.owner})
+        except (ValueError, TypeError) as e:
+            return self._json(400, {"error": str(e)})
+        except Exception as e:
+            return self._json(500, {"error": str(e)})
 
-        if self.path == "/api/heartbeat":
+    def _dispatch(self, path, data, client):
+        # ---- always allowed ----
+        if path == "/api/heartbeat":
             with state_lock:
                 STATE["last_heartbeat"] = time.time()
-            return self._send(200, json.dumps({"ok": True}))
+                o = STATE["owner"]
+                if o and o["client"] == client:
+                    o["last"] = STATE["last_heartbeat"]
+            return self._json(200, {"ok": True})
+        if path == "/api/estop":
+            ARM.estop()
+            return self._json(200, {"ok": True})
+        if path == "/api/stop":
+            ARM.hold()
+            with state_lock:
+                STATE["owner"] = None
+            return self._json(200, {"ok": True})
+        if path == "/api/release":
+            with state_lock:
+                o = STATE["owner"]
+                if o and o["client"] == client:
+                    STATE["owner"] = None
+            ARM.hold()
+            return self._json(200, {"ok": True})
+        if path == "/api/enable":
+            ARM.enable() if data.get("on") else ARM.disable()
+            return self._json(200, {"ok": True})
+        if path == "/api/recover":
+            ARM.recover()
+            return self._json(200, {"ok": True})
+        if path == "/api/speed":
+            v = int(max(SPEED_MIN, min(SPEED_MAX, int(data.get("speed", 15)))))
+            with state_lock:
+                STATE["speed"] = v
+            ARM.set_speed(v)
+            return self._json(200, {"ok": True, "speed": v})
 
-        if self.path == "/api/joint":
+        # ---- motion: one controller at a time ----
+        if path == "/api/servo":
+            pose = [float(v) for v in data.get("pose", [])]
+            if len(pose) != 6 or not all(math.isfinite(v) for v in pose):
+                raise ValueError("pose must be 6 finite numbers: x,y,z mm, rx,ry,rz deg")
+            claim(client, "servo")
+            with state_lock:
+                enabled = STATE["enabled"]
+            if not enabled:
+                return self._json(409, {"error": "motors are not enabled"})
+            if ARM.feedback_age() >= FEEDBACK_STALE:
+                return self._json(409, {"error": "arm feedback is stale"})
+            clamped = False
+            for ax, key in enumerate(("x", "y", "z")):
+                lo, hi = WORKSPACE_MM[key]
+                if not lo <= pose[ax] <= hi:
+                    pose[ax] = max(lo, min(hi, pose[ax]))
+                    clamped = True
+            if "speed" in data:
+                v = int(max(SPEED_MIN, min(SPEED_MAX, int(data["speed"]))))
+                if v != ARM.speed:
+                    with state_lock:
+                        STATE["speed"] = v
+                    ARM.speed = v
+                    ARM.motion_ctrl(ARM.move_mode)
+            with state_lock:
+                if STATE["mode"] != "servo":
+                    entering = True
+                else:
+                    entering = False
+            if entering:
+                ARM.enter_cartesian("servo")
+            with state_lock:
+                STATE["servo_goal"] = pose
+            return self._json(200, {"ok": True, "goal": pose, "clamped": clamped})
+
+        if path == "/api/stream":
+            joints = [float(v) for v in data.get("joints", [])]
+            if len(joints) != 6 or not all(math.isfinite(v) for v in joints):
+                raise ValueError("joints must be 6 finite numbers in degrees")
+            claim(client, "stream")
+            with state_lock:
+                enabled = STATE["enabled"]
+                entering = STATE["mode"] != "stream"
+            if not enabled:
+                return self._json(409, {"error": "motors are not enabled"})
+            if ARM.feedback_age() >= FEEDBACK_STALE:
+                return self._json(409, {"error": "arm feedback is stale"})
+            if entering:
+                ARM.enter_stream()
+            sent = ARM.stream_joints(joints)
+            grip = None
+            if data.get("gripper_mm") is not None:
+                grip = ARM.set_gripper(float(data["gripper_mm"]), data.get("gripper_effort"))
+            return self._json(200, {"ok": True, "joints": sent, "gripper_mm": grip})
+
+        if path == "/api/gripper":
+            claim(client, CLIENT_KIND.get(client, "panel"))
+            mm = ARM.set_gripper(float(data.get("mm", 0.0)), data.get("effort"), force=True)
+            return self._json(200, {"ok": True, "mm": mm})
+
+        if path == "/api/joint":
             j, deg = int(data.get("joint", 0)), float(data.get("deg", 0.0))
             if j not in JOINT_LIMITS:
-                return self._send(400, json.dumps({"error": "bad joint"}))
-            # A joint jog implies JOINT mode — auto-switch so it isn't silently ignored
-            # while the arm is in Cartesian mode (the loop only streams JointCtrl in joint mode).
+                raise ValueError("bad joint")
+            claim(client, "panel")
             if STATE["mode"] != "joint":
                 ARM.enter_joint()
             v = clamp(j, deg)
             with state_lock:
                 STATE["targets"][j - 1] = v
-            log_call("JointCtrl", {f"joint_{j}": round(v, 2), "unit": "0.001 deg",
-                                   "can_id": "0x155-0x157", "note": "streamed @20Hz"})
-            return self._send(200, json.dumps({"ok": True, "deg": v}))
+            log_call("JointCtrl", {f"joint_{j}": round(v, 2), "note": "streamed @20Hz"})
+            return self._json(200, {"ok": True, "deg": v})
 
-        if self.path == "/api/gripper":
-            ARM.set_gripper(float(data.get("mm", 0.0)))
-            return self._send(200, json.dumps({"ok": True}))
-
-        if self.path == "/api/enable":
-            ARM.enable() if data.get("on") else ARM.disable()
-            return self._send(200, json.dumps({"ok": True}))
-
-        if self.path == "/api/speed":
-            # move_spd_rate_ctrl is a 0-100 percentage of the arm's rated speed
-            # (CAN 0x151). Clamped to SPEED_MIN so a stray 0 can't stall a move
-            # mid-travel and read as a blocked joint.
-            v = int(max(SPEED_MIN, min(SPEED_MAX, int(data.get("speed", 15)))))
-            with state_lock:
-                STATE["speed"] = v
-            ARM.set_speed(v)
-            return self._send(200, json.dumps({"ok": True, "speed": v}))
-
-        if self.path == "/api/estop":
-            ARM.estop()
-            return self._send(200, json.dumps({"ok": True}))
-
-        if self.path == "/api/recover":
-            ARM.recover()
-            return self._send(200, json.dumps({"ok": True}))
-
-        if self.path == "/api/mode":
+        if path == "/api/mode":
+            claim(client, "panel")
             m = "cartesian" if data.get("mode") == "cartesian" else "joint"
             (ARM.enter_cartesian if m == "cartesian" else ARM.enter_joint)()
-            return self._send(200, json.dumps({"ok": True, "mode": m}))
+            return self._json(200, {"ok": True, "mode": m})
 
-        if self.path == "/api/jog":
-            # Held-key Cartesian jog. {axis:0-5, dir:+1|-1, on:true|false}
-            # on=true  -> lead the measured pose by +/-lead on that axis (see _loop)
-            # on=false -> release, but only if this key owns the current direction
-            #             (so releasing one key can't cancel the opposite key's hold).
+        if path == "/api/jog":
             axis = int(data.get("axis", -1))
             direction = 1.0 if float(data.get("dir", 0)) >= 0 else -1.0
             on = bool(data.get("on", False))
             if not 0 <= axis <= 5:
-                return self._send(400, json.dumps({"error": "bad axis"}))
+                raise ValueError("bad axis")
+            if on:
+                claim(client, "panel")
             if STATE["mode"] != "cartesian":
                 ARM.enter_cartesian()
             lead = JOG_LEAD_MM if axis < 3 else JOG_LEAD_DEG
@@ -400,18 +723,16 @@ class Handler(BaseHTTPRequestHandler):
                 elif STATE["jog"][axis] * direction > 0:
                     STATE["jog"][axis] = 0.0
                 jog = list(STATE["jog"])
-            return self._send(200, json.dumps({"ok": True, "jog": jog}))
+            return self._json(200, {"ok": True, "jog": jog})
 
-        if self.path == "/api/jointjog":
-            # Held-key WRIST jog. {joint:0-5, dir:+1|-1, on:true|false}. Moves that
-            # joint's target directly in MOVE J; J1-3 stay put unless jogged.
+        if path == "/api/jointjog":
             jn = int(data.get("joint", -1))
             direction = 1.0 if float(data.get("dir", 0)) >= 0 else -1.0
             on = bool(data.get("on", False))
             if not 0 <= jn <= 5:
-                return self._send(400, json.dumps({"error": "bad joint"}))
-            # Wrist jog implies JOINT mode — auto-switch (seeds targets from live joints,
-            # so J1-3 hold their current pose while the wrist articulates).
+                raise ValueError("bad joint")
+            if on:
+                claim(client, "panel")
             if STATE["mode"] != "joint":
                 ARM.enter_joint()
             with state_lock:
@@ -420,396 +741,33 @@ class Handler(BaseHTTPRequestHandler):
                 elif STATE["jjog"][jn] * direction > 0:
                     STATE["jjog"][jn] = 0.0
                 jjog = list(STATE["jjog"])
-            return self._send(200, json.dumps({"ok": True, "jjog": jjog}))
+            return self._json(200, {"ok": True, "jjog": jjog})
 
-        if self.path == "/api/jogstop":
-            # Safety: clear every held key (Cartesian AND wrist) — blur / tab-hide / focus loss.
+        if path == "/api/jogstop":
             with state_lock:
                 STATE["jog"] = [0.0] * 6
                 STATE["jjog"] = [0.0] * 6
-            return self._send(200, json.dumps({"ok": True}))
+            return self._json(200, {"ok": True})
 
-        if self.path == "/api/home":
-            # HOME must run in JOINT mode: in Cartesian mode the loop streams
-            # EndPoseCtrl and ignores joint targets, so "home" silently did nothing.
-            # enter_joint() switches to MOVE J (and seeds targets), then we zero them.
+        if path == "/api/home":
+            # HOME = the READY pose, in joint mode (MOVE J needs no IK, so it never
+            # faults). Joint zero is the singular pose where only Z can move.
+            claim(client, "panel")
             if STATE["mode"] != "joint":
                 ARM.enter_joint()
             with state_lock:
-                STATE["targets"] = [0.0] * 6
+                STATE["targets"] = list(READY_POSE)
                 STATE["jjog"] = [0.0] * 6
-            log_call("JointCtrl", {"all": 0.0, "note": "home to zero (forced MOVE J)"})
-            return self._send(200, json.dumps({"ok": True}))
+                STATE["last_heartbeat"] = time.time()
+            log_call("JointCtrl", {"targets": READY_POSE, "note": "home = READY pose (MOVE J)"})
+            return self._json(200, {"ok": True, "targets": READY_POSE})
 
-        return self._send(404, json.dumps({"error": "not found"}))
-
-
-HTML = r"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>PiPER Control · Nervus OS</title>
-<style>
-:root{
-  --primary:#3B82F6; --secondary:#8B5CF6; --success:#16A34A;
-  --warning:#D97706; --danger:#DC2626; --surface:#FFFFFF; --text:#111827;
-  --muted:#6B7280; --line:#D1D5DB; --bg:#F3F4F6;
-  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s6:24px; --s8:32px;
-  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
-  --disp:"Space Grotesk","Open Sans",system-ui,sans-serif;
-  --body:"Open Sans",system-ui,-apple-system,sans-serif;
-}
-@media (prefers-color-scheme:dark){:root{
-  --surface:#111827; --text:#F9FAFB; --bg:#0B0F19; --line:#374151; --muted:#9CA3AF;}}
-*{box-sizing:border-box}
-body{margin:0;font-family:var(--body);font-size:16px;color:var(--text);
-  background:var(--bg);
-  background-image:radial-gradient(var(--line) 1px,transparent 1px);
-  background-size:4px 4px;}
-.wrap{max-width:940px;margin:0 auto;padding:var(--s6) var(--s4)}
-header{display:flex;align-items:baseline;gap:var(--s3);flex-wrap:wrap;
-  margin-bottom:var(--s6)}
-h1{font-family:var(--disp);font-size:32px;margin:0;letter-spacing:-.02em}
-.sub{color:var(--muted);font-size:14px;font-family:var(--mono)}
-.panel{background:var(--surface);border:2px solid var(--text);
-  padding:var(--s4);margin-bottom:var(--s4);
-  box-shadow:4px 4px 0 var(--text)}
-.bar{display:flex;gap:var(--s2);flex-wrap:wrap;align-items:center;
-  margin-bottom:var(--s4)}
-button{font-family:var(--disp);font-size:16px;font-weight:600;padding:var(--s2) var(--s4);
-  border:2px solid var(--text);background:var(--surface);color:var(--text);
-  cursor:pointer;box-shadow:2px 2px 0 var(--text)}
-button:hover{transform:translate(1px,1px);box-shadow:1px 1px 0 var(--text)}
-button:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
-button.on{background:var(--success);color:#fff}
-button.off{background:var(--muted);color:#fff}
-button.stop{background:var(--danger);color:#fff;font-size:18px}
-button.sm{font-size:14px;padding:var(--s1) var(--s2);font-family:var(--mono)}
-.joint{display:grid;grid-template-columns:64px 1fr auto;gap:var(--s3);
-  align-items:center;padding:var(--s3) 0;border-bottom:1px dashed var(--line)}
-.jname{font-family:var(--disp);font-weight:700;font-size:18px}
-.jrange{font-family:var(--mono);font-size:14px;color:var(--muted)}
-input[type=range]{width:100%;accent-color:var(--primary);height:28px}
-input[type=range]:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
-input[type=number]{font-family:var(--mono);font-size:14px;width:88px;
-  padding:var(--s1) var(--s2);border:2px solid var(--text);
-  background:var(--surface);color:var(--text)}
-.ctl{display:flex;gap:var(--s1);align-items:center;flex-wrap:wrap}
-.val{font-family:var(--mono);font-size:14px;min-width:120px;text-align:right}
-.cur{color:var(--secondary);font-weight:700}
-#log{font-family:var(--mono);font-size:14px;max-height:240px;overflow:auto;
-  background:var(--bg);border:2px solid var(--line);padding:var(--s3)}
-#log div{padding:2px 0;border-bottom:1px dotted var(--line);word-break:break-all}
-.fn{color:var(--primary);font-weight:700}
-.badge{font-family:var(--mono);font-size:14px;padding:2px var(--s2);
-  border:2px solid var(--text)}
-.badge.live{background:var(--success);color:#fff}
-.badge.halt{background:var(--danger);color:#fff}
-.empty{color:var(--muted);font-style:italic}
-h2{font-family:var(--disp);font-size:18px;margin:0 0 var(--s3)}
-/* ---- virtual keyboard (cartesian jog) ---- */
-.kbd{display:flex;gap:var(--s8);flex-wrap:wrap;margin:var(--s4) 0 0}
-.kcluster{display:flex;flex-direction:column;gap:var(--s2);align-items:center}
-.kcname{font-family:var(--disp);font-weight:700;font-size:12px;color:var(--muted);
-  letter-spacing:.12em;text-transform:uppercase}
-.krow{display:flex;gap:var(--s2);justify-content:center}
-.kcap{width:76px;height:66px;border:2px solid var(--text);box-shadow:3px 3px 0 var(--text);
-  background:var(--surface);color:var(--text);display:flex;flex-direction:column;
-  align-items:center;justify-content:center;border-radius:9px;cursor:pointer;
-  user-select:none;-webkit-user-select:none;transition:transform .05s,background .05s,box-shadow .05s}
-.kcap.blank{border:none;box-shadow:none;background:transparent;cursor:default}
-.kcap .glyph{font-family:var(--disp);font-weight:800;font-size:22px;line-height:1}
-.kcap .fn{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:4px;font-weight:600}
-.kcap .ax{font-family:var(--mono);font-size:9px;color:var(--muted);opacity:.6;margin-top:1px}
-.kcap.down{background:var(--primary);color:#fff;transform:translate(3px,3px);box-shadow:0 0 0 var(--text)}
-.kcap.down .fn,.kcap.down .ax{color:#fff;opacity:1}
-.kcap.rot.down{background:var(--secondary)}
-.kcap.wrist.down{background:var(--warning)}
-</style></head><body>
-<div class="wrap">
-<header>
-  <h1>PiPER Control</h1>
-  <span class="sub">Nervus OS · can0 · degrees authoritative</span>
-  <span id="status" class="badge halt">DISABLED</span>
-</header>
-
-<div class="panel">
-  <div class="bar">
-    <button id="btnEnable" class="off">ENABLE MOTORS</button>
-    <button id="btnHome">HOME → 0</button>
-    <button id="btnEstop" class="stop">■ E-STOP</button>
-    <button id="btnRecover" class="warn">↻ RECOVER</button>
-    <button id="btnMode" class="ghost">MODE · JOINT</button>
-    <span class="sub" id="hb">heartbeat —</span>
-  </div>
-  <div class="sub">Motors start disabled. Streaming stops if this tab closes (deadman).</div>
-</div>
-
-<div class="panel" id="cartHelp" style="display:none">
-  <h2>Keyboard control — hold a key to move, release to stop</h2>
-  <div class="sub"><b>Translate</b> (blue): arrows = X/Y, W/S = Z. &nbsp; <b>Gimbal</b> (violet, tip fixed): U/O roll · I/K pitch · J/L yaw. &nbsp; <b>Wrist joints</b> (amber, base fixed — tip arcs): A/D = J4 · Q/E = J5 · Z/C = J6. Mode switches automatically. Click the page once for keyboard focus; keep the workspace clear.</div>
-  <div class="kbd" id="kbd"></div>
-  <div class="sub" id="posenow" style="margin-top:var(--s4)">pose —</div>
-</div>
-
-<div class="panel">
-  <h2>Max speed</h2>
-  <div class="sub">Percentage of the arm's rated speed. Applies to every joint move.</div>
-  <div class="row">
-    <input type="range" id="ss" min="1" max="100" step="1" value="15"
-      aria-label="Maximum speed percent">
-    <input type="number" id="ns" min="1" max="100" step="1" value="15"
-      aria-label="Maximum speed percent">
-    <span class="val" id="vs"><span class="cur">15%</span></span>
-  </div>
-  <div class="row">
-    <button id="sp5"  class="ghost">Slow · 5%</button>
-    <button id="sp15" class="ghost">Safe · 15%</button>
-    <button id="sp40" class="ghost">Brisk · 40%</button>
-    <button id="sp100" class="warn">Max · 100%</button>
-  </div>
-</div>
-
-<div class="panel">
-  <h2>Joints</h2>
-  <div id="joints"><div class="empty">Loading joint state…</div></div>
-</div>
-
-<div class="panel">
-  <h2>Gripper</h2>
-  <div id="grip"></div>
-</div>
-
-<div class="panel">
-  <h2>CAN calls · function &amp; parameters</h2>
-  <div id="log"><div class="empty">No calls yet.</div></div>
-</div>
-</div>
-
-<script>
-const J=[1,2,3,4,5,6]; let LIM={}, GR=[0,70], built=false, enabled=false;
-const $=id=>document.getElementById(id);
-const pct=(v,lo,hi)=>((v-lo)/(hi-lo))*100;
-const deg=(p,lo,hi)=>lo+(p/100)*(hi-lo);
-
-async function post(u,b){try{await fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})});}catch(e){}}
-
-function build(){
-  $('joints').innerHTML='';
-  J.forEach(j=>{
-    const [lo,hi]=LIM[j];
-    const row=document.createElement('div'); row.className='joint';
-    row.innerHTML=`<div><div class="jname">J${j}</div><div class="jrange">${lo}…${hi}°</div></div>
-      <div><input type="range" id="s${j}" min="${lo}" max="${hi}" step="0.5" value="0"
-        aria-label="Joint ${j} angle in degrees"></div>
-      <div class="ctl">
-        <button class="sm" data-j="${j}" data-d="-20">−20%</button>
-        <button class="sm" data-j="${j}" data-d="-5">−5%</button>
-        <button class="sm" data-j="${j}" data-d="5">+5%</button>
-        <button class="sm" data-j="${j}" data-d="20">+20%</button>
-        <input type="number" id="n${j}" step="0.5" min="${lo}" max="${hi}"
-          aria-label="Joint ${j} target degrees">
-        <span class="val" id="v${j}">—</span>
-      </div>`;
-    $('joints').appendChild(row);
-  });
-  $('grip').innerHTML=`<div class="joint">
-      <div><div class="jname">GRIP</div><div class="jrange">${GR[0]}…${GR[1]}mm</div></div>
-      <div><input type="range" id="sg" min="${GR[0]}" max="${GR[1]}" step="1" value="0"
-        aria-label="Gripper opening in millimetres"></div>
-      <div class="ctl">
-        <button class="sm" id="gopen">OPEN</button><button class="sm" id="gclose">CLOSE</button>
-        <input type="number" id="ng" step="1" min="${GR[0]}" max="${GR[1]}"
-          aria-label="Gripper millimetres">
-        <span class="val" id="vg">—</span>
-      </div></div>`;
-
-  J.forEach(j=>{
-    const [lo,hi]=LIM[j];
-    $('s'+j).addEventListener('input',e=>send(j,parseFloat(e.target.value)));
-    $('n'+j).addEventListener('change',e=>send(j,parseFloat(e.target.value)));
-  });
-  document.querySelectorAll('button[data-j]').forEach(b=>{
-    b.addEventListener('click',()=>{
-      const j=+b.dataset.j,[lo,hi]=LIM[j];
-      const cur=parseFloat($('s'+j).value);
-      send(j, Math.max(lo,Math.min(hi, deg(pct(cur,lo,hi)+(+b.dataset.d),lo,hi))));
-    });
-  });
-  function setSpeed(v){
-    v=Math.max(1,Math.min(100,Math.round(v)));
-    $('ss').value=v; $('ns').value=v;
-    $('vs').innerHTML=`<span class="cur">${v}%</span>`;
-    post('/api/speed',{speed:v});
-  }
-  $('ss').addEventListener('input',e=>setSpeed(+e.target.value));
-  $('ns').addEventListener('change',e=>setSpeed(+e.target.value));
-  $('sp5').onclick=()=>setSpeed(5);
-  $('sp15').onclick=()=>setSpeed(15);
-  $('sp40').onclick=()=>setSpeed(40);
-  $('sp100').onclick=()=>{ if(confirm('Set MAXIMUM speed (100%)?\nThe arm will move at its full rated rate. Keep the e-stop in reach.')) setSpeed(100); };
-
-  $('sg').addEventListener('input',e=>post('/api/gripper',{mm:+e.target.value}));
-  $('ng').addEventListener('change',e=>post('/api/gripper',{mm:+e.target.value}));
-  $('gopen').onclick=()=>{$('sg').value=GR[1];post('/api/gripper',{mm:GR[1]});};
-  $('gclose').onclick=()=>{$('sg').value=GR[0];post('/api/gripper',{mm:GR[0]});};
-  buildKeyboard();
-  built=true;
-}
-
-function send(j,d){const [lo,hi]=LIM[j];d=Math.max(lo,Math.min(hi,d));
-  $('s'+j).value=d;$('n'+j).value=d.toFixed(1);post('/api/joint',{joint:j,deg:d});}
-
-$('btnEnable').onclick=()=>{
-  if(enabled && !confirm('DISABLE cuts torque to all joints — the arm will DROP under gravity.\n\nSupport it or lower it to a rest position first. Continue?'))return;
-  post('/api/enable',{on:!enabled});
-};
-$('btnHome').onclick=()=>{post('/api/home');J.forEach(j=>{$('s'+j).value=0;$('n'+j).value=0;});};
-$('btnEstop').onclick=()=>{if(confirm('Send EMERGENCY STOP?'))post('/api/estop');};
-$('btnRecover').onclick=()=>{if(confirm('Recover from collision?\n\nThe arm briefly goes limp while its fault clears, then re-enables — no power-cycle needed. Keep the workspace clear.'))post('/api/recover');};
-
-let mode='joint';
-function updateModeUI(){
-  // Mode now auto-switches server-side per key (Cartesian for translate/gimbal,
-  // Joint for wrist). The keyboard drives both, so it stays visible; the badge
-  // just reflects which mode the arm is currently armed in.
-  $('btnMode').textContent='ARM MODE · '+(mode==='joint'?'JOINT':'CARTESIAN');
-  $('btnMode').className=mode==='cartesian'?'on':'ghost';
-  $('cartHelp').style.display='block';
-}
-$('btnMode').onclick=()=>{mode=(mode==='joint')?'cartesian':'joint';post('/api/mode',{mode});updateModeUI();};
-
-// Key map. kind 'cart' -> Cartesian leashed jog (/api/jog): axes 0-2 translate
-// (X/Y/Z), 3-5 rotate (RX/RY/RZ, the tip-fixed gimbal). kind 'joint' -> wrist jog
-// (/api/jointjog): moves that joint directly, J1-3 stay put. rot/wrist tag colours.
-const KEYMAP={
-  // translation — arrows do X/Y, W/S do Z (no longer duplicated)
-  arrowup:   {kind:'cart',axis:0,dir:+1,glyph:'↑',fn:'forward',ax:'X+'},
-  arrowdown: {kind:'cart',axis:0,dir:-1,glyph:'↓',fn:'back',ax:'X−'},
-  arrowleft: {kind:'cart',axis:1,dir:+1,glyph:'←',fn:'left',ax:'Y+'},
-  arrowright:{kind:'cart',axis:1,dir:-1,glyph:'→',fn:'right',ax:'Y−'},
-  w:{kind:'cart',axis:2,dir:+1,glyph:'W',fn:'up',ax:'Z+'},
-  s:{kind:'cart',axis:2,dir:-1,glyph:'S',fn:'down',ax:'Z−'},
-  // gimbal — rotate the tool about a FIXED tip (Cartesian orientation)
-  u:{kind:'cart',axis:3,dir:+1,glyph:'U',fn:'roll ↺',ax:'RX+',rot:1},
-  o:{kind:'cart',axis:3,dir:-1,glyph:'O',fn:'roll ↻',ax:'RX−',rot:1},
-  i:{kind:'cart',axis:4,dir:+1,glyph:'I',fn:'pitch ↑',ax:'RY+',rot:1},
-  k:{kind:'cart',axis:4,dir:-1,glyph:'K',fn:'pitch ↓',ax:'RY−',rot:1},
-  j:{kind:'cart',axis:5,dir:+1,glyph:'J',fn:'yaw ←',ax:'RZ+',rot:1},
-  l:{kind:'cart',axis:5,dir:-1,glyph:'L',fn:'yaw →',ax:'RZ−',rot:1},
-  // wrist joints — J1-3 fixed, tip NOT fixed (moves in an arc)
-  a:{kind:'joint',joint:3,dir:+1,glyph:'A',fn:'J4 +',ax:'joint4',wrist:1},
-  d:{kind:'joint',joint:3,dir:-1,glyph:'D',fn:'J4 −',ax:'joint4',wrist:1},
-  q:{kind:'joint',joint:4,dir:+1,glyph:'Q',fn:'J5 +',ax:'joint5',wrist:1},
-  e:{kind:'joint',joint:4,dir:-1,glyph:'E',fn:'J5 −',ax:'joint5',wrist:1},
-  z:{kind:'joint',joint:5,dir:+1,glyph:'Z',fn:'J6 +',ax:'joint6',wrist:1},
-  c:{kind:'joint',joint:5,dir:-1,glyph:'C',fn:'J6 −',ax:'joint6',wrist:1},
-};
-const held=new Set();
-const capId=k=>'kc_'+k.replace('arrow','arr_');
-function kcapHTML(k){
-  if(k==='') return '<div class="kcap blank"></div>';
-  const m=KEYMAP[k];
-  return `<div class="kcap${m.rot?' rot':''}${m.wrist?' wrist':''}" id="${capId(k)}" data-k="${k}">`+
-    `<div class="glyph">${m.glyph}</div><div class="fn">${m.fn}</div><div class="ax">${m.ax}</div></div>`;
-}
-function buildKeyboard(){
-  const transXY=[['','arrowup',''],['arrowleft','arrowdown','arrowright']];
-  const transZ=[['w'],['s']];
-  const gimbal=[['u','i','o'],['j','k','l']];
-  const wrist=[['a','q','z'],['d','e','c']];
-  const cluster=(name,rows)=>`<div class="kcluster"><div class="kcname">${name}</div>`+
-    rows.map(r=>`<div class="krow">${r.map(kcapHTML).join('')}</div>`).join('')+`</div>`;
-  $('kbd').innerHTML=cluster('Translate · X/Y',transXY)+cluster('· Z',transZ)+
-    cluster('Gimbal · tip fixed',gimbal)+cluster('Wrist joints · base fixed',wrist);
-  $('kbd').querySelectorAll('.kcap[data-k]').forEach(el=>{
-    const k=el.dataset.k;
-    const dn=e=>{e.preventDefault();startJog(k);};
-    const up=e=>{e.preventDefault();stopJog(k);};
-    el.addEventListener('mousedown',dn); el.addEventListener('mouseup',up);
-    el.addEventListener('mouseleave',up);
-    el.addEventListener('touchstart',dn,{passive:false});
-    el.addEventListener('touchend',up,{passive:false});
-  });
-}
-function setDown(k,on){const el=$(capId(k));if(el)el.classList.toggle('down',on);}
-function startJog(k){
-  if(!enabled||held.has(k))return;
-  const m=KEYMAP[k];held.add(k);setDown(k,true);
-  if(m.kind==='joint') post('/api/jointjog',{joint:m.joint,dir:m.dir,on:true});
-  else post('/api/jog',{axis:m.axis,dir:m.dir,on:true});
-}
-function stopJog(k){
-  if(!held.has(k))return;
-  const m=KEYMAP[k];held.delete(k);setDown(k,false);
-  if(m.kind==='joint') post('/api/jointjog',{joint:m.joint,dir:m.dir,on:false});
-  else post('/api/jog',{axis:m.axis,dir:m.dir,on:false});
-}
-function releaseAll(){
-  if(!held.size)return;
-  held.forEach(k=>setDown(k,false));held.clear();
-  post('/api/jogstop');
-}
-document.addEventListener('keydown',ev=>{
-  const k=ev.key.toLowerCase();
-  if(!(k in KEYMAP))return;
-  if(ev.target && /^(INPUT|TEXTAREA)$/.test(ev.target.tagName))return;
-  if(!enabled)return;   // keys auto-switch mode server-side (cart vs wrist joint)
-  ev.preventDefault(); startJog(k);
-});
-document.addEventListener('keyup',ev=>{
-  const k=ev.key.toLowerCase();
-  if(!(k in KEYMAP))return;
-  if(held.has(k)){ev.preventDefault();stopJog(k);}   // always release a held key, even from an input
-});
-// safety: never leave a key stuck if the window loses focus or is hidden
-window.addEventListener('blur',releaseAll);
-document.addEventListener('visibilitychange',()=>{if(document.hidden)releaseAll();});
-
-setInterval(()=>post('/api/heartbeat'),400);
-
-async function poll(){
-  try{
-    const r=await fetch('/api/state'); const s=await r.json();
-    if(s.error){$('hb').textContent='error: '+s.error;return;}
-    LIM=s.limits; GR=s.gripper_range;
-    if(!built) build();
-    enabled=s.enabled;
-    if(!enabled) releaseAll();   // disabled/e-stopped -> drop any held jog keys
-    if(s.mode && s.mode!==mode){mode=s.mode;updateModeUI();}
-    if(s.pose_current){const p=s.pose_current;
-      let st=s.arm_status||'';
-      let warn=/EXCEEDS_LIMIT|COLLISION|ERR|ABNORMAL/i.test(st)?'  ⚠ '+st+' — jog to a normal pose in JOINT mode first':(st?'  ['+st+']':'');
-      $('posenow').textContent='TCP  X '+p[0].toFixed(0)+'  Y '+p[1].toFixed(0)+'  Z '+p[2].toFixed(0)+' mm'+warn;}
-    const st=$('status');
-    st.textContent=s.estopped?'E-STOPPED':(s.enabled?'ENABLED':'DISABLED');
-    st.className='badge '+(s.enabled?'live':'halt');
-    $('btnEnable').textContent=s.enabled?'DISABLE MOTORS':'ENABLE MOTORS';
-    $('btnEnable').className=s.enabled?'on':'off';
-    $('hb').textContent='streaming @20Hz'+(s.enabled?'':' (idle)');
-    J.forEach(j=>{
-      const c=s.current[j-1],t=s.targets[j-1];
-      $('v'+j).innerHTML=`<span class="cur">${c.toFixed(1)}°</span> → ${t.toFixed(1)}°`;
-      if(document.activeElement!==$('n'+j))$('n'+j).value=t.toFixed(1);
-    });
-    if(document.activeElement!==$('ss')&&document.activeElement!==$('ns')){
-      $('ss').value=s.speed; $('ns').value=s.speed;
-      $('vs').innerHTML=`<span class="cur">${s.speed}%</span>`;
-    }
-    $('vg').innerHTML=`<span class="cur">${s.gripper_mm.toFixed(0)}mm</span>`;
-    $('log').innerHTML = s.log.length ? s.log.map(e=>
-      `<div><span class="sub">${e.t}</span> <span class="fn">${e.fn}</span>(${
-        Object.entries(e.params).map(([k,v])=>`${k}=${v}`).join(', ')})</div>`).join('')
-      : '<div class="empty">No calls yet.</div>';
-  }catch(e){$('hb').textContent='disconnected — arm will stop';}
-}
-setInterval(poll,300); poll();
-</script></body></html>
-"""
+        return self._json(404, {"error": "not found"})
 
 
 def main():
-    global ARM
-    ap = argparse.ArgumentParser(description="PiPER web control panel")
+    global ARM, PANEL_HTML
+    ap = argparse.ArgumentParser(description="PiPER arm driver (NervusOS hardware layer)")
     ap.add_argument("--port", type=int, default=8770)
     ap.add_argument("--iface", default="can0")
     ap.add_argument("--speed", type=int, default=15)
@@ -820,28 +778,38 @@ def main():
 
     if args.bind == "auto":
         args.bind = pick_bind_address()
+    try:
+        with open(os.path.join(HERE, "panel.html"), "rb") as f:
+            PANEL_HTML = f.read()
+    except OSError:
+        PANEL_HTML = b"<p>panel.html is missing; the API is still available under /api/.</p>"
     with state_lock:
         STATE["speed"] = args.speed
     ARM = Arm(args.iface, args.speed)
+    try:
+        ARM.firmware = ARM.piper.GetPiperFirmwareVersion()
+    except Exception:
+        ARM.firmware = None
     srv = ThreadingHTTPServer((args.bind, args.port), Handler)
-    print(f"\nPiPER web control listening on http://{args.bind}:{args.port}")
-    if args.bind == DIRECT_LINK_IP:
-        print(f"  Direct Ethernet link is UP.")
-        print(f"  Open from the linked laptop: http://{DIRECT_LINK_IP}:{args.port}")
-        print(f"  Open on the board:  http://localhost:{args.port}")
-    else:
-        print(f"  Bound to {args.bind}.")
-        print(f"  On the board's own screen:  http://localhost:{args.port}")
-        print(f"  Or tunnel from another machine: "
-              f"ssh -L {args.port}:localhost:{args.port} <this-host>")
+    srv.daemon_threads = True
+
+    def stop(*_):
+        # Never disable the motors on the way out: a disabled PiPER drops under
+        # gravity. Hold the current pose and let the arm keep it.
+        threading.Thread(target=srv.shutdown, daemon=True).start()
+
+    signal.signal(signal.SIGTERM, stop)
+    signal.signal(signal.SIGINT, stop)
+    print(f"PiPER driver listening on http://{args.bind}:{args.port} (firmware {ARM.firmware})", flush=True)
     try:
         srv.serve_forever()
-    except KeyboardInterrupt:
-        print("\nshutting down; disabling motors")
+    finally:
         try:
-            ARM.disable()
+            ARM.hold()
         except Exception:
             pass
+        ARM.close()
+        print("PiPER driver stopped; motors left as they were", flush=True)
 
 
 if __name__ == "__main__":

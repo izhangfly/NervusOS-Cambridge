@@ -72,6 +72,11 @@ type Sandbox struct {
 	// RestrictAddressFamilies...) aren't affected by this switch and still apply unconditionally.
 	AllowDeviceAccess bool
 
+	// DeviceGroups are added as SupplementaryGroups, and only together with AllowDeviceAccess: the device
+	// namespace being open doesn't help if the node's DAC permissions still exclude the package UID
+	// (root:video 0660 on a desktop host). Ignored without AllowDeviceAccess.
+	DeviceGroups []string
+
 	// BindReadOnlyPaths bind-mounts host paths into the unit's mount namespace (read-only).
 	//
 	// The direct reason it exists is graphical UIs: PrivateTmp=true gives the component a private /tmp, while X11
@@ -281,6 +286,9 @@ func BuildProperties(spec UnitSpec) ([]property, error) {
 			property{"PrivateDevices", dbus.MakeVariant(false)},
 			property{"DevicePolicy", dbus.MakeVariant("auto")},
 		)
+		if len(spec.Sandbox.DeviceGroups) > 0 {
+			props = append(props, property{"SupplementaryGroups", dbus.MakeVariant(spec.Sandbox.DeviceGroups)})
+		}
 	} else {
 		props = append(props,
 			property{"PrivateDevices", dbus.MakeVariant(true)},

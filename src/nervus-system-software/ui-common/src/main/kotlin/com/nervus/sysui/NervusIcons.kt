@@ -49,6 +49,32 @@ object NervusIcons {
         )
     }
 
+    /** An open hand: Hand Teleop. Palm, four fingers and a thumb, as simple bars. */
+    val Hand by lazy {
+        symbol(
+            "Hand",
+            "M300-120h340q20 0 34-14t14-34v-260H252v260q0 20 14 34t34 14Z" +
+                "M262-470h72v-290h-72v290Z" +
+                "M372-470h72v-350h-72v350Z" +
+                "M482-470h72v-320h-72v320Z" +
+                "M592-470h64v-230h-64v230Z" +
+                "M252-300 140-470l58-40 112 170-58 40Z",
+        )
+    }
+
+    /** Three connected nodes: ACT Studio (learned policies). */
+    val Network by lazy {
+        symbol(
+            "Network",
+            "M390-720a90 90 0 1 0 180 0a90 90 0 1 0 -180 0Z" +
+                "M150-280a90 90 0 1 0 180 0a90 90 0 1 0 -180 0Z" +
+                "M630-280a90 90 0 1 0 180 0a90 90 0 1 0 -180 0Z" +
+                "M420-650l-150 290 52 28 150-290-52-28Z" +
+                "M540-650l-52 28 150 290 52-28-150-290Z" +
+                "M330-305h300v50H330v-50Z",
+        )
+    }
+
     val RobotArm by lazy {
         symbol(
             "RobotArm",
@@ -232,6 +258,8 @@ fun iconForPackage(packageId: String): ImageVector = when (packageId) {
     "nervus.filemanager" -> NervusIcons.Folder
     "nervus.store" -> NervusIcons.Store
     "com.nervus.robotarm" -> NervusIcons.RobotArm
+    "com.nervus.handteleop" -> NervusIcons.Hand
+    "com.nervus.act" -> NervusIcons.Network
     else -> NervusIcons.Apps
 }
 

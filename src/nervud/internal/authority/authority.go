@@ -52,6 +52,8 @@ type Gate struct {
 	// spawner is the systemd unit management backend; nil means no process-starting capability is configured, and
 	// StartSandboxedProcess/StopProcess/WaitProcess return ErrUnsupportedPlatform
 	spawner UnitManager
+	// deviceGroups: see Config.DeviceGroups
+	deviceGroups []string
 }
 
 type Config struct {
@@ -61,6 +63,12 @@ type Config struct {
 	// Spawner is the systemd unit management backend (in production main.go builds it with systemd.Dial and injects it).
 	// When nil the Gate can still be used for non-process operations (install / tree deletion / setting owners / reboot)
 	Spawner UnitManager
+	// DeviceGroups are host groups added as SupplementaryGroups to components that get device access
+	// (system-image Providers; see systemd.Sandbox.AllowDeviceAccess). Opening the device namespace is not
+	// enough on a desktop host: /dev/video* and friends are root:video 0660, and a component runs under its
+	// own package UID, so it still can't open them. Empty on a product image whose device nodes are
+	// provisioned for the package UIDs; hosted mode sets "video".
+	DeviceGroups []string
 }
 
 // New constructs the Gate.
@@ -76,7 +84,7 @@ func New(cfg Config) (*Gate, error) {
 	if inv == nil {
 		inv = DefaultInvariants()
 	}
-	return &Gate{auditor: cfg.Auditor, inv: inv, log: cfg.Log, spawner: cfg.Spawner}, nil
+	return &Gate{auditor: cfg.Auditor, inv: inv, log: cfg.Log, spawner: cfg.Spawner, deviceGroups: append([]string(nil), cfg.DeviceGroups...)}, nil
 }
 
 // How it works

@@ -1,0 +1,38 @@
+{
+  "schema": 1,
+  "package_id": "nervus.piperd",
+  "label": "PiPER Arm Provider",
+  "version": "0.1.0",
+  "version_code": 1,
+  "min_nervus_api": 1,
+  "target_nervus_api": 1,
+  "supported_abis": ["linux-arm64"],
+  "permissions": [
+    "perm.service.register"
+  ],
+  "components": [
+    {
+      "id": "main",
+      "type": "service",
+      "runtime": "native",
+      "entry": "bin/piperd",
+      "launch_mode": "always-on",
+      "criticality": "optional",
+      "exports": [
+        {
+          "interface": "nervus.interface.manipulator.arm",
+          "visibility": "public"
+        }
+      ],
+      "limits": {
+        "memory_max_mb": 64,
+        "tasks_max": 64
+      }
+    }
+  ],
+  "provider": {
+    "descriptor": "provider.binpb",
+    "schemas": "schemas.binpb"
+  },
+  "digests": {}
+}

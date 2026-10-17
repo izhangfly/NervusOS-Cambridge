@@ -101,10 +101,6 @@ func TestConflictingProviderDefinitionsRejectWholeBatch(t *testing.T) {
 	}
 }
 
-//
-
-//
-
 func TestNoPackageIDGetsAnArtifactLessBridge(t *testing.T) {
 	base := legacyPackageManagerEntry()
 

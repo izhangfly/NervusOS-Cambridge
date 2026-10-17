@@ -89,8 +89,6 @@ func metadataOEMSource(t *testing.T, keyID string, artifacts *ipcregistry.Provid
 	}
 }
 
-//
-
 func TestMetadataInterfaceEntersCatalog(t *testing.T) {
 	registry := mustDefaultRegistry(t)
 	candidate, err := registry.Prepare([]Source{

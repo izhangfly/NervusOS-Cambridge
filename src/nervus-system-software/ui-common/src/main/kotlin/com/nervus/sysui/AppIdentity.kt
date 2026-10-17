@@ -63,6 +63,8 @@ object AppIdentity {
         "nervus.safety.recovery" to "Safety recovery",
         "nervus.store" to "App Store",
         "com.nervus.robotarm" to "Robot Arm",
+        "com.nervus.handteleop" to "Hand Teleop",
+        "com.nervus.act" to "ACT Studio",
         "com.example.hello" to "Nervus Hello World",
     )
 
@@ -99,6 +101,7 @@ object AppIdentity {
         "nervus.safety.recovery",
         // A camera service with no UI
         "nervus.camerad",
+        "nervus.piperd",
         // The desktop shouldn't appear on itself
         "nervus.launcher",
     )

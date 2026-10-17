@@ -30,7 +30,7 @@ object StdInterfaceSchema {
         "nervus.interface.camera@1" to
             "e00e26c597b1604c4fefdfaa8e4ab4a579ccef4483d1553c4df96d7f641d7642",
         "nervus.interface.manipulator.arm@1" to
-            "e30335f462edd2f1d8d3d0fb9556909595b5a3ce60fa2fb0320a29a27b6346e8",
+            "ba14ac4e29148ce4db059a018608d654a846bff5f85f80fcdb9afce9be2d375c",
         "nervus.interface.motion.base@1" to
             "c7ed417b4aab241b952e38f1293a827dcb62d9634f7ab0ffcf99cf5c208a47f5",
         "nervus.interface.operation.control@1" to

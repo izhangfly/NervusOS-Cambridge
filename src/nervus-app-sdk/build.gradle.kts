@@ -104,6 +104,9 @@ dependencies {
     implementation(libs.protobuf.kotlin)
     implementation(libs.kotlinx.coroutines.core)
     implementation("org.jetbrains.kotlin:kotlin-reflect:${libs.versions.kotlin.get()}")
+    // Transfer: the shared-memory data plane needs SCM_RIGHTS, recvmsg and mmap, which Java's
+    // socket API doesn't expose. JNA ships its native stub for linux-x86-64 and linux-aarch64.
+    implementation("net.java.dev.jna:jna:5.15.0")
 
     implementation(compose.desktop.currentOs)
     implementation(compose.material3)

@@ -1205,6 +1205,12 @@ type ControlLeases interface {
 	// Creating motion operations goes through it: that path only has a handle, and must confirm it
 	// really covers the resource to be bound.
 	CheckLease(id control.ID, conn control.ConnID) (control.LeaseProof, error)
+	// Refresh records fresh operator input on a lease without extending its deadline. The dispatch
+	// path calls it for every lease-gated command that passes the gate: a HUMAN lease carries a
+	// short deadman (300 ms by default), and the commands themselves are the evidence that someone
+	// is still steering. Without it the deadman could only be fed by re-acquiring the lease, so a
+	// teleop stream at 20 Hz lost control 300 ms after its last renewal.
+	Refresh(id control.ID, conn control.ConnID) error
 	// RevokeConn revokes every lease under a connection.
 	//
 	// It must be called when a connection finishes. Leases are bound to this connection, can't be transferred, and lapse on disconnect

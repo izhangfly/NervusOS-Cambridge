@@ -136,8 +136,6 @@ func TestBeginStagingCreatesChildDir(t *testing.T) {
 	}
 }
 
-//
-
 func TestStart_StagingRootIsTraversable(t *testing.T) {
 	_, _, _, _, stagingRoot := startServer(t, uint32(os.Getuid()))
 
@@ -321,8 +319,6 @@ func TestRejectsNonAdminUID(t *testing.T) {
 	}
 }
 
-//
-
 func newServerWithAdmittedPackage(t *testing.T, adminUID, serviceUID uint32) *Server {
 	t.Helper()
 	dir := t.TempDir()
@@ -427,8 +423,6 @@ func TestAdmittedUID_AdmittedAlongsideAdmin(t *testing.T) {
 }
 
 func TestAdmittedUID_ZeroDoesNotAdmitRootThroughBackDoor(t *testing.T) {
-
-	//
 
 	srv := newServerWithAdmittedPackage(t, 1000, 0)
 

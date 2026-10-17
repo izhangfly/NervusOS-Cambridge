@@ -1,0 +1,3 @@
+# Apply NervusOS camera defaults (mains anti-flicker, fixed frame rate) whenever
+# a camera appears. See /usr/libexec/nervus/camera-defaults.
+ACTION=="add", SUBSYSTEM=="video4linux", ATTR{index}=="0", RUN+="/usr/libexec/nervus/camera-defaults $env{DEVNAME}"

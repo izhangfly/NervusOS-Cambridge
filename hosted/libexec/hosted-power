@@ -9,12 +9,30 @@
 set -u
 NERVUS_DISPLAY_NO="${NERVUS_DISPLAY_NO:-7}"
 
+# close_display sends SIGTERM to the Xephyr serving the NervusOS display.
+#
+# This runs inside nervud.service, whose CapabilityBoundingSet has no CAP_KILL,
+# so root cannot signal the desktop user's Xephyr directly: a plain pkill fails
+# with EPERM and says nothing, nervud stops, and the user is left looking at an
+# empty fullscreen display. CAP_SETUID/CAP_SETGID are in the set, so switch to
+# the process owner first and signal it as that user.
+close_display() {
+	local pid uid gid
+	for pid in $(pgrep -f "^Xephyr :${NERVUS_DISPLAY_NO}( |$)"); do
+		uid="$(stat -c %u "/proc/$pid" 2>/dev/null)" || continue
+		gid="$(stat -c %g "/proc/$pid" 2>/dev/null)" || continue
+		setpriv --reuid="$uid" --regid="$gid" --clear-groups kill -TERM "$pid" 2>/dev/null ||
+			kill -TERM "$pid" 2>/dev/null || true
+	done
+}
+
 case "${1:-}" in
 	poweroff)
 		# Closing the Xephyr display makes the user's nervus-session supervisor
 		# stop nervud and clean up. --no-block stop is the fallback for a session
-		# whose supervisor is gone. Both are queued before systemd stops us.
-		pkill -TERM -f "^Xephyr :${NERVUS_DISPLAY_NO}( |$)" || true
+		# whose supervisor is gone; the supervisor also closes the display on its
+		# own once nervud has stopped. Both are queued before systemd stops us.
+		close_display
 		systemctl stop --no-block nervud.service
 		;;
 	reboot)

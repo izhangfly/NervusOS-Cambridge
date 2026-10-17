@@ -78,6 +78,7 @@ internal open class NervusClient(
     // component checks, which are hard to match up when something goes wrong.
     private val registerPending = PendingMap()
     private val launchPending = PendingMap()
+    private val controlPending = PendingMap()
     private val dispatchHandler = DispatchHandler()
     private val registrations = ConcurrentHashMap<String, Long>()
     private val resolveEndpointIds = ConcurrentHashMap<Long, String>()
@@ -178,6 +179,7 @@ internal open class NervusClient(
         // Otherwise we'd reply DispatchResult with old handles after reconnecting, and the kernel would discard them as late results
         registerPending.failAll()
         launchPending.failAll()
+        controlPending.failAll()
         dispatchHandler.clear()
         registrations.clear()
     }
@@ -221,6 +223,22 @@ internal open class NervusClient(
                     }
                     Envelope.BodyCase.LAUNCH_COMPONENT_RESULT -> {
                         handleLaunchComponentResult(envelope.launchComponentResult)
+                    }
+                    Envelope.BodyCase.ACQUIRE_CONTROL_RESULT -> {
+                        val r = envelope.acquireControlResult
+                        controlPending.complete(r.requestId, when (r.outcomeCase) {
+                            AcquireControlResult.OutcomeCase.SUCCESS -> okResponse(r.success.toByteString())
+                            AcquireControlResult.OutcomeCase.FAILURE -> Response.newBuilder().setFailure(r.failure).build()
+                            else -> internalFailure("acquire_control_result with no outcome")
+                        })
+                    }
+                    Envelope.BodyCase.RELEASE_CONTROL_RESULT -> {
+                        val r = envelope.releaseControlResult
+                        controlPending.complete(r.requestId, when (r.outcomeCase) {
+                            ReleaseControlResult.OutcomeCase.SUCCESS -> okResponse(com.google.protobuf.ByteString.EMPTY)
+                            ReleaseControlResult.OutcomeCase.FAILURE -> Response.newBuilder().setFailure(r.failure).build()
+                            else -> internalFailure("release_control_result with no outcome")
+                        })
                     }
                     Envelope.BodyCase.DISPATCH -> {
                         handleDispatch(envelope.dispatch)
@@ -549,6 +567,77 @@ internal open class NervusClient(
             LaunchComponentSuccess.parseFrom(response.success.payload).alreadyRunning
         }
     }
+
+    /**
+     * Requests a ControlLease on one resource (the Envelope's AcquireControl, body 70).
+     *
+     * The lease belongs to this connection and lapses when it closes. Asking again from the same
+     * connection with the same class is an idempotent renewal: same lease_id, deadline extended,
+     * motion epoch unchanged. A HUMAN lease also carries a short deadman (300 ms by default) that every
+     * lease-gated command refreshes; renew it while the operator is active, let it lapse when they stop.
+     *
+     * Fails with [ControlLeaseException], whose [ControlLeaseException.reason] says who holds the
+     * resource (HELD_BY_HUMAN / HELD_BY_AI), whether Safety has latched, and so on.
+     */
+    fun acquireControl(
+        selector: ResourceSelector,
+        controllerClass: ControllerClass,
+        requestedDeadlineNanos: Long = 0,
+        timeoutMs: Int = 5_000,
+    ): CompletableFuture<AcquireControlSuccess> {
+        val writer = frameWriter ?: throw IllegalStateException("not connected")
+        val requestId = requestIdGenerator.next()
+        val future = controlPending.register(requestId)
+        try {
+            writer.writeFrame(
+                Envelope.newBuilder().setAcquireControl(
+                    AcquireControl.newBuilder()
+                        .setRequestId(requestId)
+                        .setControllerClass(controllerClass)
+                        .setResource(selector)
+                        .setRequestedDeadlineNanos(requestedDeadlineNanos)
+                        .build()
+                ).build()
+            )
+            if (timeoutMs > 0) future.orTimeout(timeoutMs.toLong(), TimeUnit.MILLISECONDS)
+        } catch (e: Exception) {
+            controlPending.failOne(requestId, StatusCode.STATUS_CODE_UNAVAILABLE, "write failed: ${e.message}")
+        }
+        return future.thenApply { response ->
+            if (response.hasFailure()) throw ControlLeaseException.from(response.failure)
+            AcquireControlSuccess.parseFrom(response.success.payload)
+        }
+    }
+
+    /** Gives a lease back (body 72). Releasing moves the resource to a new motion epoch. */
+    fun releaseControl(leaseId: Long, timeoutMs: Int = 5_000): CompletableFuture<Unit> {
+        val writer = frameWriter ?: throw IllegalStateException("not connected")
+        val requestId = requestIdGenerator.next()
+        val future = controlPending.register(requestId)
+        try {
+            writer.writeFrame(
+                Envelope.newBuilder().setReleaseControl(
+                    ReleaseControl.newBuilder().setRequestId(requestId).setLeaseId(leaseId).build()
+                ).build()
+            )
+            if (timeoutMs > 0) future.orTimeout(timeoutMs.toLong(), TimeUnit.MILLISECONDS)
+        } catch (e: Exception) {
+            controlPending.failOne(requestId, StatusCode.STATUS_CODE_UNAVAILABLE, "write failed: ${e.message}")
+        }
+        return future.thenApply { response ->
+            if (response.hasFailure()) throw ControlLeaseException.from(response.failure)
+        }
+    }
+
+    private fun okResponse(payload: com.google.protobuf.ByteString): Response =
+        Response.newBuilder().setSuccess(
+            Success.newBuilder().setCode(StatusCode.STATUS_CODE_OK).setPayload(payload).build()
+        ).build()
+
+    private fun internalFailure(message: String): Response =
+        Response.newBuilder().setFailure(
+            Failure.newBuilder().setCode(StatusCode.STATUS_CODE_INTERNAL).setPublicMessage(message).build()
+        ).build()
 
     private fun handleLaunchComponentResult(result: LaunchComponentResult) {
         val response = when (result.outcomeCase) {

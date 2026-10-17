@@ -2,8 +2,6 @@ package ipc
 
 import "testing"
 
-//
-
 func testConns(n int) []*conn {
 	out := make([]*conn, n)
 	for i := range out {
@@ -107,8 +105,6 @@ func TestEventScopes_ProviderDisconnectClearsAll(t *testing.T) {
 	}
 }
 
-//
-
 func TestEventScopes_OwnerDisconnectClearsAll(t *testing.T) {
 	s := newEventScopes()
 	c := testConns(3)
@@ -130,8 +126,6 @@ func TestEventScopes_OwnerDisconnectClearsAll(t *testing.T) {
 	}
 }
 
-//
-
 func TestEventScopes_EndpointCloseClearsItsScopesOnly(t *testing.T) {
 	s := newEventScopes()
 	c := testConns(2)
@@ -150,8 +144,6 @@ func TestEventScopes_EndpointCloseClearsItsScopesOnly(t *testing.T) {
 		t.Fatal("unexpected ipc result; endpoint")
 	}
 }
-
-//
 
 func TestEventScopes_CleanupIsIdempotent(t *testing.T) {
 	s := newEventScopes()

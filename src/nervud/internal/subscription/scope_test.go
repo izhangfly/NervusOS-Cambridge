@@ -17,8 +17,6 @@ func reliableMeta() *ipcv1.EventMeta {
 	}
 }
 
-//
-
 func TestScope_EventsStayWithinTheirInstance(t *testing.T) {
 	r := New()
 	alice := &collectSink{}
@@ -52,8 +50,6 @@ func TestScope_SameInstanceFansOutToAll(t *testing.T) {
 	}
 }
 
-//
-
 func TestScope_UnscopedDoesNotReceiveScoped(t *testing.T) {
 	r := New()
 	sink := &collectSink{}
@@ -65,8 +61,6 @@ func TestScope_UnscopedDoesNotReceiveScoped(t *testing.T) {
 		t.Fatalf("unexpected subscription result; value = %d", len(sink.events))
 	}
 }
-
-//
 
 func TestCloseScope_LeavesOtherInstancesAlone(t *testing.T) {
 	r := New()

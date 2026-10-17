@@ -39,16 +39,12 @@ func TestCapMask_Builds(t *testing.T) {
 	}
 }
 
-//
-
 func TestCapMask_RejectsUnknown(t *testing.T) {
 	_, err := capMask([]string{"CAP_NET_ADMIN", "CAP_NET_ADMN"})
 	if !errors.Is(err, ErrUnknownCapability) {
 		t.Fatalf("err = %v, want ErrUnknownCapability", err)
 	}
 }
-
-//
 
 func TestBuildProperties_CapabilitiesAreUint64(t *testing.T) {
 	props, err := BuildProperties(UnitSpec{

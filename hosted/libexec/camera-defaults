@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Apply NervusOS camera defaults to one V4L2 capture node. Run by udev when a
+# camera appears (91-nervus-cameras.rules) and once by the installer.
+#
+#   camera-defaults /dev/videoN
+#
+# Two settings, both found the hard way on this laptop's cameras:
+#
+#   power_line_frequency  Anti-flicker must match the mains (50 Hz in the UK and
+#                         Europe, 60 Hz in North America). The Logitech C270
+#                         ships set to 60 Hz, which bands under UK room lights.
+#   exposure_dynamic_framerate = 0
+#                         With it on, auto exposure stretches the shutter in dim
+#                         light by dropping frames: the Dabai DC1 fell to 12.5 fps
+#                         and the C270 to 1-3 fps. Off, the camera keeps the frame
+#                         rate it was opened at and caps exposure to the frame
+#                         period, so a 15 fps recording really is 15 fps.
+#
+# Cameras without a control simply skip it. Override the mains frequency in
+# /etc/nervus/cameras.conf with POWER_LINE_HZ=60.
+set -u
+dev="${1:-}"
+[[ -c "$dev" ]] || exit 0
+POWER_LINE_HZ=50
+[[ -r /etc/nervus/cameras.conf ]] && . /etc/nervus/cameras.conf
+case "$POWER_LINE_HZ" in 60) plf=2 ;; 0|off) plf=0 ;; *) plf=1 ;; esac
+command -v v4l2-ctl >/dev/null || exit 0
+# Only capture nodes that offer the control; metadata nodes (index1) have none.
+ctrls="$(v4l2-ctl -d "$dev" --list-ctrls 2>/dev/null)" || exit 0
+grep -q power_line_frequency <<<"$ctrls" && v4l2-ctl -d "$dev" -c power_line_frequency="$plf" 2>/dev/null
+grep -q exposure_dynamic_framerate <<<"$ctrls" && v4l2-ctl -d "$dev" -c exposure_dynamic_framerate=0 2>/dev/null
+exit 0

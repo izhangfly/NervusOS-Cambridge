@@ -26,23 +26,23 @@ object ManifestSigner {
         }
         val signatureBytes = sig.sign()
 
-        // 【必须是裸 32 字节公钥，不是 getEncoded()】
+        // [It must be the raw 32-byte public key, not getEncoded()]
         //
-        // JCA 的 PublicKey.getEncoded() 给的是 X.509 SubjectPublicKeyInfo DER，
-        // Ed25519 下是 44 字节（12 字节 302a300506032b6570032100 + 32 字节裸公钥）。
-        // 而内核的 keyIDOf（pkgregistry/signature.go）与 trust-bundle 的生成
-        // （deploy/build-release.sh 的 key_id()：openssl -outform DER | tail -c 32）
-        // 都是对【裸 32 字节】取 sha256。
+        // JCA's PublicKey.getEncoded() gives the X.509 SubjectPublicKeyInfo DER,
+        // 44 bytes for Ed25519 (the 12-byte prefix 302a300506032b6570032100 + the 32-byte raw key).
+        // The kernel's keyIDOf (pkgregistry/signature.go) and the trust bundle generator
+        // (key_id() in deploy/build-release.sh: openssl -outform DER | tail -c 32)
+        // both take sha256 of the [raw 32 bytes].
         //
-        // 拿 44 字节去算，key_id 永远查不到 trust bundle 里那条，验签以
-        // ErrUntrustedSigner 失败；而 scanSystemImage 对验签失败是 fail-closed
-        // 到 Ordinary 而非跳过整个包——于是包装上了、能跑，只是 trust=ordinary，
-        // 信任分级整体静默失效。真机上踩过：platform-systemapp 签的三个系统 App
-        // 全是 ordinary，platform-release 签的（Go 侧 sysmanifest 算的是裸公钥）
-        // 却是 platform。
+        // Computed over 44 bytes, the key_id never matches the trust bundle entry and verification fails with
+        // ErrUntrustedSigner; scanSystemImage fails closed to Ordinary on a failed check rather than skipping the
+        // package, so the package installs and runs, just with trust=ordinary, and trust levels silently stop working.
+        // This happened on real hardware: the three system apps signed platform-systemapp were all ordinary,
+        // while those signed platform-release (the Go sysmanifest hashes the raw key)
+        // were platform.
         //
-        // 同理 developer 角色内嵌的 key 也必须是裸 32 字节：内核 decodePubKey
-        // 硬校验长度 == ed25519.PublicKeySize，给 44 字节直接报 wrong length。
+        // Likewise the key embedded for the developer role must be the raw 32 bytes: the kernel's decodePubKey
+        // checks length == ed25519.PublicKeySize and rejects 44 bytes with wrong length.
         val rawPubKey = rawEd25519PublicKey(signerKeyPair.public.encoded)
         val sha256 = MessageDigest.getInstance("SHA-256")
         val keyId = "sha256:" + sha256.digest(rawPubKey).joinToString("") { "%02x".format(it) }
@@ -62,23 +62,23 @@ object ManifestSigner {
     }
 
     /**
-     * 从 X.509 SubjectPublicKeyInfo DER 里取出裸 32 字节 Ed25519 公钥。
+     * Extracts the raw 32-byte Ed25519 public key from X.509 SubjectPublicKeyInfo DER.
      *
-     * Ed25519 的 SPKI 是定长 44 字节，前缀固定：
+     * An Ed25519 SPKI is a fixed 44 bytes with a fixed prefix:
      * ```text
-     * 30 2a           SEQUENCE, 42 字节
-     *   30 05         SEQUENCE, 5 字节（AlgorithmIdentifier）
+     * 30 2a           SEQUENCE, 42 bytes
+     *   30 05         SEQUENCE, 5 bytes (AlgorithmIdentifier)
      *     06 03 2b 65 70   OID 1.3.101.112 = id-Ed25519
-     *   03 21 00      BIT STRING, 33 字节, 0 个 unused bit
-     *     <32 字节公钥>
+     *   03 21 00      BIT STRING, 33 bytes, 0 unused bits
+     *     <32-byte public key>
      * ```
-     * 长度定死，所以直接核对前缀再截尾，不需要写 DER 解析器。已经是 32 字节的
-     * 输入（有的 Provider 会直接给裸公钥）原样返回。
+     * The length is fixed, so check the prefix and take the tail; no DER parser needed. Input that is already
+     * 32 bytes (some Providers hand over the raw key) is returned unchanged.
      */
     private fun rawEd25519PublicKey(encoded: ByteArray): ByteArray {
         if (encoded.size == RAW_PUBKEY_LEN) return encoded
         require(encoded.size == SPKI_LEN && encoded.copyOfRange(0, SPKI_PREFIX.size).contentEquals(SPKI_PREFIX)) {
-            "无法识别的 Ed25519 公钥编码：${encoded.size} 字节，期望裸 $RAW_PUBKEY_LEN 或 X.509 SPKI $SPKI_LEN"
+            "unrecognised Ed25519 public key encoding: ${encoded.size} bytes; expected raw $RAW_PUBKEY_LEN or X.509 SPKI $SPKI_LEN"
         }
         return encoded.copyOfRange(SPKI_LEN - RAW_PUBKEY_LEN, SPKI_LEN)
     }

@@ -47,6 +47,7 @@ build_release() {
 	SOFTWARE_DIR="$SRC/nervus-system-software" APP_SDK_DIR="$SRC/nervus-app-sdk" \
 	PACKAGING_DIR="$SRC/nervus-packaging" IPC_DIR="$SRC/nervus-ipc" \
 	TARGET_ABI="$ABI" JRE_SOURCE="${JRE_SOURCE:-auto}" JRE_VERSION=21 KEY_DIR="$KEYS" \
+	NERVUS_BOARD="${NERVUS_BOARD:-dell-latitude}" \
 	REQUIRE_OEM_COUNTERSIGN=false TARBALL="$OUT/nervus-os-$ABI.tar.gz" \
 		bash "$SRC/nervus-deploy/build-release.sh" --non-interactive
 }
@@ -71,6 +72,7 @@ build_apps() {
 	rm -rf "$OUT/store"
 	mkdir -p "$OUT/store/packages"
 	build_app "$SRC/robot-arm" "signing/developer.pem"
+	build_app "$SRC/hand-teleop" "signing/developer.pem"
 	build_app "$SRC/nervus-app-example" "signing/private.pem"
 	cp "$REPO/store/catalog.ini" "$OUT/store/catalog.ini"
 	step "Store catalog"

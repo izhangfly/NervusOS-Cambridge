@@ -24,12 +24,7 @@ type fakeLeaseKey struct {
 	resource string
 }
 
-//
-
 type fakeLeases struct {
-
-	//
-
 	mu         sync.Mutex
 	acquireErr error
 	issued     []control.Request
@@ -42,8 +37,10 @@ type fakeLeases struct {
 		resource   string
 		generation uint64
 	}
-	nextID byte
-	active map[fakeLeaseKey]control.Lease
+	nextID     byte
+	active     map[fakeLeaseKey]control.Lease
+	refreshed  int
+	refreshErr error
 }
 
 func (f *fakeLeases) Acquire(req control.Request) (control.Lease, error) {
@@ -104,6 +101,13 @@ func (f *fakeLeases) CheckLease(id control.ID, conn control.ConnID) (control.Lea
 		}, nil
 	}
 	return control.LeaseProof{}, control.ErrControlNotHeld
+}
+
+func (f *fakeLeases) Refresh(id control.ID, conn control.ConnID) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.refreshed++
+	return f.refreshErr
 }
 
 func (f *fakeLeases) CheckResource(
@@ -292,10 +296,6 @@ func dialHandshaked(t *testing.T, sock string) net.Conn {
 	return c
 }
 
-//
-
-//
-
 func acquireEnv(reqID uint64, class ipcv1.ControllerClass, sel *ipcv1.ResourceSelector) *ipcv1.Envelope {
 	if sel == nil {
 		sel = &ipcv1.ResourceSelector{
@@ -308,8 +308,6 @@ func acquireEnv(reqID uint64, class ipcv1.ControllerClass, sel *ipcv1.ResourceSe
 		Resource:        sel,
 	}}}
 }
-
-//
 
 func TestAcquireControl_EmptySelectorRejected(t *testing.T) {
 	sock, _ := newLeaseServer(t, &fakeLeases{})

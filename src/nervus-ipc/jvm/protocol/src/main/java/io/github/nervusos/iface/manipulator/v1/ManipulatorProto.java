@@ -81,6 +81,16 @@ public final class ManipulatorProto {
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
       internal_static_nervus_interface_manipulator_v1_StopRequest_fieldAccessorTable;
   static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_nervus_interface_manipulator_v1_ServoToPoseRequest_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_nervus_interface_manipulator_v1_ServoToPoseRequest_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
+    internal_static_nervus_interface_manipulator_v1_ServoToPoseResult_descriptor;
+  static final 
+    com.google.protobuf.GeneratedMessage.FieldAccessorTable
+      internal_static_nervus_interface_manipulator_v1_ServoToPoseResult_fieldAccessorTable;
+  static final com.google.protobuf.Descriptors.Descriptor
     internal_static_nervus_interface_manipulator_v1_ManipulatorMoveResult_descriptor;
   static final 
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
@@ -129,69 +139,81 @@ public final class ManipulatorProto {
       "ryPointR\006points\"\017\n\rGoHomeRequest\"L\n\021SetG" +
       "ripperRequest\022\030\n\007opening\030\001 \001(\001R\007opening\022" +
       "\035\n\nmax_effort\030\002 \001(\001R\tmaxEffort\"\r\n\013StopRe" +
-      "quest\"]\n\025ManipulatorMoveResult\022D\n\nfinal_" +
-      "pose\030\001 \001(\0132%.nervus.interface.manipulato" +
-      "r.v1.PoseR\tfinalPose\"d\n\026ManipulatorError" +
-      "Detail\022J\n\006reason\030\001 \001(\01622.nervus.interfac" +
-      "e.manipulator.v1.ManipulatorReasonR\006reas" +
-      "on*\244\014\n\021ManipulatorMethod\022\"\n\036MANIPULATOR_" +
-      "METHOD_UNSPECIFIED\020\000\022\307\001\n MANIPULATOR_MET" +
-      "HOD_GET_ARM_STATE\020\001\032\240\001\212\246\035\233\001\010\001\030\001:2nervus." +
-      "interface.manipulator.v1.GetArmStateRequ" +
-      "estB(nervus.interface.manipulator.v1.Arm" +
-      "State\202\0016nervus.interface.manipulator.v1." +
-      "ManipulatorErrorDetail\022\323\001\n&MANIPULATOR_M" +
-      "ETHOD_SUBSCRIBE_ARM_STATE\020\002\032\246\001\212\246\035\241\001\010\002\030\001:" +
-      "8nervus.interface.manipulator.v1.Subscri" +
-      "beArmStateRequestB(nervus.interface.mani" +
-      "pulator.v1.ArmState\202\0016nervus.interface.m" +
-      "anipulator.v1.ManipulatorErrorDetail\022\362\001\n" +
-      "\037MANIPULATOR_METHOD_MOVE_TO_POSE\020\003\032\314\001\212\246\035" +
-      "\307\001\010\003\022\030perm.manipulator.control\030\003 \001(\0010\001:1" +
-      "nervus.interface.manipulator.v1.MoveToPo" +
-      "seRequestB5nervus.interface.manipulator." +
-      "v1.ManipulatorMoveResult\202\0016nervus.interf" +
-      "ace.manipulator.v1.ManipulatorErrorDetai" +
-      "l\022\204\002\n(MANIPULATOR_METHOD_MOVE_JOINT_TRAJ" +
-      "ECTORY\020\004\032\325\001\212\246\035\320\001\010\004\022\030perm.manipulator.con" +
-      "trol\030\003 \001(\0010\001::nervus.interface.manipulat" +
-      "or.v1.MoveJointTrajectoryRequestB5nervus" +
-      ".interface.manipulator.v1.ManipulatorMov" +
+      "quest\"w\n\022ServoToPoseRequest\022=\n\006target\030\001 " +
+      "\001(\0132%.nervus.interface.manipulator.v1.Po" +
+      "seR\006target\022\"\n\rmax_vel_scale\030\002 \001(\001R\013maxVe" +
+      "lScale\"}\n\021ServoToPoseResult\022N\n\017accepted_" +
+      "target\030\001 \001(\0132%.nervus.interface.manipula" +
+      "tor.v1.PoseR\016acceptedTarget\022\030\n\007clamped\030\002" +
+      " \001(\010R\007clamped\"]\n\025ManipulatorMoveResult\022D" +
+      "\n\nfinal_pose\030\001 \001(\0132%.nervus.interface.ma" +
+      "nipulator.v1.PoseR\tfinalPose\"d\n\026Manipula" +
+      "torErrorDetail\022J\n\006reason\030\001 \001(\01622.nervus." +
+      "interface.manipulator.v1.ManipulatorReas" +
+      "onR\006reason*\223\016\n\021ManipulatorMethod\022\"\n\036MANI" +
+      "PULATOR_METHOD_UNSPECIFIED\020\000\022\307\001\n MANIPUL" +
+      "ATOR_METHOD_GET_ARM_STATE\020\001\032\240\001\212\246\035\233\001\010\001\030\001:" +
+      "2nervus.interface.manipulator.v1.GetArmS" +
+      "tateRequestB(nervus.interface.manipulato" +
+      "r.v1.ArmState\202\0016nervus.interface.manipul" +
+      "ator.v1.ManipulatorErrorDetail\022\323\001\n&MANIP" +
+      "ULATOR_METHOD_SUBSCRIBE_ARM_STATE\020\002\032\246\001\212\246" +
+      "\035\241\001\010\002\030\001:8nervus.interface.manipulator.v1" +
+      ".SubscribeArmStateRequestB(nervus.interf" +
+      "ace.manipulator.v1.ArmState\202\0016nervus.int" +
+      "erface.manipulator.v1.ManipulatorErrorDe" +
+      "tail\022\362\001\n\037MANIPULATOR_METHOD_MOVE_TO_POSE" +
+      "\020\003\032\314\001\212\246\035\307\001\010\003\022\030perm.manipulator.control\030\003" +
+      " \001(\0010\001:1nervus.interface.manipulator.v1." +
+      "MoveToPoseRequestB5nervus.interface.mani" +
+      "pulator.v1.ManipulatorMoveResult\202\0016nervu" +
+      "s.interface.manipulator.v1.ManipulatorEr" +
+      "rorDetail\022\204\002\n(MANIPULATOR_METHOD_MOVE_JO" +
+      "INT_TRAJECTORY\020\004\032\325\001\212\246\035\320\001\010\004\022\030perm.manipul" +
+      "ator.control\030\003 \001(\0010\001::nervus.interface.m" +
+      "anipulator.v1.MoveJointTrajectoryRequest" +
+      "B5nervus.interface.manipulator.v1.Manipu" +
+      "latorMoveResult\202\0016nervus.interface.manip" +
+      "ulator.v1.ManipulatorErrorDetail\022\351\001\n\032MAN" +
+      "IPULATOR_METHOD_GO_HOME\020\005\032\310\001\212\246\035\303\001\010\005\022\030per" +
+      "m.manipulator.control\030\003 \001(\0010\001:-nervus.in" +
+      "terface.manipulator.v1.GoHomeRequestB5ne" +
+      "rvus.interface.manipulator.v1.Manipulato" +
+      "rMoveResult\202\0016nervus.interface.manipulat" +
+      "or.v1.ManipulatorErrorDetail\022\266\001\n\036MANIPUL" +
+      "ATOR_METHOD_SET_GRIPPER\020\006\032\221\001\212\246\035\214\001\010\006\022\030per" +
+      "m.manipulator.control\030\003 \001:1nervus.interf" +
+      "ace.manipulator.v1.SetGripperRequest\202\0016n" +
+      "ervus.interface.manipulator.v1.Manipulat" +
+      "orErrorDetail\022\251\001\n\027MANIPULATOR_METHOD_STO" +
+      "P\020\007\032\213\001\212\246\035\206\001\010\007\022\030perm.manipulator.control\030" +
+      "\003 \001:+nervus.interface.manipulator.v1.Sto" +
+      "pRequest\202\0016nervus.interface.manipulator." +
+      "v1.ManipulatorErrorDetail\022\354\001\n MANIPULATO" +
+      "R_METHOD_SERVO_TO_POSE\020\010\032\305\001\212\246\035\300\001\010\010\022\030perm" +
+      ".manipulator.control\030\003 \001:2nervus.interfa" +
+      "ce.manipulator.v1.ServoToPoseRequestB1ne" +
+      "rvus.interface.manipulator.v1.ServoToPos" +
       "eResult\202\0016nervus.interface.manipulator.v" +
-      "1.ManipulatorErrorDetail\022\351\001\n\032MANIPULATOR" +
-      "_METHOD_GO_HOME\020\005\032\310\001\212\246\035\303\001\010\005\022\030perm.manipu" +
-      "lator.control\030\003 \001(\0010\001:-nervus.interface." +
-      "manipulator.v1.GoHomeRequestB5nervus.int" +
-      "erface.manipulator.v1.ManipulatorMoveRes" +
-      "ult\202\0016nervus.interface.manipulator.v1.Ma" +
-      "nipulatorErrorDetail\022\266\001\n\036MANIPULATOR_MET" +
-      "HOD_SET_GRIPPER\020\006\032\221\001\212\246\035\214\001\010\006\022\030perm.manipu" +
-      "lator.control\030\003 \001:1nervus.interface.mani" +
-      "pulator.v1.SetGripperRequest\202\0016nervus.in" +
-      "terface.manipulator.v1.ManipulatorErrorD" +
-      "etail\022\251\001\n\027MANIPULATOR_METHOD_STOP\020\007\032\213\001\212\246" +
-      "\035\206\001\010\007\022\030perm.manipulator.control\030\003 \001:+ner" +
-      "vus.interface.manipulator.v1.StopRequest" +
-      "\202\0016nervus.interface.manipulator.v1.Manip" +
-      "ulatorErrorDetail*\235\001\n\014ArmReadiness\022\035\n\031AR" +
-      "M_READINESS_UNSPECIFIED\020\000\022\027\n\023ARM_READINE" +
-      "SS_READY\020\001\022\033\n\027ARM_READINESS_NOT_READY\020\002\022" +
-      "\037\n\033ARM_READINESS_TRANSITIONING\020\003\022\027\n\023ARM_" +
-      "READINESS_FAULT\020\004*\220\003\n\021ManipulatorReason\022" +
-      "\"\n\036MANIPULATOR_REASON_UNSPECIFIED\020\000\022 \n\034M" +
-      "ANIPULATOR_REASON_NOT_READY\020\001\022%\n!MANIPUL" +
-      "ATOR_REASON_SAFETY_LATCHED\020\002\022\"\n\036MANIPULA" +
-      "TOR_REASON_STALE_EPOCH\020\003\022\'\n#MANIPULATOR_" +
-      "REASON_CONTROL_NOT_HELD\020\004\022\"\n\036MANIPULATOR" +
-      "_REASON_JOINT_LIMIT\020\005\022\'\n#MANIPULATOR_REA" +
-      "SON_UNREACHABLE_POSE\020\006\022 \n\034MANIPULATOR_RE" +
-      "ASON_COLLISION\020\007\022+\n\'MANIPULATOR_REASON_R" +
-      "ESOURCE_UNAVAILABLE\020\010\022%\n!MANIPULATOR_REA" +
-      "SON_RESOURCE_FAULT\020\tB\215\001\n\'io.github.nervu" +
-      "sos.iface.manipulator.v1B\020ManipulatorPro" +
-      "toP\001ZNgithub.com/nervus-os/nervus-ipc/pr" +
-      "otocol/interface/manipulatorv1;manipulat" +
-      "orv1b\006proto3"
+      "1.ManipulatorErrorDetail*\235\001\n\014ArmReadines" +
+      "s\022\035\n\031ARM_READINESS_UNSPECIFIED\020\000\022\027\n\023ARM_" +
+      "READINESS_READY\020\001\022\033\n\027ARM_READINESS_NOT_R" +
+      "EADY\020\002\022\037\n\033ARM_READINESS_TRANSITIONING\020\003\022" +
+      "\027\n\023ARM_READINESS_FAULT\020\004*\220\003\n\021Manipulator" +
+      "Reason\022\"\n\036MANIPULATOR_REASON_UNSPECIFIED" +
+      "\020\000\022 \n\034MANIPULATOR_REASON_NOT_READY\020\001\022%\n!" +
+      "MANIPULATOR_REASON_SAFETY_LATCHED\020\002\022\"\n\036M" +
+      "ANIPULATOR_REASON_STALE_EPOCH\020\003\022\'\n#MANIP" +
+      "ULATOR_REASON_CONTROL_NOT_HELD\020\004\022\"\n\036MANI" +
+      "PULATOR_REASON_JOINT_LIMIT\020\005\022\'\n#MANIPULA" +
+      "TOR_REASON_UNREACHABLE_POSE\020\006\022 \n\034MANIPUL" +
+      "ATOR_REASON_COLLISION\020\007\022+\n\'MANIPULATOR_R" +
+      "EASON_RESOURCE_UNAVAILABLE\020\010\022%\n!MANIPULA" +
+      "TOR_REASON_RESOURCE_FAULT\020\tB\215\001\n\'io.githu" +
+      "b.nervusos.iface.manipulator.v1B\020Manipul" +
+      "atorProtoP\001ZNgithub.com/nervus-os/nervus" +
+      "-ipc/protocol/interface/manipulatorv1;ma" +
+      "nipulatorv1b\006proto3"
     };
     descriptor = com.google.protobuf.Descriptors.FileDescriptor
       .internalBuildGeneratedFileFrom(descriptorData,
@@ -264,14 +286,26 @@ public final class ManipulatorProto {
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_nervus_interface_manipulator_v1_StopRequest_descriptor,
         new java.lang.String[] { });
-    internal_static_nervus_interface_manipulator_v1_ManipulatorMoveResult_descriptor =
+    internal_static_nervus_interface_manipulator_v1_ServoToPoseRequest_descriptor =
       getDescriptor().getMessageTypes().get(11);
+    internal_static_nervus_interface_manipulator_v1_ServoToPoseRequest_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_nervus_interface_manipulator_v1_ServoToPoseRequest_descriptor,
+        new java.lang.String[] { "Target", "MaxVelScale", });
+    internal_static_nervus_interface_manipulator_v1_ServoToPoseResult_descriptor =
+      getDescriptor().getMessageTypes().get(12);
+    internal_static_nervus_interface_manipulator_v1_ServoToPoseResult_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_nervus_interface_manipulator_v1_ServoToPoseResult_descriptor,
+        new java.lang.String[] { "AcceptedTarget", "Clamped", });
+    internal_static_nervus_interface_manipulator_v1_ManipulatorMoveResult_descriptor =
+      getDescriptor().getMessageTypes().get(13);
     internal_static_nervus_interface_manipulator_v1_ManipulatorMoveResult_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_nervus_interface_manipulator_v1_ManipulatorMoveResult_descriptor,
         new java.lang.String[] { "FinalPose", });
     internal_static_nervus_interface_manipulator_v1_ManipulatorErrorDetail_descriptor =
-      getDescriptor().getMessageTypes().get(12);
+      getDescriptor().getMessageTypes().get(14);
     internal_static_nervus_interface_manipulator_v1_ManipulatorErrorDetail_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_nervus_interface_manipulator_v1_ManipulatorErrorDetail_descriptor,

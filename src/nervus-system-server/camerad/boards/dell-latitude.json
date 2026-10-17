@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "board": "dell-latitude-hosted",
+
+  "cameras": [
+    {
+      "role": "cam.front",
+      "match": {"usb_path": "1-5"},
+      "labels": {
+        "nervus.camera.facing": "front",
+        "nervus.camera.kind": "color",
+        "nervus.camera.mount": "lid"
+      }
+    }
+  ],
+
+  "usb_pool": {
+    "role_prefix": "cam.usb",
+    "max_slots": 2
+  }
+}

@@ -35,8 +35,6 @@ func newSubscribeServer(t *testing.T, class ipcv1.DeliveryClass) (*fakeEndpoints
 	return fe, sock
 }
 
-//
-
 func TestSubscribe_SuccessCarriesDeliveryClass(t *testing.T) {
 	_, sock := newSubscribeServer(t, ipcv1.DeliveryClass_DELIVERY_CLASS_STATE)
 	c := dialHandshaked(t, sock)
@@ -161,8 +159,6 @@ func TestPublishEvent_AcceptedFromApp(t *testing.T) {
 	}
 }
 
-//
-
 func newScopedServer(t *testing.T, admit endpoint.BuiltinSubscribeAdmitter) (*Server, string) {
 	t.Helper()
 	meta := &ipcv1.EventMeta{
@@ -210,8 +206,6 @@ func TestSubscribe_ScopedAdmittedByBuiltin(t *testing.T) {
 	}
 }
 
-//
-
 func TestSubscribe_ScopedRejectedByBuiltin(t *testing.T) {
 	_, sock := newScopedServer(t, func(endpoint.BuiltinSubscribeCall) endpoint.BuiltinSubscribeResult {
 		return endpoint.BuiltinSubscribeResult{Code: ipcv1.StatusCode_STATUS_CODE_NOT_FOUND}
@@ -245,8 +239,6 @@ func TestSubscribe_ScopedRequiresNonZeroScope(t *testing.T) {
 		t.Fatalf("code = %v, want INVALID_ARGUMENT", code)
 	}
 }
-
-//
 
 func TestSubscribe_UnscopedEventRejectsScope(t *testing.T) {
 

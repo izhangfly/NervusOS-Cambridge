@@ -18,8 +18,6 @@ import (
 	"github.com/nervus-os/nervud/internal/identity"
 )
 
-//
-
 func writeSystemPackage(t *testing.T, systemPackagesDir, packageID string, withProvider bool) {
 	t.Helper()
 	pkgDir := filepath.Join(systemPackagesDir, packageID)

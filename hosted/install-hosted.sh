@@ -35,7 +35,7 @@ DESKTOP_HOME="$(getent passwd "$DESKTOP_USER" | cut -d: -f6)"
 # ------------------------------------------------------------------ packages
 step "Packages"
 PKGS=(xserver-xephyr openbox wmctrl xdotool xauth x11-xserver-utils x11-utils mesa-utils
-      can-utils iproute2 python3-venv libnotify-bin)
+      can-utils iproute2 python3-venv libnotify-bin v4l-utils ffmpeg)
 missing=()
 for p in "${PKGS[@]}"; do dpkg -s "$p" >/dev/null 2>&1 || missing+=("$p"); done
 if (( ${#missing[@]} )); then
@@ -90,7 +90,12 @@ ok "polkit: $DESKTOP_USER may start/stop nervud and the arm driver"
 step "Hardware layer: PiPER arm on can0"
 install -D -m 0755 "$HOSTED/libexec/can-up" /usr/libexec/nervus/can-up
 install -D -m 0644 "$HOSTED/udev/90-nervus-can.rules" /etc/udev/rules.d/90-nervus-can.rules
+install -D -m 0755 "$HOSTED/libexec/camera-defaults" /usr/libexec/nervus/camera-defaults
+install -D -m 0644 "$HOSTED/udev/91-nervus-cameras.rules" /etc/udev/rules.d/91-nervus-cameras.rules
 udevadm control --reload 2>/dev/null || true
+# Cameras already plugged in get the defaults now; new ones get them from udev.
+for v in /dev/v4l/by-id/*-video-index0; do [[ -e "$v" ]] && /usr/libexec/nervus/camera-defaults "$(readlink -f "$v")"; done
+ok "camera defaults: mains anti-flicker, fixed frame rate"
 install -D -m 0644 "$HOSTED/systemd/nervus-can.service" /etc/systemd/system/nervus-can.service
 install -D -m 0644 "$HOSTED/systemd/nervus-piper.service" /etc/systemd/system/nervus-piper.service
 
@@ -98,6 +103,7 @@ id nervus-piper >/dev/null 2>&1 || useradd --system --no-create-home --home-dir 
 	--shell /usr/sbin/nologin nervus-piper
 install -d -m 0755 /opt/nervus/piper
 install -m 0644 "$REPO/hardware/piper/piper_webctl.py" /opt/nervus/piper/piper_webctl.py
+install -m 0644 "$REPO/hardware/piper/panel.html" /opt/nervus/piper/panel.html
 install -m 0644 "$REPO/hardware/piper/README.md" /opt/nervus/piper/README.md
 if [[ ! -x /opt/nervus/piper/venv/bin/python ]]; then
 	python3 -m venv /opt/nervus/piper/venv

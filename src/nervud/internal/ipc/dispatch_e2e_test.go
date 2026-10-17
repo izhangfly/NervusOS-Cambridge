@@ -17,6 +17,7 @@ import (
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	"github.com/nervus-os/nervud/internal/catalog"
+	"github.com/nervus-os/nervud/internal/control"
 	"github.com/nervus-os/nervud/internal/endpoint"
 	"github.com/nervus-os/nervud/internal/identity"
 	"github.com/nervus-os/nervud/internal/permission"
@@ -324,9 +325,52 @@ func TestDispatch_ControlExecutionContextUsesLeaseProof(t *testing.T) {
 		}
 		previousSequence = ec.GetCommandSequence()
 	}
+	// Each lease-gated command is fresh operator input and must feed the deadman. Without this a
+	// HUMAN stream (300 ms deadman) lost control between renewals.
+	leases.mu.Lock()
+	refreshed := leases.refreshed
+	leases.mu.Unlock()
+	if refreshed != 2 {
+		t.Fatalf("lease refreshed %d times, want once per command (2)", refreshed)
+	}
 }
 
-//
+func TestDispatch_LeaseRefreshFailureRefusesCommand(t *testing.T) {
+	re := &routingEndpoints{
+		registerResult: registerSuccessResult(56),
+		resourceHandle: "base.main",
+		resourceGen:    11,
+		requiresLease:  true,
+		isMotion:       true,
+	}
+	leases := &fakeLeases{refreshErr: control.ErrDeadmanExpired}
+	_, sock := newRoutingTestServer(t, re, leases)
+
+	svc := dial(t, sock)
+	handshakeService(t, svc)
+	registerService(t, svc, 56)
+
+	caller := dial(t, sock)
+	handshake(t, caller)
+	if err := WriteFrame(caller, mustMarshal(t, acquireEnv(
+		1, ipcv1.ControllerClass_CONTROLLER_CLASS_HUMAN, nil,
+	))); err != nil {
+		t.Fatal(err)
+	}
+	if readEnv(t, caller).GetAcquireControlResult().GetSuccess() == nil {
+		t.Fatal("control lease was not acquired")
+	}
+	req := &ipcv1.Envelope{Body: &ipcv1.Envelope_Request{Request: &ipcv1.Request{
+		RequestId: 2, EndpointId: 1, MethodId: 1,
+	}}}
+	if err := WriteFrame(caller, mustMarshal(t, req)); err != nil {
+		t.Fatal(err)
+	}
+	resp := readEnv(t, caller).GetResponse()
+	if resp.GetFailure().GetCode() != ipcv1.StatusCode_STATUS_CODE_FAILED_PRECONDITION {
+		t.Fatalf("response = %+v, want FAILED_PRECONDITION when the deadman can't be fed", resp)
+	}
+}
 
 func TestDispatch_ProviderPublicMessageNotForwarded(t *testing.T) {
 	re := &routingEndpoints{registerResult: registerSuccessResult(1)}

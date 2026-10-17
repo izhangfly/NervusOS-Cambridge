@@ -608,10 +608,6 @@ func newProvisionModule(t *testing.T, auth *fakeInstaller) *Module {
 		filepath.Join(dir, "packages"), filepath.Join(dir, "data"))
 }
 
-//
-
-//
-
 func TestInstall_EnsuresAppUser(t *testing.T) {
 	mod, auth, _, _ := newTestInstaller(t)
 	root := t.TempDir()
@@ -639,8 +635,6 @@ func TestInstall_EnsuresAppUser(t *testing.T) {
 	}
 }
 
-//
-
 func TestInstall_EnsuresAppUserOnUpgradeToo(t *testing.T) {
 	mod, auth, _, _ := newTestInstaller(t)
 	root := t.TempDir()
@@ -667,8 +661,6 @@ func TestInstall_EnsuresAppUserOnUpgradeToo(t *testing.T) {
 		t.Errorf("unexpected package registry result; CreatePrivateDataDirectory %d, want 1", len(auth.dataDirs))
 	}
 }
-
-//
 
 func TestInstall_SameVersionAsksToReplace(t *testing.T) {
 	mod, auth, _, _ := newTestInstaller(t)
@@ -719,8 +711,6 @@ func TestInstall_UpgradeDoesNotAskToReplace(t *testing.T) {
 	}
 }
 
-//
-
 func TestInstall_FailedReplaceKeepsCodeDir(t *testing.T) {
 	mod, auth, _, _ := newTestInstaller(t)
 	root := t.TempDir()
@@ -733,8 +723,6 @@ func TestInstall_FailedReplaceKeepsCodeDir(t *testing.T) {
 		t.Fatalf("unexpected package registry result; value = %v", err)
 	}
 	auth.removed = nil
-
-	//
 
 	auth.appUserErr = errors.New("injected failure after code landed")
 	staging2, mb2, sig2 := newValidStagingWithKey(t, root, "com.example.app", "1.0.0", 100, key)

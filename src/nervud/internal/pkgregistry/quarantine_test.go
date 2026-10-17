@@ -54,8 +54,6 @@ func TestDropEntry(t *testing.T) {
 	}
 }
 
-//
-
 func TestQuarantine_BadPackageDoesNotBlockBoot(t *testing.T) {
 	mod, _, _, _, _ := newTestInstallerWithPerm(t)
 

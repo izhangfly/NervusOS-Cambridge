@@ -15,6 +15,12 @@
 //   operation.Create (B5), and success is answered with STATUS_CODE_ACCEPTED + operation_id;
 //   SetGripper / Stop are short commands, not operations.
 //
+// Teleoperation: ServoToPose streams a Cartesian target for the end effector, the arm's counterpart of
+//   BaseMotion.SetVelocity. It's a short command under a ControlLease, with no confirmation dialog and no operation:
+//   each call replaces the previous target (latest wins), and the Provider moves toward it at its own speed limit
+//   rather than jumping. When the stream stops (the caller stops sending, or the lease's deadman lapses) the arm holds
+//   where it is. MoveToPose is the opposite shape: one goal, a long task, and a result the caller waits for.
+//
 // Units and frames (NRCP §17.1; keep them in the comments):
 //   joint angle = rad; joint angular velocity = rad/s; Cartesian position = m; quaternions are dimensionless;
 //   frames always use an explicit frame string (such as "base_link"); vague or implicit defaults are **forbidden**.
@@ -70,6 +76,10 @@ const (
 	ManipulatorMethod_MANIPULATOR_METHOD_SET_GRIPPER ManipulatorMethod = 6
 	// Ordinary controlled stop (not SafetyHalt). Needs a lease; a short command.
 	ManipulatorMethod_MANIPULATOR_METHOD_STOP ManipulatorMethod = 7
+	// Streamed Cartesian target for teleoperation (a short command, latest wins). Needs a lease, and the lease's
+	// deadman is what stops the arm when the operator lets go; so no user confirmation per call, the same as
+	// BaseMotion.SetVelocity. The Provider clamps the target to its workspace and approaches it at a bounded speed.
+	ManipulatorMethod_MANIPULATOR_METHOD_SERVO_TO_POSE ManipulatorMethod = 8
 )
 
 // Enum value maps for ManipulatorMethod.
@@ -83,6 +93,7 @@ var (
 		5: "MANIPULATOR_METHOD_GO_HOME",
 		6: "MANIPULATOR_METHOD_SET_GRIPPER",
 		7: "MANIPULATOR_METHOD_STOP",
+		8: "MANIPULATOR_METHOD_SERVO_TO_POSE",
 	}
 	ManipulatorMethod_value = map[string]int32{
 		"MANIPULATOR_METHOD_UNSPECIFIED":           0,
@@ -93,6 +104,7 @@ var (
 		"MANIPULATOR_METHOD_GO_HOME":               5,
 		"MANIPULATOR_METHOD_SET_GRIPPER":           6,
 		"MANIPULATOR_METHOD_STOP":                  7,
+		"MANIPULATOR_METHOD_SERVO_TO_POSE":         8,
 	}
 )
 
@@ -844,6 +856,112 @@ func (*StopRequest) Descriptor() ([]byte, []int) {
 	return file_nervus_interface_manipulator_v1_manipulator_proto_rawDescGZIP(), []int{10}
 }
 
+// ServoToPoseRequest: the latest teleoperation target for the end effector.
+type ServoToPoseRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Target        *Pose                  `protobuf:"bytes,1,opt,name=target,proto3" json:"target,omitempty"`
+	MaxVelScale   float64                `protobuf:"fixed64,2,opt,name=max_vel_scale,json=maxVelScale,proto3" json:"max_vel_scale,omitempty"` // velocity scale, 0..1; out of range → INVALID_ARGUMENT; 0 = the Provider default
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ServoToPoseRequest) Reset() {
+	*x = ServoToPoseRequest{}
+	mi := &file_nervus_interface_manipulator_v1_manipulator_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ServoToPoseRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ServoToPoseRequest) ProtoMessage() {}
+
+func (x *ServoToPoseRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_nervus_interface_manipulator_v1_manipulator_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ServoToPoseRequest.ProtoReflect.Descriptor instead.
+func (*ServoToPoseRequest) Descriptor() ([]byte, []int) {
+	return file_nervus_interface_manipulator_v1_manipulator_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *ServoToPoseRequest) GetTarget() *Pose {
+	if x != nil {
+		return x.Target
+	}
+	return nil
+}
+
+func (x *ServoToPoseRequest) GetMaxVelScale() float64 {
+	if x != nil {
+		return x.MaxVelScale
+	}
+	return 0
+}
+
+// ServoToPoseResult: what the Provider will actually steer toward.
+type ServoToPoseResult struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	AcceptedTarget *Pose                  `protobuf:"bytes,1,opt,name=accepted_target,json=acceptedTarget,proto3" json:"accepted_target,omitempty"` // the target after clamping to the Provider's workspace
+	Clamped        bool                   `protobuf:"varint,2,opt,name=clamped,proto3" json:"clamped,omitempty"`                                    // true when accepted_target differs from the request
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ServoToPoseResult) Reset() {
+	*x = ServoToPoseResult{}
+	mi := &file_nervus_interface_manipulator_v1_manipulator_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ServoToPoseResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ServoToPoseResult) ProtoMessage() {}
+
+func (x *ServoToPoseResult) ProtoReflect() protoreflect.Message {
+	mi := &file_nervus_interface_manipulator_v1_manipulator_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ServoToPoseResult.ProtoReflect.Descriptor instead.
+func (*ServoToPoseResult) Descriptor() ([]byte, []int) {
+	return file_nervus_interface_manipulator_v1_manipulator_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ServoToPoseResult) GetAcceptedTarget() *Pose {
+	if x != nil {
+		return x.AcceptedTarget
+	}
+	return nil
+}
+
+func (x *ServoToPoseResult) GetClamped() bool {
+	if x != nil {
+		return x.Clamped
+	}
+	return false
+}
+
 // ManipulatorMoveResult: the success terminal payload of motion operations (NRCP §11).
 // The operation's terminal payload type is decided by the origin method binding (method_meta.response_type).
 type ManipulatorMoveResult struct {
@@ -855,7 +973,7 @@ type ManipulatorMoveResult struct {
 
 func (x *ManipulatorMoveResult) Reset() {
 	*x = ManipulatorMoveResult{}
-	mi := &file_nervus_interface_manipulator_v1_manipulator_proto_msgTypes[11]
+	mi := &file_nervus_interface_manipulator_v1_manipulator_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -867,7 +985,7 @@ func (x *ManipulatorMoveResult) String() string {
 func (*ManipulatorMoveResult) ProtoMessage() {}
 
 func (x *ManipulatorMoveResult) ProtoReflect() protoreflect.Message {
-	mi := &file_nervus_interface_manipulator_v1_manipulator_proto_msgTypes[11]
+	mi := &file_nervus_interface_manipulator_v1_manipulator_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -880,7 +998,7 @@ func (x *ManipulatorMoveResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ManipulatorMoveResult.ProtoReflect.Descriptor instead.
 func (*ManipulatorMoveResult) Descriptor() ([]byte, []int) {
-	return file_nervus_interface_manipulator_v1_manipulator_proto_rawDescGZIP(), []int{11}
+	return file_nervus_interface_manipulator_v1_manipulator_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ManipulatorMoveResult) GetFinalPose() *Pose {
@@ -899,7 +1017,7 @@ type ManipulatorErrorDetail struct {
 
 func (x *ManipulatorErrorDetail) Reset() {
 	*x = ManipulatorErrorDetail{}
-	mi := &file_nervus_interface_manipulator_v1_manipulator_proto_msgTypes[12]
+	mi := &file_nervus_interface_manipulator_v1_manipulator_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -911,7 +1029,7 @@ func (x *ManipulatorErrorDetail) String() string {
 func (*ManipulatorErrorDetail) ProtoMessage() {}
 
 func (x *ManipulatorErrorDetail) ProtoReflect() protoreflect.Message {
-	mi := &file_nervus_interface_manipulator_v1_manipulator_proto_msgTypes[12]
+	mi := &file_nervus_interface_manipulator_v1_manipulator_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -924,7 +1042,7 @@ func (x *ManipulatorErrorDetail) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ManipulatorErrorDetail.ProtoReflect.Descriptor instead.
 func (*ManipulatorErrorDetail) Descriptor() ([]byte, []int) {
-	return file_nervus_interface_manipulator_v1_manipulator_proto_rawDescGZIP(), []int{12}
+	return file_nervus_interface_manipulator_v1_manipulator_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ManipulatorErrorDetail) GetReason() ManipulatorReason {
@@ -974,12 +1092,18 @@ const file_nervus_interface_manipulator_v1_manipulator_proto_rawDesc = "" +
 	"\aopening\x18\x01 \x01(\x01R\aopening\x12\x1d\n" +
 	"\n" +
 	"max_effort\x18\x02 \x01(\x01R\tmaxEffort\"\r\n" +
-	"\vStopRequest\"]\n" +
+	"\vStopRequest\"w\n" +
+	"\x12ServoToPoseRequest\x12=\n" +
+	"\x06target\x18\x01 \x01(\v2%.nervus.interface.manipulator.v1.PoseR\x06target\x12\"\n" +
+	"\rmax_vel_scale\x18\x02 \x01(\x01R\vmaxVelScale\"}\n" +
+	"\x11ServoToPoseResult\x12N\n" +
+	"\x0faccepted_target\x18\x01 \x01(\v2%.nervus.interface.manipulator.v1.PoseR\x0eacceptedTarget\x12\x18\n" +
+	"\aclamped\x18\x02 \x01(\bR\aclamped\"]\n" +
 	"\x15ManipulatorMoveResult\x12D\n" +
 	"\n" +
 	"final_pose\x18\x01 \x01(\v2%.nervus.interface.manipulator.v1.PoseR\tfinalPose\"d\n" +
 	"\x16ManipulatorErrorDetail\x12J\n" +
-	"\x06reason\x18\x01 \x01(\x0e22.nervus.interface.manipulator.v1.ManipulatorReasonR\x06reason*\xa4\f\n" +
+	"\x06reason\x18\x01 \x01(\x0e22.nervus.interface.manipulator.v1.ManipulatorReasonR\x06reason*\x93\x0e\n" +
 	"\x11ManipulatorMethod\x12\"\n" +
 	"\x1eMANIPULATOR_METHOD_UNSPECIFIED\x10\x00\x12\xc7\x01\n" +
 	" MANIPULATOR_METHOD_GET_ARM_STATE\x10\x01\x1a\xa0\x01\x8a\xa6\x1d\x9b\x01\b\x01\x18\x01:2nervus.interface.manipulator.v1.GetArmStateRequestB(nervus.interface.manipulator.v1.ArmState\x82\x016nervus.interface.manipulator.v1.ManipulatorErrorDetail\x12\xd3\x01\n" +
@@ -988,7 +1112,8 @@ const file_nervus_interface_manipulator_v1_manipulator_proto_rawDesc = "" +
 	"(MANIPULATOR_METHOD_MOVE_JOINT_TRAJECTORY\x10\x04\x1a\xd5\x01\x8a\xa6\x1d\xd0\x01\b\x04\x12\x18perm.manipulator.control\x18\x03 \x01(\x010\x01::nervus.interface.manipulator.v1.MoveJointTrajectoryRequestB5nervus.interface.manipulator.v1.ManipulatorMoveResult\x82\x016nervus.interface.manipulator.v1.ManipulatorErrorDetail\x12\xe9\x01\n" +
 	"\x1aMANIPULATOR_METHOD_GO_HOME\x10\x05\x1a\xc8\x01\x8a\xa6\x1d\xc3\x01\b\x05\x12\x18perm.manipulator.control\x18\x03 \x01(\x010\x01:-nervus.interface.manipulator.v1.GoHomeRequestB5nervus.interface.manipulator.v1.ManipulatorMoveResult\x82\x016nervus.interface.manipulator.v1.ManipulatorErrorDetail\x12\xb6\x01\n" +
 	"\x1eMANIPULATOR_METHOD_SET_GRIPPER\x10\x06\x1a\x91\x01\x8a\xa6\x1d\x8c\x01\b\x06\x12\x18perm.manipulator.control\x18\x03 \x01:1nervus.interface.manipulator.v1.SetGripperRequest\x82\x016nervus.interface.manipulator.v1.ManipulatorErrorDetail\x12\xa9\x01\n" +
-	"\x17MANIPULATOR_METHOD_STOP\x10\a\x1a\x8b\x01\x8a\xa6\x1d\x86\x01\b\a\x12\x18perm.manipulator.control\x18\x03 \x01:+nervus.interface.manipulator.v1.StopRequest\x82\x016nervus.interface.manipulator.v1.ManipulatorErrorDetail*\x9d\x01\n" +
+	"\x17MANIPULATOR_METHOD_STOP\x10\a\x1a\x8b\x01\x8a\xa6\x1d\x86\x01\b\a\x12\x18perm.manipulator.control\x18\x03 \x01:+nervus.interface.manipulator.v1.StopRequest\x82\x016nervus.interface.manipulator.v1.ManipulatorErrorDetail\x12\xec\x01\n" +
+	" MANIPULATOR_METHOD_SERVO_TO_POSE\x10\b\x1a\xc5\x01\x8a\xa6\x1d\xc0\x01\b\b\x12\x18perm.manipulator.control\x18\x03 \x01:2nervus.interface.manipulator.v1.ServoToPoseRequestB1nervus.interface.manipulator.v1.ServoToPoseResult\x82\x016nervus.interface.manipulator.v1.ManipulatorErrorDetail*\x9d\x01\n" +
 	"\fArmReadiness\x12\x1d\n" +
 	"\x19ARM_READINESS_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13ARM_READINESS_READY\x10\x01\x12\x1b\n" +
@@ -1021,7 +1146,7 @@ func file_nervus_interface_manipulator_v1_manipulator_proto_rawDescGZIP() []byte
 }
 
 var file_nervus_interface_manipulator_v1_manipulator_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_nervus_interface_manipulator_v1_manipulator_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_nervus_interface_manipulator_v1_manipulator_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_nervus_interface_manipulator_v1_manipulator_proto_goTypes = []any{
 	(ManipulatorMethod)(0),             // 0: nervus.interface.manipulator.v1.ManipulatorMethod
 	(ArmReadiness)(0),                  // 1: nervus.interface.manipulator.v1.ArmReadiness
@@ -1037,8 +1162,10 @@ var file_nervus_interface_manipulator_v1_manipulator_proto_goTypes = []any{
 	(*GoHomeRequest)(nil),              // 11: nervus.interface.manipulator.v1.GoHomeRequest
 	(*SetGripperRequest)(nil),          // 12: nervus.interface.manipulator.v1.SetGripperRequest
 	(*StopRequest)(nil),                // 13: nervus.interface.manipulator.v1.StopRequest
-	(*ManipulatorMoveResult)(nil),      // 14: nervus.interface.manipulator.v1.ManipulatorMoveResult
-	(*ManipulatorErrorDetail)(nil),     // 15: nervus.interface.manipulator.v1.ManipulatorErrorDetail
+	(*ServoToPoseRequest)(nil),         // 14: nervus.interface.manipulator.v1.ServoToPoseRequest
+	(*ServoToPoseResult)(nil),          // 15: nervus.interface.manipulator.v1.ServoToPoseResult
+	(*ManipulatorMoveResult)(nil),      // 16: nervus.interface.manipulator.v1.ManipulatorMoveResult
+	(*ManipulatorErrorDetail)(nil),     // 17: nervus.interface.manipulator.v1.ManipulatorErrorDetail
 }
 var file_nervus_interface_manipulator_v1_manipulator_proto_depIdxs = []int32{
 	1, // 0: nervus.interface.manipulator.v1.ArmState.readiness:type_name -> nervus.interface.manipulator.v1.ArmReadiness
@@ -1046,13 +1173,15 @@ var file_nervus_interface_manipulator_v1_manipulator_proto_depIdxs = []int32{
 	4, // 2: nervus.interface.manipulator.v1.ArmState.tcp_pose:type_name -> nervus.interface.manipulator.v1.Pose
 	4, // 3: nervus.interface.manipulator.v1.MoveToPoseRequest.target:type_name -> nervus.interface.manipulator.v1.Pose
 	9, // 4: nervus.interface.manipulator.v1.MoveJointTrajectoryRequest.points:type_name -> nervus.interface.manipulator.v1.MoveJointTrajectoryPoint
-	4, // 5: nervus.interface.manipulator.v1.ManipulatorMoveResult.final_pose:type_name -> nervus.interface.manipulator.v1.Pose
-	2, // 6: nervus.interface.manipulator.v1.ManipulatorErrorDetail.reason:type_name -> nervus.interface.manipulator.v1.ManipulatorReason
-	7, // [7:7] is the sub-list for method output_type
-	7, // [7:7] is the sub-list for method input_type
-	7, // [7:7] is the sub-list for extension type_name
-	7, // [7:7] is the sub-list for extension extendee
-	0, // [0:7] is the sub-list for field type_name
+	4, // 5: nervus.interface.manipulator.v1.ServoToPoseRequest.target:type_name -> nervus.interface.manipulator.v1.Pose
+	4, // 6: nervus.interface.manipulator.v1.ServoToPoseResult.accepted_target:type_name -> nervus.interface.manipulator.v1.Pose
+	4, // 7: nervus.interface.manipulator.v1.ManipulatorMoveResult.final_pose:type_name -> nervus.interface.manipulator.v1.Pose
+	2, // 8: nervus.interface.manipulator.v1.ManipulatorErrorDetail.reason:type_name -> nervus.interface.manipulator.v1.ManipulatorReason
+	9, // [9:9] is the sub-list for method output_type
+	9, // [9:9] is the sub-list for method input_type
+	9, // [9:9] is the sub-list for extension type_name
+	9, // [9:9] is the sub-list for extension extendee
+	0, // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_nervus_interface_manipulator_v1_manipulator_proto_init() }
@@ -1066,7 +1195,7 @@ func file_nervus_interface_manipulator_v1_manipulator_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_nervus_interface_manipulator_v1_manipulator_proto_rawDesc), len(file_nervus_interface_manipulator_v1_manipulator_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   13,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
