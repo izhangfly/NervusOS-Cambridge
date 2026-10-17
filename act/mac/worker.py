@@ -449,7 +449,19 @@ class Worker:
         per = (m.get("updt_s") or 0) + (m.get("data_s") or 0)
         step = follower.step if follower.step is not None else sup.get("step")
         target = sup.get("target") or 1
-        self.set_status(jid, step=step, target=sup.get("target"), pct=round(100 * (step or 0) / target, 1),
+        # A trainer that keeps logging but crawls looks healthy to the hang check, so compare its step time with
+        # the best it managed in this job. On the 16 GB Mac the usual cause is memory: other apps push the
+        # trainer into swap and a step that took 0.4 s takes minutes.
+        st_time, warning = sup.get("step_time_s"), None
+        if st_time:
+            follower.best = min(getattr(follower, "best", None) or st_time, st_time)
+            if st_time > 3.0 and st_time > 6 * follower.best:
+                warning = f"training is {st_time / follower.best:.0f}x slower than earlier in this job ({st_time:.0f} s a step)"
+                mem, swap = sup.get("mem_free_pct"), sup.get("swap_used_gb")
+                if (mem is not None and mem < 25) or (swap or 0) > 4:
+                    warning += f": the Mac is short of memory ({mem}% free, {swap} GB in swap); close memory-hungry apps"
+        self.set_status(jid, step=step, target=sup.get("target"), pct=round(100 * (step or 0) / target, 1), warning=warning,
+                        step_time_s=st_time,
                         eta_hours=round((target - (step or 0)) * per / 3600, 2) if per else None,
                         metrics=m, restarts=sup.get("restarts"), checkpoints=sup.get("checkpoints"),
                         published=sup.get("published", []), steps_per_s=round(1 / per, 2) if per else None,

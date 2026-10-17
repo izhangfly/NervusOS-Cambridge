@@ -177,6 +177,7 @@ private fun JobRow(studio: Studio, j: JsonElement, selected: Boolean, onClick: (
             style = Sci.small,
         )
         st["message"].str?.let { Text(it, style = Sci.small.copy(color = if (state == "failed") Sci.bad else Sci.dim)) }
+        if (state == "training") st["warning"].str?.let { Text(it, style = Sci.small.copy(color = Sci.warn)) }
     }
 }
 

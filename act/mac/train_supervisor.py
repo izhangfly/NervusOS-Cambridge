@@ -59,6 +59,7 @@ SIGNATURES = [
 FATAL = {"hub_401", "bad_arg", "output_exists"}  # restarting cannot fix these
 
 TQDM = re.compile(r"(\d+)/(\d+) \[")
+TQDM_RATE = re.compile(r"Training:[^\r\n]*?\d+/\d+ \[[^\]]*?([\d.]+)(s/step|step/s)\]")
 LOSS = re.compile(r"step:(\S+) .*?loss:([0-9.]+|nan|inf) grdn:([0-9.]+|nan|inf) lr:(\S+) updt_s:([0-9.]+) data_s:([0-9.]+)")
 
 
@@ -300,6 +301,10 @@ class Supervisor:
         m = TQDM.findall(text)
         if m:
             step = self.base_step + int(m[-1][0])
+        r = TQDM_RATE.findall(text)
+        if r:
+            v, unit = float(r[-1][0]), r[-1][1]
+            self.step_time = v if unit == "s/step" else (1.0 / v if v > 0 else None)
         lm = LOSS.findall(text)
         if lm:
             s, loss, grdn, lr, updt, data = lm[-1]
@@ -315,6 +320,15 @@ class Supervisor:
             if rx.search(tailtext):
                 return name
         return "unknown" if i >= 0 else "killed_no_traceback"
+
+    @staticmethod
+    def swap_used_gb():
+        try:
+            out = subprocess.run(["sysctl", "-n", "vm.swapusage"], capture_output=True, text=True, timeout=5).stdout
+            m = re.search(r"used = ([\d.]+)M", out)
+            return round(float(m.group(1)) / 1024, 1) if m else None
+        except Exception:
+            return None
 
     def mem_pressure(self):
         try:
@@ -336,6 +350,8 @@ class Supervisor:
             "remedies": self.remedies, "pid": self.proc.pid if self.proc else None,
             "free_gb": round(shutil.disk_usage(self.logdir).free / 1e9, 1),
             "mem_free_pct": self.mem_pressure(),
+            "swap_used_gb": self.swap_used_gb(),
+            "step_time_s": round(self.step_time, 3) if getattr(self, "step_time", None) else None,
             "checkpoints": [p.name for p in self.complete_ckpts()],
             "published": getattr(self, "published", []),
         }
