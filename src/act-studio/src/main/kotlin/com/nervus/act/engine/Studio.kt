@@ -27,7 +27,12 @@ data class Notice(val text: String, val error: Boolean, val at: Long = System.cu
  * at once after an action that changes them. While the app is open it also sends the run heartbeat: the
  * engine stops a running policy if the app goes quiet, and releases the cameras a minute after it closes.
  */
-class Studio(val engine: EngineClient = EngineClient(), private val log: Logger = Logger.getLogger("act-studio")) {
+class Studio(
+    val engine: EngineClient = EngineClient(),
+    private val log: Logger = Logger.getLogger("act-studio"),
+    /** Live camera previews; tests turn them off (a preview redraws forever, so the UI is never idle). */
+    val previews: Boolean = true,
+) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     var tab by mutableStateOf(Tab.Overview)

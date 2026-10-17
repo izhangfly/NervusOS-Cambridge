@@ -41,7 +41,6 @@ import com.nervus.act.engine.get
 import com.nervus.act.engine.int
 import com.nervus.act.engine.obj
 import com.nervus.act.engine.str
-import kotlinx.coroutines.delay
 import kotlinx.serialization.json.JsonElement
 
 private val TERMINAL = setOf("finished", "failed", "cancelled")
@@ -68,11 +67,9 @@ fun TrainTab(studio: Studio) {
     var selected by remember { mutableStateOf<String?>(null) }
     var metrics by remember { mutableStateOf<List<JsonElement>>(emptyList()) }
     val sel = selected ?: studio.jobs.firstOrNull()?.get("id").str
-    LaunchedEffect(sel) {
-        while (sel != null) {
-            studio.load({ get("/api/jobs/$sel/metrics", 10_000).arr }) { metrics = it }
-            delay(10_000)
-        }
+    // Reload the curve whenever the job list refreshes (every few seconds), rather than on a timer of its own.
+    LaunchedEffect(sel, studio.jobs) {
+        if (sel != null) studio.load({ get("/api/jobs/$sel/metrics", 10_000).arr }) { metrics = it }
     }
     Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         Column(Modifier.width(400.dp).fillMaxHeight().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {

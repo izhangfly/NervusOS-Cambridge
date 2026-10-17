@@ -249,7 +249,7 @@ fun CameraView(studio: Studio, role: String, modifier: Modifier = Modifier, labe
     var alive by remember { mutableStateOf(true) }
     DisposableEffect(role) { onDispose { alive = false } }
     LaunchedEffect(role) {
-        while (isActive && alive) {
+        while (studio.previews && isActive && alive) {
             val bytes = withContext(Dispatchers.IO) { studio.engine.bytes("/api/camera/$role.jpg") }
             image = bytes?.toImageBitmap()
             delay(120)
