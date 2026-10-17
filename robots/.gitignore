@@ -1,0 +1,12 @@
+# Upstream vendor clones — re-fetch with scripts/bootstrap.sh, never commit (~185 MB)
+vendor/
+
+# Python environment
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Runtime junk
+.DS_Store
+*.log
