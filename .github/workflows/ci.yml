@@ -1,0 +1,43 @@
+# Runs on every push to main and on pull requests: the Go test suites (on Linux, where the kernel's
+# privileged and shared-memory code builds), the ACT unit tests, and the secret scan over the whole tree.
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  go:
+    name: go test (${{ matrix.module }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [src/nervus-ipc, src/nervud, src/nervus-system-server]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ matrix.module }}/go.mod
+          cache-dependency-path: ${{ matrix.module }}/go.sum
+      - run: go test -count=1 ./...
+        working-directory: ${{ matrix.module }}
+
+  act:
+    name: ACT unit tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install numpy
+      - run: python act/tests/test_units.py
+
+  scan:
+    name: secret scan
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      # The relay server's address is checked before every push on the machine that pushes; CI is not told it.
+      - run: NERVUS_SCAN_HOSTS=none python3 scripts/secret-scan.py --all

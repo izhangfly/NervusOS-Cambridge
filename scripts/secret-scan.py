@@ -81,8 +81,11 @@ def mask(s: str) -> str:
 def main() -> int:
     every = "--all" in sys.argv
     names = git("ls-files", "-z") if every else git("diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z")
-    hosts = [h.encode() for h in server_hosts()]
-    if not hosts:
+    if os.environ.get("NERVUS_SCAN_HOSTS") == "none":
+        hosts = []  # CI: it cannot know the address (and must not be told it); pushes are checked locally
+    else:
+        hosts = [h.encode() for h in server_hosts()]
+    if not hosts and os.environ.get("NERVUS_SCAN_HOSTS") != "none":
         print("secret-scan: found no server address to check for (ssh -G hetzner, Syncthing relays, "
               "$NERVUS_SCAN_HOSTS); refusing to vouch for the commit", file=sys.stderr)
         return 1
