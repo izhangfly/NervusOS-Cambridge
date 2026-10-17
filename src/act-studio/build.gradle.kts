@@ -24,6 +24,8 @@ dependencies {
         }
     )
     testImplementation(libs.kotlin.test)
+    testImplementation(compose.desktop.uiTestJUnit4)
+    testImplementation(compose.desktop.currentOs)
 }
 
 kotlin {
@@ -35,6 +37,9 @@ kotlin {
 
 tasks.test {
     useJUnitPlatform()
+    // The UI test drives a running engine (python -m nervus_act --sim); it is skipped without one.
+    environment("ACT_ENGINE_TEST", System.getenv("ACT_ENGINE_TEST") ?: "")
+    systemProperty("java.awt.headless", "true")
 }
 
 compose.desktop {

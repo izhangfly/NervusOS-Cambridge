@@ -80,7 +80,8 @@ class Engine:
 
     def status(self) -> dict:
         return {
-            "time": utc_now(), "engine": {"started": self.started, "pid": os.getpid(), "sim": self.sim is not None},
+            "time": utc_now(), "engine": {"started": self.started, "pid": os.getpid(), "sim": self.sim is not None,
+                                          "sim_driver": self.sim.url if self.sim else None},
             "arm": self.arm.info(),
             "cameras": {r: c.info() for r, c in self.cameras.items()},
             "recorder": self.recorder.status(),
