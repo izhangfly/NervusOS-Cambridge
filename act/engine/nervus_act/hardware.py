@@ -31,6 +31,21 @@ def mono() -> float:
     return time.monotonic()
 
 
+def usb_controller(dev: str) -> str | None:
+    """The PCI USB controller a /dev/videoN hangs off, as lspci names it ("... Thunderbolt 3 USB Controller")."""
+    import re
+    try:
+        node = os.path.basename(os.path.realpath(dev))
+        path = os.path.realpath(f"/sys/class/video4linux/{node}/device")
+        pci = [p for p in path.split("/") if re.fullmatch(r"[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]", p)]
+        if not pci:
+            return None
+        out = subprocess.run(["lspci", "-s", pci[-1]], capture_output=True, text=True, timeout=3).stdout.strip()
+        return out.split(": ", 1)[-1] or None
+    except Exception:
+        return None
+
+
 class ArmError(RuntimeError):
     pass
 
@@ -196,6 +211,7 @@ class Camera:
         self.times = deque(maxlen=30)
         self.error: str | None = None
         self.device: str | None = None
+        self.controller: str | None = None
         self._stop = threading.Event()
         self._wanted = threading.Event()
         self._wanted.set()
@@ -220,6 +236,17 @@ class Camera:
             raise RuntimeError(f"{self.role} camera ({self.by_id}) is not plugged in")
         return os.path.realpath(hits[0])
 
+    def _stall(self, dev: str, seconds: float) -> str:
+        msg = f"{self.role} camera: no frames for {seconds:.0f} s"
+        ctl = self.controller or ""
+        if "Thunderbolt" in ctl:
+            # Seen on the Dell: the JHL6540's USB keeps resetting a C270 plugged into a USB-C port.
+            msg += (" — it is on the Thunderbolt (USB-C) controller, which keeps resetting it: "
+                    "plug it into one of the laptop's USB-A ports")
+        else:
+            msg += " — unplug and replug it, or try another USB port"
+        return msg
+
     def _apply_controls(self, dev: str):
         # Fixed frame rate and mains anti-flicker (also set by udev on plug; repeated here in case the
         # camera reset them). Exposure must not stretch the frame period, or 15 fps quietly becomes 12.5.
@@ -238,6 +265,8 @@ class Camera:
             cap = None
             try:
                 dev = self._resolve()
+                if dev != self.device:
+                    self.controller = usb_controller(dev)
                 self.device = dev
                 self._apply_controls(dev)
                 cap = cv2.VideoCapture(dev, cv2.CAP_V4L2)
@@ -247,19 +276,25 @@ class Camera:
                 cap.set(cv2.CAP_PROP_FPS, self.fps_req)
                 # Keep the driver's default buffer count. With one buffer the camera can't deliver while we
                 # hold it, and 15 fps measured 10.8; this thread already keeps only the newest frame.
+                try:
+                    cap.set(getattr(cv2, "CAP_PROP_READ_TIMEOUT_MSEC", 69), 2000)  # V4L2 waits 10 s by default
+                except Exception:
+                    pass
                 if not cap.isOpened():
                     raise RuntimeError(f"{self.role} camera {dev} did not open")
-                self.error = None
-                misses = 0
+                misses, last_ok = 0, mono()
                 while not self._stop.is_set() and self._wanted.is_set():
                     ok, bgr = cap.read()
                     if not ok:
                         misses += 1
-                        if misses > 30:
-                            raise RuntimeError(f"{self.role} camera stopped delivering frames")
+                        stalled = mono() - last_ok
+                        if stalled > 3.0:
+                            self.error = self._stall(dev, stalled)  # say so now, keep trying
+                        if misses > 30 or stalled > 20.0:
+                            raise RuntimeError(self._stall(dev, stalled))  # reopen the device
                         time.sleep(0.02)
                         continue
-                    misses = 0
+                    misses, last_ok, self.error = 0, mono(), None
                     if bgr.shape[1] != self.w or bgr.shape[0] != self.h:
                         bgr = cv2.resize(bgr, (self.w, self.h))
                     rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)  # training frames are RGB
@@ -307,7 +342,7 @@ class Camera:
         _, age = self.latest()
         return {"role": self.role, "device": self.device, "match": self.by_id, "fps": round(self.fps(), 1),
                 "age_ms": None if math.isinf(age) else round(age * 1000), "error": self.error,
-                "size": [self.w, self.h], "active": self.active}
+                "size": [self.w, self.h], "active": self.active, "controller": self.controller}
 
     def close(self):
         self._stop.set()
