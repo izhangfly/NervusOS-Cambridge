@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "com.nervus.handteleop"
-version = "1.0.0"
+version = "1.0.1"
 
 // Target ABI of the package. Defaults to the Dell (x86_64); pass -Pnervus.abi=linux-arm64 for RK3588 boards
 val nervusAbi: String = (findProperty("nervus.abi") as String?) ?: "linux-x86_64"
@@ -73,7 +73,7 @@ nspkg {
     packageId = "com.nervus.handteleop"
     label = "Hand Teleop"
     version = project.version.toString()
-    versionCode = 1L
+    versionCode = 2L
     minNervusApi = 1
     targetNervusApi = 1
     supportedAbis = listOf(nervusAbi)
