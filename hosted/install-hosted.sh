@@ -84,7 +84,7 @@ ok "/run/nervus-x11 owned by $DESKTOP_USER"
 
 sed "s/@USER@/$DESKTOP_USER/g" "$HOSTED/polkit/50-nervus-hosted.rules.in" >/etc/polkit-1/rules.d/50-nervus-hosted.rules
 chmod 0644 /etc/polkit-1/rules.d/50-nervus-hosted.rules
-ok "polkit: $DESKTOP_USER may start/stop nervud and the arm driver"
+ok "polkit: $DESKTOP_USER may start/stop nervud, the arm driver and the ACT engine"
 
 # ------------------------------------------------------------------ hardware layer
 step "Hardware layer: PiPER arm on can0"
