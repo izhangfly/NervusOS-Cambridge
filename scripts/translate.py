@@ -130,9 +130,10 @@ class Translator:
         out = re.sub(r"^\s*<think>.*?</think>\s*", "", out, flags=re.S)
         return out
 
-    def translate(self, text: str, kind: str) -> str:
-        """kind: 'markdown', 'code:<language>' or 'name'."""
-        key = hashlib.sha256(f"{self.model}\0{kind}\0{text}".encode()).hexdigest()
+    def translate(self, text: str, kind: str, strict: bool = False) -> str | None:
+        """kind: 'markdown', 'code:<language>' or 'name'. None when the model leaves Chinese in it twice."""
+        tag = f"{kind}\0strict" if strict else kind  # unchanged keys for normal requests: old cache entries still count
+        key = hashlib.sha256(f"{self.model}\0{tag}\0{text}".encode()).hexdigest()
         if key in self.cache:
             return self.cache[key]
         if kind == "name":
@@ -146,6 +147,9 @@ class Translator:
             prompt = (f"These are {n} consecutive lines from a {lang} file. Translate the Chinese in them (comments, "
                       f"strings, text) into English. Keep the code, indentation and comment markers exactly, and "
                       f"output exactly {n} lines, one for each input line:\n\n{text}")
+        if strict:
+            prompt = ("Every Chinese character must become English: translate quoted phrases and examples too, and write "
+                      "names with no English form in pinyin. " + prompt)
         out = None
         for temperature in (0.2, 0.0):
             try:
@@ -161,11 +165,7 @@ class Translator:
                 out = cand
                 break
         if out is None:
-            if kind.startswith("code:") and "\n" in text:
-                out = "\n".join(self.translate(l, kind) if has_cjk(l) else l for l in text.split("\n"))
-            else:
-                self.failed.append(text[:80])
-                return text
+            return None
         self.cache[key] = out
         with open(self.cache_path, "a", encoding="utf-8") as f:
             f.write(json.dumps({"k": key, "v": out}, ensure_ascii=False) + "\n")
@@ -206,6 +206,28 @@ def md_blocks(text: str) -> list[tuple[str, str]]:
     return out
 
 
+def tr_md(tr: Translator, text: str) -> str:
+    """Translate a piece of Markdown; when the model leaves Chinese in it, split it (blocks, then lines) and try
+    the smaller pieces, ending with a strict prompt for a single line. A long table or section usually fails on
+    one cell or phrase, and this keeps everything else translated."""
+    if not has_cjk(text):
+        return text
+    out = tr.translate(text, "markdown")
+    if out is not None:
+        return out
+    blocks = [b for b in text.split("\n\n")]
+    if len(blocks) > 1:
+        return "\n\n".join(tr_md(tr, b) for b in blocks)
+    lines = text.split("\n")
+    if len(lines) > 1:
+        return "\n".join(tr_md(tr, l) for l in lines)
+    out = tr.translate(text, "markdown", strict=True)
+    if out is not None:
+        return out
+    tr.failed.append(text[:80])
+    return text
+
+
 def translate_markdown(tr: Translator, text: str) -> str:
     parts = md_blocks(text)
     out: list[str] = []
@@ -213,9 +235,7 @@ def translate_markdown(tr: Translator, text: str) -> str:
 
     def flush():
         if pending:
-            joined = "\n\n".join(pending)
-            res = tr.translate(joined, "markdown") if has_cjk(joined) else joined
-            out.append(res)
+            out.append(tr_md(tr, "\n\n".join(pending)))
             pending.clear()
 
     for kind, block in parts:
@@ -252,12 +272,23 @@ def translate_code(tr: Translator, text: str, lang: str) -> str:
         run = lines[i:j]
         # The model sees the run without its common indentation; it goes back on afterwards.
         indent = os.path.commonprefix([re.match(r"^[ \t]*", l).group(0) for l in run])
-        res = tr.translate("\n".join(l[len(indent):] for l in run), f"code:{lang}").split("\n")
+        joined = tr.translate("\n".join(l[len(indent):] for l in run), f"code:{lang}")
+        res = joined.split("\n") if joined is not None else []
         if len(res) != len(run):
-            res = [tr.translate(l[len(indent):], f"code:{lang}") for l in run]
+            res = [one_line(tr, l[len(indent):], f"code:{lang}") for l in run]
         out.extend(indent + r if r.strip() else r for r in res)
         i = j
     return "\n".join(out)
+
+
+def one_line(tr: Translator, line: str, kind: str) -> str:
+    out = tr.translate(line, kind)
+    if out is None or "\n" in out:
+        out = tr.translate(line, kind, strict=True)
+    if out is None or "\n" in out:
+        tr.failed.append(line[:80])
+        return line
+    return out
 
 
 def is_text(p: Path) -> bool:
@@ -290,8 +321,9 @@ def translate_file(tr: Translator, p: Path) -> bool:
 
 def ascii_name(tr: Translator, name: str) -> str:
     stem, ext = (name.rsplit(".", 1) + [""])[:2] if "." in name[1:] else (name, "")
-    en = tr.translate(name, "name")
+    en = tr.translate(name, "name") or tr.translate(name, "name", strict=True) or ""
     en = re.sub(r"[^A-Za-z0-9 ._\-]+", "", en).strip() or hashlib.sha1(name.encode()).hexdigest()[:8]
+    en = re.sub(r"-{2,}", "-", re.sub(r"\s+", "-", en))
     if ext and not en.lower().endswith("." + ext.lower()):
         en = f"{en}.{ext}"
     return re.sub(r"\s+", "-", en)
