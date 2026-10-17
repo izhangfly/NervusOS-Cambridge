@@ -1,0 +1,159 @@
+syntax = "proto3";
+
+package gazebo.simulation.motion.profile.v1;
+
+option go_package = "github.com/nervus-os/nervus-gazebo-provider/gen/go/gazebo/simulation/motion/profile/v1;profilev1";
+
+// ProfileBundle is signed package configuration. It is the complete finite
+// allowlist of motion Profiles and Resource slots that runtime configuration
+// may select. Runtime configuration cannot add capabilities or Resources.
+message ProfileBundle {
+  uint32 schema_version = 1;
+  repeated ResourceSlot resource_slots = 2;
+  repeated MotionProfile profiles = 3;
+}
+
+message ResourceSlot {
+  string stable_role = 1;
+  string resource_type = 2;
+  string interface_id = 3;
+  uint32 interface_major = 4;
+}
+
+message MotionProfile {
+  uint32 schema_version = 1;
+  string profile_id = 2;
+  string description = 3;
+  ModelMatcher matcher = 4;
+  repeated Frame frames = 5;
+  repeated JointGroup joint_groups = 6;
+  repeated CommandBinding command_bindings = 7;
+  repeated StateSource state_sources = 8;
+  repeated HomeState home_states = 9;
+  repeated MotionCapability capabilities = 10;
+}
+
+message ModelMatcher {
+  oneof selector {
+    string exact_name = 1;
+    string name_prefix = 2;
+  }
+}
+
+message Frame {
+  string role = 1;
+  string name = 2;
+}
+
+message JointGroup {
+  string role = 1;
+  repeated JointSpec joints = 2;
+}
+
+message JointSpec {
+  string role = 1;
+  string name = 2;
+  uint32 axis = 3;
+  bool has_position_limits = 4;
+  double lower_position_rad = 5;
+  double upper_position_rad = 6;
+  double max_velocity_rad_s = 7;
+  double position_tolerance_rad = 8;
+  double home_position_rad = 9;
+}
+
+enum AdapterKind {
+  ADAPTER_KIND_UNSPECIFIED = 0;
+  ADAPTER_KIND_JOINT_POSITION = 1;
+  ADAPTER_KIND_JOINT_TRAJECTORY = 2;
+  ADAPTER_KIND_DIFF_DRIVE = 3;
+  ADAPTER_KIND_HUMANOID_GAIT = 4;
+}
+
+message CommandBinding {
+  string role = 1;
+  AdapterKind adapter = 2;
+  string topic_template = 3;
+  string service_template = 4;
+  string message_type = 5;
+}
+
+enum StateSourceKind {
+  STATE_SOURCE_KIND_UNSPECIFIED = 0;
+  STATE_SOURCE_KIND_JOINT_STATE = 1;
+  STATE_SOURCE_KIND_ROOT_POSE = 2;
+  STATE_SOURCE_KIND_ODOMETRY = 3;
+  STATE_SOURCE_KIND_CONTACT = 4;
+  STATE_SOURCE_KIND_IMU = 5;
+}
+
+message StateSource {
+  string role = 1;
+  StateSourceKind kind = 2;
+  string topic_template = 3;
+  string message_type = 4;
+  bool optional = 5;
+}
+
+message HomeState {
+  string role = 1;
+  string joint_group = 2;
+  repeated double position_rad = 3;
+}
+
+enum CapabilitySemantic {
+  CAPABILITY_SEMANTIC_UNSPECIFIED = 0;
+  // Existing private world-scoped joint control. This never claims a Nervus
+  // standard BaseMotion or Manipulator capability.
+  CAPABILITY_SEMANTIC_COMPATIBILITY_JOINT_CONTROL = 1;
+  CAPABILITY_SEMANTIC_BASE_MOTION = 2;
+  CAPABILITY_SEMANTIC_MANIPULATOR_ARM = 3;
+}
+
+message MotionCapability {
+  string role = 1;
+  CapabilitySemantic semantic = 2;
+  AdapterKind adapter = 3;
+  string interface_id = 4;
+  uint32 interface_major = 5;
+  // A runtime instance selects exactly one of these signed Resource slots.
+  repeated string resource_roles = 6;
+  string joint_group = 7;
+  string command_binding = 8;
+  repeated string state_sources = 9;
+  string base_frame = 10;
+  string end_frame = 11;
+  string home_state = 12;
+  MotionLimits limits = 13;
+}
+
+message MotionLimits {
+  double max_linear_m_s = 1;
+  double max_angular_rad_s = 2;
+  double max_joint_velocity_rad_s = 3;
+  double position_tolerance_rad = 4;
+  uint32 settle_time_ms = 5;
+}
+
+// RuntimeConfiguration is unsigned instance selection. Every referenced
+// profile, capability and Resource role must already exist in ProfileBundle.
+message RuntimeConfiguration {
+  uint32 schema_version = 1;
+  string world = 2;
+  string partition = 3;
+  repeated ProfileInstance instances = 4;
+  uint32 discovery_timeout_ms = 5;
+  uint32 request_timeout_ms = 6;
+  string log_level = 7;
+}
+
+message ProfileInstance {
+  string profile_id = 1;
+  string model_name = 2;
+  repeated CapabilityResource capability_resources = 3;
+}
+
+message CapabilityResource {
+  string capability_role = 1;
+  string resource_role = 2;
+}

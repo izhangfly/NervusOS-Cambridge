@@ -1,0 +1,20 @@
+
+!gazebo.simulation.motion.provider…
+)gazebo.simulation.motion.provider.manager"2gazebo.simulation.motion.provider.permission.queryJ$ v2‡jì`òš*€€ÄÒÈÆ¥SG¯¦>cNo¾¾ ‚
+)gazebo.simulation.motion.provider.control"2gazebo.simulation.motion.provider.permission.query(20gazebo.simulation.motion.provider.resource.world:0gazebo.simulation.motion.provider.resource.worldBsimulation.world.mainJ$ ¥ã$Şc³˜°pùÛy6(«OCÜ%Ÿ ÂkIµĞÇ 
+nervus.interface.motion.base"perm.motion.control(2nervus.resource.motion.base:nervus.resource.motion.baseB	base.mainJ$ ¯,ñîJƒğ aúæû¬±È®á{€—ıÍ›i2Úÿd…
+ nervus.interface.manipulator.arm"perm.manipulator.control(2nervus.resource.manipulator.armJ$ ™d¥8<í„Cgà…g.û§mÔÅŞ­rëxéDG¬T~
+simulation.world.main0gazebo.simulation.motion.provider.resource.world */
+&gazebo.simulation.motion.provider.kindworld\
+	base.mainnervus.resource.motion.base *.
+&gazebo.simulation.motion.provider.kindbase^
+arm.leftnervus.resource.manipulator.arm *-
+&gazebo.simulation.motion.provider.kindarm_
+	arm.rightnervus.resource.manipulator.arm *-
+&gazebo.simulation.motion.provider.kindarm"œ
+2gazebo.simulation.motion.provider.permission.query"View Gazebo simulation*:8View simulation status, models, joints, and capabilities0B
+simulation"›
+6gazebo.simulation.motion.provider.permission.lifecycle"Manage Gazebo simulation*31Start and stop simulation and load allowed worlds0B
+simulation"ª
+4gazebo.simulation.motion.provider.permission.control"Control Gazebo simulation*CAPause, step, or reset simulation and control virtual robot joints0B
+simulation

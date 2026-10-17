@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "resource_slots": [
+    {"stable_role":"simulation.world.main","resource_type":"gazebo.simulation.motion.provider.resource.world","interface_id":"gazebo.simulation.motion.provider.control","interface_major":1},
+    {"stable_role":"base.main","resource_type":"nervus.resource.motion.base","interface_id":"nervus.interface.motion.base","interface_major":1},
+    {"stable_role":"arm.left","resource_type":"nervus.resource.manipulator.arm","interface_id":"nervus.interface.manipulator.arm","interface_major":1},
+    {"stable_role":"arm.right","resource_type":"nervus.resource.manipulator.arm","interface_id":"nervus.interface.manipulator.arm","interface_major":1}
+  ],
+  "profiles": [
+    {
+      "schema_version": 1,
+      "profile_id": "gazebo.unitree.g1.dex3.mobile.v1",
+      "description": "Wheeled Unitree G1 waist, dual-arm and Dex3 private position-control profile with standard differential BaseMotion.",
+      "matcher": {"exact_name":"nervus_mobile_g1_dex3"},
+      "frames": [{"role":"base","name":"base_link"}],
+      "joint_groups": [
+        {"role":"waist","joints":[
+          {"role":"waist_yaw","name":"waist_yaw_joint","axis":0,"position_tolerance_rad":0.01},
+          {"role":"waist_roll","name":"waist_roll_joint","axis":0,"position_tolerance_rad":0.01},
+          {"role":"waist_pitch","name":"waist_pitch_joint","axis":0,"position_tolerance_rad":0.01}
+        ]},
+        {"role":"left_arm","joints":[
+          {"role":"shoulder_pitch","name":"left_shoulder_pitch_joint","axis":0,"position_tolerance_rad":0.005},
+          {"role":"shoulder_roll","name":"left_shoulder_roll_joint","axis":0,"position_tolerance_rad":0.005},
+          {"role":"shoulder_yaw","name":"left_shoulder_yaw_joint","axis":0,"position_tolerance_rad":0.005},
+          {"role":"elbow","name":"left_elbow_joint","axis":0,"position_tolerance_rad":0.005},
+          {"role":"wrist_roll","name":"left_wrist_roll_joint","axis":0,"position_tolerance_rad":0.005},
+          {"role":"wrist_pitch","name":"left_wrist_pitch_joint","axis":0,"position_tolerance_rad":0.005},
+          {"role":"wrist_yaw","name":"left_wrist_yaw_joint","axis":0,"position_tolerance_rad":0.005}
+        ]},
+        {"role":"right_arm","joints":[
+          {"role":"shoulder_pitch","name":"right_shoulder_pitch_joint","axis":0,"position_tolerance_rad":0.005},
+          {"role":"shoulder_roll","name":"right_shoulder_roll_joint","axis":0,"position_tolerance_rad":0.005},
+          {"role":"shoulder_yaw","name":"right_shoulder_yaw_joint","axis":0,"position_tolerance_rad":0.005},
+          {"role":"elbow","name":"right_elbow_joint","axis":0,"position_tolerance_rad":0.005},
+          {"role":"wrist_roll","name":"right_wrist_roll_joint","axis":0,"position_tolerance_rad":0.005},
+          {"role":"wrist_pitch","name":"right_wrist_pitch_joint","axis":0,"position_tolerance_rad":0.005},
+          {"role":"wrist_yaw","name":"right_wrist_yaw_joint","axis":0,"position_tolerance_rad":0.005}
+        ]},
+        {"role":"left_hand","joints":[
+          {"role":"thumb_0","name":"left_hand_thumb_0_joint","axis":0,"position_tolerance_rad":0.01},
+          {"role":"thumb_1","name":"left_hand_thumb_1_joint","axis":0,"position_tolerance_rad":0.01},
+          {"role":"thumb_2","name":"left_hand_thumb_2_joint","axis":0,"position_tolerance_rad":0.01},
+          {"role":"middle_0","name":"left_hand_middle_0_joint","axis":0,"position_tolerance_rad":0.01},
+          {"role":"middle_1","name":"left_hand_middle_1_joint","axis":0,"position_tolerance_rad":0.01},
+          {"role":"index_0","name":"left_hand_index_0_joint","axis":0,"position_tolerance_rad":0.01},
+          {"role":"index_1","name":"left_hand_index_1_joint","axis":0,"position_tolerance_rad":0.01}
+        ]},
+        {"role":"right_hand","joints":[
+          {"role":"thumb_0","name":"right_hand_thumb_0_joint","axis":0,"position_tolerance_rad":0.01},
+          {"role":"thumb_1","name":"right_hand_thumb_1_joint","axis":0,"position_tolerance_rad":0.01},
+          {"role":"thumb_2","name":"right_hand_thumb_2_joint","axis":0,"position_tolerance_rad":0.01},
+          {"role":"middle_0","name":"right_hand_middle_0_joint","axis":0,"position_tolerance_rad":0.01},
+          {"role":"middle_1","name":"right_hand_middle_1_joint","axis":0,"position_tolerance_rad":0.01},
+          {"role":"index_0","name":"right_hand_index_0_joint","axis":0,"position_tolerance_rad":0.01},
+          {"role":"index_1","name":"right_hand_index_1_joint","axis":0,"position_tolerance_rad":0.01}
+        ]},
+        {"role":"all_upper_body","joints":[
+          {"role":"waist_yaw","name":"waist_yaw_joint","axis":0,"position_tolerance_rad":0.01},
+          {"role":"waist_roll","name":"waist_roll_joint","axis":0,"position_tolerance_rad":0.01},
+          {"role":"waist_pitch","name":"waist_pitch_joint","axis":0,"position_tolerance_rad":0.01},
+          {"role":"left_shoulder_pitch","name":"left_shoulder_pitch_joint","axis":0,"position_tolerance_rad":0.005},
+          {"role":"left_shoulder_roll","name":"left_shoulder_roll_joint","axis":0,"position_tolerance_rad":0.005},
+          {"role":"left_shoulder_yaw","name":"left_shoulder_yaw_joint","axis":0,"position_tolerance_rad":0.005},
+          {"role":"left_elbow","name":"left_elbow_joint","axis":0,"position_tolerance_rad":0.005},
+          {"role":"left_wrist_roll","name":"left_wrist_roll_joint","axis":0,"position_tolerance_rad":0.005},
+          {"role":"left_wrist_pitch","name":"left_wrist_pitch_joint","axis":0,"position_tolerance_rad":0.005},
+          {"role":"left_wrist_yaw","name":"left_wrist_yaw_joint","axis":0,"position_tolerance_rad":0.005},
+          {"role":"right_shoulder_pitch","name":"right_shoulder_pitch_joint","axis":0,"position_tolerance_rad":0.005},
+          {"role":"right_shoulder_roll","name":"right_shoulder_roll_joint","axis":0,"position_tolerance_rad":0.005},
+          {"role":"right_shoulder_yaw","name":"right_shoulder_yaw_joint","axis":0,"position_tolerance_rad":0.005},
+          {"role":"right_elbow","name":"right_elbow_joint","axis":0,"position_tolerance_rad":0.005},
+          {"role":"right_wrist_roll","name":"right_wrist_roll_joint","axis":0,"position_tolerance_rad":0.005},
+          {"role":"right_wrist_pitch","name":"right_wrist_pitch_joint","axis":0,"position_tolerance_rad":0.005},
+          {"role":"right_wrist_yaw","name":"right_wrist_yaw_joint","axis":0,"position_tolerance_rad":0.005},
+          {"role":"left_thumb_0","name":"left_hand_thumb_0_joint","axis":0,"position_tolerance_rad":0.01},
+          {"role":"left_thumb_1","name":"left_hand_thumb_1_joint","axis":0,"position_tolerance_rad":0.01},
+          {"role":"left_thumb_2","name":"left_hand_thumb_2_joint","axis":0,"position_tolerance_rad":0.01},
+          {"role":"left_middle_0","name":"left_hand_middle_0_joint","axis":0,"position_tolerance_rad":0.01},
+          {"role":"left_middle_1","name":"left_hand_middle_1_joint","axis":0,"position_tolerance_rad":0.01},
+          {"role":"left_index_0","name":"left_hand_index_0_joint","axis":0,"position_tolerance_rad":0.01},
+          {"role":"left_index_1","name":"left_hand_index_1_joint","axis":0,"position_tolerance_rad":0.01},
+          {"role":"right_thumb_0","name":"right_hand_thumb_0_joint","axis":0,"position_tolerance_rad":0.01},
+          {"role":"right_thumb_1","name":"right_hand_thumb_1_joint","axis":0,"position_tolerance_rad":0.01},
+          {"role":"right_thumb_2","name":"right_hand_thumb_2_joint","axis":0,"position_tolerance_rad":0.01},
+          {"role":"right_middle_0","name":"right_hand_middle_0_joint","axis":0,"position_tolerance_rad":0.01},
+          {"role":"right_middle_1","name":"right_hand_middle_1_joint","axis":0,"position_tolerance_rad":0.01},
+          {"role":"right_index_0","name":"right_hand_index_0_joint","axis":0,"position_tolerance_rad":0.01},
+          {"role":"right_index_1","name":"right_hand_index_1_joint","axis":0,"position_tolerance_rad":0.01}
+        ]}
+      ],
+      "command_bindings": [
+        {"role":"joint_position","adapter":"ADAPTER_KIND_JOINT_POSITION","topic_template":"/model/{model}/joint/{joint}/{axis}/cmd_pos","message_type":"gz.msgs.Double"},
+        {"role":"base_velocity","adapter":"ADAPTER_KIND_DIFF_DRIVE","topic_template":"/model/{model}/cmd_vel","message_type":"gz.msgs.Twist"}
+      ],
+      "state_sources": [
+        {"role":"joint_state","kind":"STATE_SOURCE_KIND_JOINT_STATE","topic_template":"/world/{world}/model/{model}/joint_state","message_type":"gz.msgs.Model"},
+        {"role":"odometry","kind":"STATE_SOURCE_KIND_ODOMETRY","topic_template":"/model/{model}/odometry","message_type":"gz.msgs.Odometry"}
+      ],
+      "home_states": [{"role":"home","joint_group":"all_upper_body","position_rad":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]}],
+      "capabilities": [
+        {"role":"base.motion","semantic":"CAPABILITY_SEMANTIC_BASE_MOTION","adapter":"ADAPTER_KIND_DIFF_DRIVE","interface_id":"nervus.interface.motion.base","interface_major":1,"resource_roles":["base.main"],"command_binding":"base_velocity","state_sources":["odometry"],"base_frame":"base","limits":{"max_linear_m_s":0.35,"max_angular_rad_s":0.60,"settle_time_ms":250}},
+        {"role":"compatibility.joints","semantic":"CAPABILITY_SEMANTIC_COMPATIBILITY_JOINT_CONTROL","adapter":"ADAPTER_KIND_JOINT_POSITION","interface_id":"gazebo.simulation.motion.provider.control","interface_major":1,"resource_roles":["simulation.world.main"],"joint_group":"all_upper_body","command_binding":"joint_position","state_sources":["joint_state"],"base_frame":"base","home_state":"home","limits":{"max_joint_velocity_rad_s":1.5,"position_tolerance_rad":0.01,"settle_time_ms":250}}
+      ]
+    }
+  ]
+}

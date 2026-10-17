@@ -1,0 +1,50 @@
+{
+  "schema": 1,
+  "package_id": "gazebo.simulation.motion.provider",
+  "label": "Nervus Gazebo Motion Provider",
+  "version": "0.1.0",
+  "version_code": 1,
+  "min_nervus_api": 2,
+  "target_nervus_api": 2,
+  "supported_abis": ["linux-x86_64"],
+  "permissions": [
+    "perm.service.register"
+  ],
+  "components": [
+    {
+      "id": "main",
+      "type": "service",
+      "runtime": "native",
+      "entry": "bin/gazebod",
+      "launch_mode": "always-on",
+      "criticality": "optional",
+      "exports": [
+        {
+          "interface": "gazebo.simulation.motion.provider.manager",
+          "visibility": "public"
+        },
+        {
+          "interface": "gazebo.simulation.motion.provider.control",
+          "visibility": "public"
+        },
+        {
+          "interface": "nervus.interface.motion.base",
+          "visibility": "public"
+        },
+        {
+          "interface": "nervus.interface.manipulator.arm",
+          "visibility": "public"
+        }
+      ],
+      "limits": {
+        "memory_max_mb": 512,
+        "tasks_max": 128
+      }
+    }
+  ],
+  "provider": {
+    "descriptor": "provider/provider.binpb",
+    "schemas": "provider/schemas.binpb"
+  },
+  "digests": {}
+}

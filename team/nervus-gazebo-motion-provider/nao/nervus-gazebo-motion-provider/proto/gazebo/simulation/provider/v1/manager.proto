@@ -1,0 +1,459 @@
+syntax = "proto3";
+
+package gazebo.simulation.motion.provider.v1;
+
+import "nervus/ipc/v1/method_registry.proto";
+
+option go_package = "github.com/nervus-os/nervus-gazebo-provider/gen/go/gazebo/simulation/provider/v1;simulationv1";
+
+// ManagerMethod is the wire method_id space for
+// gazebo.simulation.motion.provider.manager@1. The manager endpoint is not bound to a
+// resource, so methods in this enum must never require a ControlLease.
+enum ManagerMethod {
+  MANAGER_METHOD_UNSPECIFIED = 0;
+
+  MANAGER_METHOD_GET_STATUS = 1 [(nervus.ipc.v1.method_meta) = {
+    method_id: 1
+    required_permission: "gazebo.simulation.motion.provider.permission.query"
+    risk_class: RISK_CLASS_NORMAL
+    requires_control_lease: false
+    returns_operation: false
+    needs_user_confirmation: false
+    request_type: "gazebo.simulation.motion.provider.v1.GetStatusRequest"
+    response_type: "gazebo.simulation.motion.provider.v1.SimulationStatus"
+    error_detail_type: "gazebo.simulation.motion.provider.v1.SimulationErrorDetail"
+    is_read_only: true
+    is_motion: false
+    default_timeout_ms: 1000
+    max_timeout_ms: 5000
+    max_request_bytes: 1024
+    max_response_bytes: 65536
+  }];
+
+  MANAGER_METHOD_LIST_MODELS = 2 [(nervus.ipc.v1.method_meta) = {
+    method_id: 2
+    required_permission: "gazebo.simulation.motion.provider.permission.query"
+    risk_class: RISK_CLASS_NORMAL
+    requires_control_lease: false
+    returns_operation: false
+    needs_user_confirmation: false
+    request_type: "gazebo.simulation.motion.provider.v1.ListModelsRequest"
+    response_type: "gazebo.simulation.motion.provider.v1.ModelList"
+    error_detail_type: "gazebo.simulation.motion.provider.v1.SimulationErrorDetail"
+    is_read_only: true
+    is_motion: false
+    default_timeout_ms: 2000
+    max_timeout_ms: 10000
+    max_request_bytes: 1024
+    max_response_bytes: 1048576
+  }];
+
+  MANAGER_METHOD_LIST_JOINTS = 3 [(nervus.ipc.v1.method_meta) = {
+    method_id: 3
+    required_permission: "gazebo.simulation.motion.provider.permission.query"
+    risk_class: RISK_CLASS_NORMAL
+    requires_control_lease: false
+    returns_operation: false
+    needs_user_confirmation: false
+    request_type: "gazebo.simulation.motion.provider.v1.ListJointsRequest"
+    response_type: "gazebo.simulation.motion.provider.v1.JointList"
+    error_detail_type: "gazebo.simulation.motion.provider.v1.SimulationErrorDetail"
+    is_read_only: true
+    is_motion: false
+    default_timeout_ms: 2000
+    max_timeout_ms: 10000
+    max_request_bytes: 4096
+    max_response_bytes: 1048576
+  }];
+
+  MANAGER_METHOD_GET_JOINT_STATE = 4 [(nervus.ipc.v1.method_meta) = {
+    method_id: 4
+    required_permission: "gazebo.simulation.motion.provider.permission.query"
+    risk_class: RISK_CLASS_NORMAL
+    requires_control_lease: false
+    returns_operation: false
+    needs_user_confirmation: false
+    request_type: "gazebo.simulation.motion.provider.v1.GetJointStateRequest"
+    response_type: "gazebo.simulation.motion.provider.v1.JointState"
+    error_detail_type: "gazebo.simulation.motion.provider.v1.SimulationErrorDetail"
+    is_read_only: true
+    is_motion: false
+    default_timeout_ms: 1000
+    max_timeout_ms: 5000
+    max_request_bytes: 4096
+    max_response_bytes: 65536
+  }];
+
+  MANAGER_METHOD_START_SIMULATION = 5 [(nervus.ipc.v1.method_meta) = {
+    method_id: 5
+    required_permission: "gazebo.simulation.motion.provider.permission.lifecycle"
+    risk_class: RISK_CLASS_NORMAL
+    requires_control_lease: false
+    returns_operation: false
+    needs_user_confirmation: false
+    request_type: "gazebo.simulation.motion.provider.v1.StartSimulationRequest"
+    response_type: "gazebo.simulation.motion.provider.v1.LifecycleResult"
+    error_detail_type: "gazebo.simulation.motion.provider.v1.SimulationErrorDetail"
+    is_read_only: false
+    is_motion: false
+    default_timeout_ms: 30000
+    max_timeout_ms: 120000
+    max_request_bytes: 4096
+    max_response_bytes: 65536
+  }];
+
+  MANAGER_METHOD_STOP_SIMULATION = 6 [(nervus.ipc.v1.method_meta) = {
+    method_id: 6
+    required_permission: "gazebo.simulation.motion.provider.permission.lifecycle"
+    risk_class: RISK_CLASS_NORMAL
+    requires_control_lease: false
+    returns_operation: false
+    needs_user_confirmation: false
+    request_type: "gazebo.simulation.motion.provider.v1.StopSimulationRequest"
+    response_type: "gazebo.simulation.motion.provider.v1.LifecycleResult"
+    error_detail_type: "gazebo.simulation.motion.provider.v1.SimulationErrorDetail"
+    is_read_only: false
+    is_motion: false
+    default_timeout_ms: 30000
+    max_timeout_ms: 120000
+    max_request_bytes: 1024
+    max_response_bytes: 65536
+  }];
+
+  MANAGER_METHOD_LOAD_WORLD = 7 [(nervus.ipc.v1.method_meta) = {
+    method_id: 7
+    required_permission: "gazebo.simulation.motion.provider.permission.lifecycle"
+    risk_class: RISK_CLASS_NORMAL
+    requires_control_lease: false
+    returns_operation: false
+    needs_user_confirmation: false
+    request_type: "gazebo.simulation.motion.provider.v1.LoadWorldRequest"
+    response_type: "gazebo.simulation.motion.provider.v1.LifecycleResult"
+    error_detail_type: "gazebo.simulation.motion.provider.v1.SimulationErrorDetail"
+    is_read_only: false
+    is_motion: false
+    default_timeout_ms: 30000
+    max_timeout_ms: 120000
+    max_request_bytes: 4096
+    max_response_bytes: 65536
+  }];
+
+  MANAGER_METHOD_GET_CAPABILITIES = 8 [(nervus.ipc.v1.method_meta) = {
+    method_id: 8
+    required_permission: "gazebo.simulation.motion.provider.permission.query"
+    risk_class: RISK_CLASS_NORMAL
+    requires_control_lease: false
+    returns_operation: false
+    needs_user_confirmation: false
+    request_type: "gazebo.simulation.motion.provider.v1.GetCapabilitiesRequest"
+    response_type: "gazebo.simulation.motion.provider.v1.SimulationCapabilities"
+    error_detail_type: "gazebo.simulation.motion.provider.v1.SimulationErrorDetail"
+    is_read_only: true
+    is_motion: false
+    default_timeout_ms: 1000
+    max_timeout_ms: 5000
+    max_request_bytes: 1024
+    max_response_bytes: 65536
+  }];
+}
+
+enum ManagerEvent {
+  MANAGER_EVENT_UNSPECIFIED = 0;
+
+  MANAGER_EVENT_STATUS_CHANGED = 1 [(nervus.ipc.v1.event_meta) = {
+    event_id: 1
+    required_permission: "gazebo.simulation.motion.provider.permission.query"
+    risk_class: RISK_CLASS_NORMAL
+    delivery_class: DELIVERY_CLASS_STATE
+    payload_type: "gazebo.simulation.motion.provider.v1.SimulationStatus"
+    max_payload_bytes: 65536
+    max_events_per_second: 10
+  }];
+
+  MANAGER_EVENT_PROCESS_EXITED = 2 [(nervus.ipc.v1.event_meta) = {
+    event_id: 2
+    required_permission: "gazebo.simulation.motion.provider.permission.query"
+    risk_class: RISK_CLASS_NORMAL
+    delivery_class: DELIVERY_CLASS_RELIABLE
+    payload_type: "gazebo.simulation.motion.provider.v1.ProcessExited"
+    max_payload_bytes: 4096
+    max_events_per_second: 10
+  }];
+
+  MANAGER_EVENT_TRANSPORT_FAULT = 3 [(nervus.ipc.v1.event_meta) = {
+    event_id: 3
+    required_permission: "gazebo.simulation.motion.provider.permission.query"
+    risk_class: RISK_CLASS_NORMAL
+    delivery_class: DELIVERY_CLASS_RELIABLE
+    payload_type: "gazebo.simulation.motion.provider.v1.TransportFault"
+    max_payload_bytes: 8192
+    max_events_per_second: 20
+  }];
+
+  MANAGER_EVENT_WSLG_FAULT = 4 [(nervus.ipc.v1.event_meta) = {
+    event_id: 4
+    required_permission: "gazebo.simulation.motion.provider.permission.query"
+    risk_class: RISK_CLASS_NORMAL
+    delivery_class: DELIVERY_CLASS_RELIABLE
+    payload_type: "gazebo.simulation.motion.provider.v1.WSLgFault"
+    max_payload_bytes: 8192
+    max_events_per_second: 10
+  }];
+
+  MANAGER_EVENT_WORLD_CHANGED = 5 [(nervus.ipc.v1.event_meta) = {
+    event_id: 5
+    required_permission: "gazebo.simulation.motion.provider.permission.query"
+    risk_class: RISK_CLASS_NORMAL
+    delivery_class: DELIVERY_CLASS_STATE
+    payload_type: "gazebo.simulation.motion.provider.v1.WorldChanged"
+    max_payload_bytes: 8192
+    max_events_per_second: 10
+  }];
+}
+
+enum ProviderMode {
+  PROVIDER_MODE_UNSPECIFIED = 0;
+  PROVIDER_MODE_ATTACH = 1;
+  PROVIDER_MODE_MANAGED = 2;
+}
+
+enum ProcessState {
+  PROCESS_STATE_UNSPECIFIED = 0;
+  PROCESS_STATE_EXTERNAL = 1;
+  PROCESS_STATE_STOPPED = 2;
+  PROCESS_STATE_STARTING = 3;
+  PROCESS_STATE_RUNNING = 4;
+  PROCESS_STATE_STOPPING = 5;
+  PROCESS_STATE_EXITED = 6;
+}
+
+enum TransportState {
+  TRANSPORT_STATE_UNSPECIFIED = 0;
+  TRANSPORT_STATE_DISCONNECTED = 1;
+  TRANSPORT_STATE_DISCOVERING = 2;
+  TRANSPORT_STATE_READY = 3;
+  TRANSPORT_STATE_DEGRADED = 4;
+}
+
+enum SimulationState {
+  SIMULATION_STATE_UNSPECIFIED = 0;
+  SIMULATION_STATE_RUNNING = 1;
+  SIMULATION_STATE_PAUSED = 2;
+}
+
+enum SimulationErrorReason {
+  SIMULATION_ERROR_REASON_UNSPECIFIED = 0;
+  SIMULATION_ERROR_REASON_PROVIDER_NOT_READY = 1;
+  SIMULATION_ERROR_REASON_PROCESS_EXTERNALLY_MANAGED = 2;
+  SIMULATION_ERROR_REASON_PROCESS_ALREADY_RUNNING = 3;
+  SIMULATION_ERROR_REASON_PROCESS_NOT_RUNNING = 4;
+  SIMULATION_ERROR_REASON_WORLD_NOT_FOUND = 5;
+  SIMULATION_ERROR_REASON_WORLD_NOT_READY = 6;
+  SIMULATION_ERROR_REASON_WORLD_CHANGED = 7;
+  SIMULATION_ERROR_REASON_TRANSPORT_DISCONNECTED = 8;
+  SIMULATION_ERROR_REASON_SERVICE_NOT_FOUND = 9;
+  SIMULATION_ERROR_REASON_TOPIC_NOT_FOUND = 10;
+  SIMULATION_ERROR_REASON_TYPE_MISMATCH = 11;
+  SIMULATION_ERROR_REASON_REQUEST_TIMEOUT = 12;
+  SIMULATION_ERROR_REASON_REMOTE_REJECTED = 13;
+  SIMULATION_ERROR_REASON_MODEL_NOT_FOUND = 14;
+  SIMULATION_ERROR_REASON_JOINT_NOT_FOUND = 15;
+  SIMULATION_ERROR_REASON_JOINT_NOT_CONTROLLABLE = 16;
+  SIMULATION_ERROR_REASON_AXIS_NOT_SUPPORTED = 17;
+  SIMULATION_ERROR_REASON_OUT_OF_RANGE = 18;
+  SIMULATION_ERROR_REASON_FEEDBACK_UNAVAILABLE = 19;
+  SIMULATION_ERROR_REASON_QUEUE_OVERFLOW = 20;
+  SIMULATION_ERROR_REASON_WSLG_NOT_READY = 21;
+  SIMULATION_ERROR_REASON_NATIVE_FAILURE = 22;
+  SIMULATION_ERROR_REASON_INVALID_STATE = 23;
+  SIMULATION_ERROR_REASON_BATCH_TOO_LARGE = 24;
+  SIMULATION_ERROR_REASON_PROCESS_EXITED = 25;
+  SIMULATION_ERROR_REASON_INTERNAL = 26;
+}
+
+enum TransportFaultKind {
+  TRANSPORT_FAULT_KIND_UNSPECIFIED = 0;
+  TRANSPORT_FAULT_KIND_DISCONNECTED = 1;
+  TRANSPORT_FAULT_KIND_DISCOVERY_FAILED = 2;
+  TRANSPORT_FAULT_KIND_TYPE_MISMATCH = 3;
+  TRANSPORT_FAULT_KIND_REQUEST_TIMEOUT = 4;
+  TRANSPORT_FAULT_KIND_REMOTE_REJECTED = 5;
+  TRANSPORT_FAULT_KIND_QUEUE_OVERFLOW = 6;
+  TRANSPORT_FAULT_KIND_NATIVE_FAILURE = 7;
+}
+
+enum WSLgFaultKind {
+  WSLG_FAULT_KIND_UNSPECIFIED = 0;
+  WSLG_FAULT_KIND_KEEPALIVE_MISSING = 1;
+  WSLG_FAULT_KIND_COPY_MODE = 2;
+  WSLG_FAULT_KIND_DISPLAY_UNAVAILABLE = 3;
+  WSLG_FAULT_KIND_SHARED_MEMORY_UNAVAILABLE = 4;
+}
+
+message GetStatusRequest {}
+
+message SimulationStatus {
+  ProviderMode mode = 1;
+  ProcessState process_state = 2;
+  TransportState transport_state = 3;
+  SimulationState simulation_state = 4;
+  string world_name = 5;
+  uint64 world_generation = 6;
+  bool process_owned = 7;
+  uint64 managed_process_id = 8;
+  bool has_last_exit_code = 9;
+  int32 last_exit_code = 10;
+  SimulationStatistics statistics = 11;
+  SimulationErrorReason last_fault = 12;
+  RuntimeVersions versions = 13;
+}
+
+message SimulationStatistics {
+  bool valid = 1;
+  int64 simulation_time_ns = 2;
+  int64 real_time_ns = 3;
+  uint64 iterations = 4;
+  double real_time_factor = 5;
+  uint64 sample_age_ms = 6;
+}
+
+message RuntimeVersions {
+  string gazebo_sim = 1;
+  string gazebo_transport = 2;
+  string gazebo_msgs = 3;
+  string adapter = 4;
+}
+
+message ListModelsRequest {
+  // Zero selects the current world. A non-zero value provides optimistic
+  // concurrency protection against a world replacement.
+  uint64 world_generation = 1;
+}
+
+message ModelList {
+  string world_name = 1;
+  uint64 world_generation = 2;
+  repeated ModelSummary models = 3;
+}
+
+message ModelSummary {
+  string name = 1;
+  uint64 entity_id = 2;
+  bool is_static = 3;
+  string canonical_link = 4;
+}
+
+message ListJointsRequest {
+  string model = 1;
+  uint64 world_generation = 2;
+}
+
+message JointList {
+  string world_name = 1;
+  uint64 world_generation = 2;
+  string model = 3;
+  repeated JointSummary joints = 4;
+}
+
+message JointSummary {
+  string name = 1;
+  string type = 2;
+  repeated JointAxisDescription axes = 3;
+  bool controllable = 4;
+}
+
+message JointAxisDescription {
+  uint32 axis = 1;
+  bool has_position_limits = 2;
+  double lower_position = 3;
+  double upper_position = 4;
+}
+
+message GetJointStateRequest {
+  string model = 1;
+  string joint = 2;
+  uint32 axis = 3;
+  uint64 world_generation = 4;
+}
+
+message JointState {
+  string world_name = 1;
+  uint64 world_generation = 2;
+  string model = 3;
+  string joint = 4;
+  uint32 axis = 5;
+  bool has_position = 6;
+  double position = 7;
+  bool has_velocity = 8;
+  double velocity = 9;
+  int64 sample_simulation_time_ns = 10;
+  uint64 sequence = 11;
+}
+
+message StartSimulationRequest {
+  // Empty uses the configured default. Non-empty values are logical names
+  // resolved inside the configured world allowlist, never shell fragments.
+  string world = 1;
+}
+
+message StopSimulationRequest {}
+
+message LoadWorldRequest {
+  string world = 1;
+}
+
+message LifecycleResult {
+  SimulationStatus status = 1;
+}
+
+message GetCapabilitiesRequest {}
+
+message SimulationCapabilities {
+  ProviderMode mode = 1;
+  bool can_manage_process = 2;
+  bool can_load_world = 3;
+  bool can_reset_world = 4;
+  bool can_control_world = 5;
+  bool can_query_scene = 6;
+  bool can_command_joints = 7;
+  bool joint_state_feedback = 8;
+  bool sensor_topics = 9;
+  repeated string allowed_worlds = 10;
+  uint32 max_step_iterations = 11;
+  uint32 max_joint_commands_per_request = 12;
+}
+
+message SimulationErrorDetail {
+  SimulationErrorReason reason = 1;
+  string operation = 2;
+  uint64 world_generation = 3;
+  bool retryable = 4;
+}
+
+message ProcessExited {
+  uint64 process_id = 1;
+  int32 exit_code = 2;
+  bool expected = 3;
+  uint64 world_generation = 4;
+}
+
+message TransportFault {
+  TransportFaultKind kind = 1;
+  SimulationErrorReason reason = 2;
+  bool retryable = 3;
+  uint64 world_generation = 4;
+  uint64 dropped_events = 5;
+}
+
+message WSLgFault {
+  WSLgFaultKind kind = 1;
+  bool retryable = 2;
+  uint64 world_generation = 3;
+}
+
+message WorldChanged {
+  string previous_world = 1;
+  uint64 previous_generation = 2;
+  string current_world = 3;
+  uint64 current_generation = 4;
+}

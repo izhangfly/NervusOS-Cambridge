@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "world": "nervus_mobile_g1_dex3",
+  "instances": [{
+    "profile_id": "gazebo.unitree.g1.dex3.mobile.v1",
+    "model_name": "nervus_mobile_g1_dex3",
+    "capability_resources": [
+      {"capability_role":"base.motion","resource_role":"base.main"},
+      {"capability_role":"compatibility.joints","resource_role":"simulation.world.main"}
+    ]
+  }],
+  "discovery_timeout_ms": 5000,
+  "request_timeout_ms": 5000,
+  "log_level": "info"
+}

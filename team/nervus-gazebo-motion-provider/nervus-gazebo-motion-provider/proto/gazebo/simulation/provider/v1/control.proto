@@ -1,0 +1,323 @@
+syntax = "proto3";
+
+package gazebo.simulation.motion.provider.v1;
+
+import "gazebo/simulation/provider/v1/manager.proto";
+import "nervus/ipc/v1/method_registry.proto";
+
+option go_package = "github.com/nervus-os/nervus-gazebo-provider/gen/go/gazebo/simulation/provider/v1;simulationv1";
+
+// ControlMethod is the wire method_id space for
+// gazebo.simulation.motion.provider.control@1. This endpoint is bound to the world
+// resource and every mutating method requires its ControlLease.
+enum ControlMethod {
+  CONTROL_METHOD_UNSPECIFIED = 0;
+
+  CONTROL_METHOD_PAUSE = 1 [(nervus.ipc.v1.method_meta) = {
+    method_id: 1
+    required_permission: "gazebo.simulation.motion.provider.permission.control"
+    risk_class: RISK_CLASS_NORMAL
+    requires_control_lease: true
+    returns_operation: false
+    needs_user_confirmation: false
+    request_type: "gazebo.simulation.motion.provider.v1.PauseRequest"
+    response_type: "gazebo.simulation.motion.provider.v1.WorldControlResult"
+    error_detail_type: "gazebo.simulation.motion.provider.v1.SimulationErrorDetail"
+    is_read_only: false
+    is_motion: false
+    default_timeout_ms: 2000
+    max_timeout_ms: 10000
+    max_request_bytes: 1024
+    max_response_bytes: 65536
+  }];
+
+  CONTROL_METHOD_RESUME = 2 [(nervus.ipc.v1.method_meta) = {
+    method_id: 2
+    required_permission: "gazebo.simulation.motion.provider.permission.control"
+    risk_class: RISK_CLASS_NORMAL
+    requires_control_lease: true
+    returns_operation: false
+    needs_user_confirmation: false
+    request_type: "gazebo.simulation.motion.provider.v1.ResumeRequest"
+    response_type: "gazebo.simulation.motion.provider.v1.WorldControlResult"
+    error_detail_type: "gazebo.simulation.motion.provider.v1.SimulationErrorDetail"
+    is_read_only: false
+    is_motion: false
+    default_timeout_ms: 2000
+    max_timeout_ms: 10000
+    max_request_bytes: 1024
+    max_response_bytes: 65536
+  }];
+
+  CONTROL_METHOD_STEP = 3 [(nervus.ipc.v1.method_meta) = {
+    method_id: 3
+    required_permission: "gazebo.simulation.motion.provider.permission.control"
+    risk_class: RISK_CLASS_NORMAL
+    requires_control_lease: true
+    returns_operation: false
+    needs_user_confirmation: false
+    request_type: "gazebo.simulation.motion.provider.v1.StepRequest"
+    response_type: "gazebo.simulation.motion.provider.v1.WorldControlResult"
+    error_detail_type: "gazebo.simulation.motion.provider.v1.SimulationErrorDetail"
+    is_read_only: false
+    is_motion: false
+    default_timeout_ms: 5000
+    max_timeout_ms: 30000
+    max_request_bytes: 1024
+    max_response_bytes: 65536
+  }];
+
+  CONTROL_METHOD_SET_JOINT_POSITION = 4 [(nervus.ipc.v1.method_meta) = {
+    method_id: 4
+    required_permission: "gazebo.simulation.motion.provider.permission.control"
+    risk_class: RISK_CLASS_NORMAL
+    requires_control_lease: true
+    returns_operation: false
+    needs_user_confirmation: false
+    request_type: "gazebo.simulation.motion.provider.v1.SetJointPositionRequest"
+    response_type: "gazebo.simulation.motion.provider.v1.JointCommandReceipt"
+    error_detail_type: "gazebo.simulation.motion.provider.v1.SimulationErrorDetail"
+    is_read_only: false
+    is_motion: true
+    default_timeout_ms: 2000
+    max_timeout_ms: 10000
+    max_request_bytes: 8192
+    max_response_bytes: 65536
+  }];
+
+  CONTROL_METHOD_SET_JOINT_POSITIONS = 5 [(nervus.ipc.v1.method_meta) = {
+    method_id: 5
+    required_permission: "gazebo.simulation.motion.provider.permission.control"
+    risk_class: RISK_CLASS_NORMAL
+    requires_control_lease: true
+    returns_operation: false
+    needs_user_confirmation: false
+    request_type: "gazebo.simulation.motion.provider.v1.SetJointPositionsRequest"
+    response_type: "gazebo.simulation.motion.provider.v1.JointCommandReceipt"
+    error_detail_type: "gazebo.simulation.motion.provider.v1.SimulationErrorDetail"
+    is_read_only: false
+    is_motion: true
+    default_timeout_ms: 5000
+    max_timeout_ms: 30000
+    max_request_bytes: 262144
+    max_response_bytes: 65536
+  }];
+
+  CONTROL_METHOD_RESET_WORLD = 6 [(nervus.ipc.v1.method_meta) = {
+    method_id: 6
+    required_permission: "gazebo.simulation.motion.provider.permission.control"
+    risk_class: RISK_CLASS_NORMAL
+    requires_control_lease: true
+    returns_operation: false
+    needs_user_confirmation: false
+    request_type: "gazebo.simulation.motion.provider.v1.ResetWorldRequest"
+    response_type: "gazebo.simulation.motion.provider.v1.WorldControlResult"
+    error_detail_type: "gazebo.simulation.motion.provider.v1.SimulationErrorDetail"
+    is_read_only: false
+    is_motion: false
+    default_timeout_ms: 5000
+    max_timeout_ms: 30000
+    max_request_bytes: 1024
+    max_response_bytes: 65536
+  }];
+
+  CONTROL_METHOD_SET_JOINT_TRAJECTORY = 7 [(nervus.ipc.v1.method_meta) = {
+    method_id: 7
+    required_permission: "gazebo.simulation.motion.provider.permission.control"
+    risk_class: RISK_CLASS_PHYSICAL_CONTROL
+    requires_control_lease: true
+    returns_operation: false
+    needs_user_confirmation: false
+    request_type: "gazebo.simulation.motion.provider.v1.SetJointTrajectoryRequest"
+    response_type: "gazebo.simulation.motion.provider.v1.JointMotionReceipt"
+    error_detail_type: "gazebo.simulation.motion.provider.v1.SimulationErrorDetail"
+    is_read_only: false
+    is_motion: true
+    default_timeout_ms: 5000
+    max_timeout_ms: 30000
+    max_request_bytes: 262144
+    max_response_bytes: 65536
+  }];
+
+  CONTROL_METHOD_GO_HOME = 8 [(nervus.ipc.v1.method_meta) = {
+    method_id: 8
+    required_permission: "gazebo.simulation.motion.provider.permission.control"
+    risk_class: RISK_CLASS_PHYSICAL_CONTROL
+    requires_control_lease: true
+    returns_operation: false
+    needs_user_confirmation: false
+    request_type: "gazebo.simulation.motion.provider.v1.GoHomeRequest"
+    response_type: "gazebo.simulation.motion.provider.v1.JointMotionReceipt"
+    error_detail_type: "gazebo.simulation.motion.provider.v1.SimulationErrorDetail"
+    is_read_only: false
+    is_motion: true
+    default_timeout_ms: 5000
+    max_timeout_ms: 30000
+    max_request_bytes: 4096
+    max_response_bytes: 65536
+  }];
+
+  CONTROL_METHOD_STOP_MOTION = 9 [(nervus.ipc.v1.method_meta) = {
+    method_id: 9
+    required_permission: "gazebo.simulation.motion.provider.permission.control"
+    risk_class: RISK_CLASS_PHYSICAL_CONTROL
+    requires_control_lease: true
+    returns_operation: false
+    needs_user_confirmation: false
+    request_type: "gazebo.simulation.motion.provider.v1.StopMotionRequest"
+    response_type: "gazebo.simulation.motion.provider.v1.JointMotionReceipt"
+    error_detail_type: "gazebo.simulation.motion.provider.v1.SimulationErrorDetail"
+    is_read_only: false
+    is_motion: true
+    default_timeout_ms: 2000
+    max_timeout_ms: 10000
+    max_request_bytes: 4096
+    max_response_bytes: 65536
+  }];
+
+  CONTROL_METHOD_STOP_ALL_MOTION = 10 [(nervus.ipc.v1.method_meta) = {
+    method_id: 10
+    required_permission: "gazebo.simulation.motion.provider.permission.control"
+    risk_class: RISK_CLASS_PHYSICAL_CONTROL
+    requires_control_lease: true
+    returns_operation: false
+    needs_user_confirmation: false
+    request_type: "gazebo.simulation.motion.provider.v1.StopAllMotionRequest"
+    response_type: "gazebo.simulation.motion.provider.v1.JointMotionReceipt"
+    error_detail_type: "gazebo.simulation.motion.provider.v1.SimulationErrorDetail"
+    is_read_only: false
+    is_motion: true
+    default_timeout_ms: 3000
+    max_timeout_ms: 10000
+    max_request_bytes: 1024
+    max_response_bytes: 65536
+  }];
+}
+
+enum ControlEvent {
+  CONTROL_EVENT_UNSPECIFIED = 0;
+
+  CONTROL_EVENT_JOINT_STATE_CHANGED = 1 [(nervus.ipc.v1.event_meta) = {
+    event_id: 1
+    required_permission: "gazebo.simulation.motion.provider.permission.query"
+    risk_class: RISK_CLASS_NORMAL
+    delivery_class: DELIVERY_CLASS_STATE
+    payload_type: "gazebo.simulation.motion.provider.v1.JointState"
+    max_payload_bytes: 65536
+    max_events_per_second: 20
+  }];
+
+  CONTROL_EVENT_COMMAND_REJECTED = 2 [(nervus.ipc.v1.event_meta) = {
+    event_id: 2
+    required_permission: "gazebo.simulation.motion.provider.permission.control"
+    risk_class: RISK_CLASS_NORMAL
+    delivery_class: DELIVERY_CLASS_RELIABLE
+    payload_type: "gazebo.simulation.motion.provider.v1.CommandRejected"
+    max_payload_bytes: 16384
+    max_events_per_second: 20
+  }];
+}
+
+enum WorldResetMode {
+  WORLD_RESET_MODE_UNSPECIFIED = 0;
+  WORLD_RESET_MODE_ALL = 1;
+  WORLD_RESET_MODE_TIME_ONLY = 2;
+  WORLD_RESET_MODE_MODELS_ONLY = 3;
+}
+
+message PauseRequest {
+  uint64 world_generation = 1;
+}
+
+message ResumeRequest {
+  uint64 world_generation = 1;
+}
+
+message StepRequest {
+  uint64 world_generation = 1;
+  uint32 iterations = 2;
+}
+
+message ResetWorldRequest {
+  uint64 world_generation = 1;
+  WorldResetMode mode = 2;
+}
+
+message WorldControlResult {
+  SimulationStatus status = 1;
+}
+
+message JointPositionCommand {
+  string model = 1;
+  string joint = 2;
+  uint32 axis = 3;
+  double position = 4;
+}
+
+message SetJointPositionRequest {
+  uint64 world_generation = 1;
+  JointPositionCommand command = 2;
+}
+
+message SetJointPositionsRequest {
+  uint64 world_generation = 1;
+  repeated JointPositionCommand commands = 2;
+}
+
+// JointCommandReceipt confirms bounded validation and submission to Gazebo
+// Transport. It does not claim that the physical simulation reached the target.
+message JointCommandReceipt {
+  uint64 world_generation = 1;
+  uint64 command_sequence = 2;
+  uint32 submitted_commands = 3;
+  bool feedback_available = 4;
+}
+
+message JointTrajectoryPoint {
+  repeated double positions = 1;
+  int64 time_from_start_nanos = 2;
+}
+
+message SetJointTrajectoryRequest {
+  uint64 world_generation = 1;
+  string model = 2;
+  string joint_group = 3;
+  repeated JointTrajectoryPoint points = 4;
+}
+
+message GoHomeRequest {
+  uint64 world_generation = 1;
+  string model = 2;
+  string joint_group = 3;
+  string home_state = 4;
+}
+
+message StopMotionRequest {
+  uint64 world_generation = 1;
+  string model = 2;
+  string joint_group = 3;
+}
+
+message StopAllMotionRequest {
+  uint64 world_generation = 1;
+}
+
+message JointMotionReceipt {
+  uint64 world_generation = 1;
+  uint64 command_sequence = 2;
+  uint64 motion_id = 3;
+  uint32 controlled_joints = 4;
+  bool accepted = 5;
+  bool feedback_available = 6;
+  bool converged = 7;
+}
+
+message CommandRejected {
+  uint64 world_generation = 1;
+  uint64 command_sequence = 2;
+  uint32 command_index = 3;
+  SimulationErrorReason reason = 4;
+  string model = 5;
+  string joint = 6;
+  uint32 axis = 7;
+}

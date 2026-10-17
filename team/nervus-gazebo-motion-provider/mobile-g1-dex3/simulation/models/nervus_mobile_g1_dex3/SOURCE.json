@@ -1,0 +1,21 @@
+{
+    "upstream":  "https://github.com/unitreerobotics/unitree_ros.git",
+    "commit":  "daadf41ee9afce8f90fdc09a98506012691fa122",
+    "source":  "robots/g1_description/g1_29dof_with_hand_rev_1_0.urdf",
+    "license":  "BSD-3-Clause",
+    "generated_model":  "nervus_mobile_g1_dex3",
+    "upper_body_joint_count":  31,
+    "wheel_joint_count":  2,
+    "copied_mesh_count":  35,
+    "base_drive":  "gazebo_jetty_diff_drive",
+    "command_topic":  "/model/nervus_mobile_g1_dex3/cmd_vel",
+    "command_message_type":  "gz.msgs.Twist",
+    "wheel_odometry_topic":  "/model/nervus_mobile_g1_dex3/wheel_odometry",
+    "odometry_3d_topic":  "/model/nervus_mobile_g1_dex3/odometry",
+    "wheel_separation_m":  0.61,
+    "wheel_radius_m":  0.12,
+    "max_linear_velocity_mps":  0.35,
+    "max_reverse_velocity_mps":  0.25,
+    "max_angular_velocity_radps":  0.6,
+    "controller_mode":  "bounded_joint_position_velocity_command"
+}

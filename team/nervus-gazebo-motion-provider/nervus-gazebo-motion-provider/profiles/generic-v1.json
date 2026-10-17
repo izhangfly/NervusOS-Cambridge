@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "resource_slots": [
+    {
+      "stable_role": "simulation.world.main",
+      "resource_type": "gazebo.simulation.motion.provider.resource.world",
+      "interface_id": "gazebo.simulation.motion.provider.control",
+      "interface_major": 1
+    },
+    {
+      "stable_role": "base.main",
+      "resource_type": "nervus.resource.motion.base",
+      "interface_id": "nervus.interface.motion.base",
+      "interface_major": 1
+    },
+    {
+      "stable_role": "arm.left",
+      "resource_type": "nervus.resource.manipulator.arm",
+      "interface_id": "nervus.interface.manipulator.arm",
+      "interface_major": 1
+    },
+    {
+      "stable_role": "arm.right",
+      "resource_type": "nervus.resource.manipulator.arm",
+      "interface_id": "nervus.interface.manipulator.arm",
+      "interface_major": 1
+    }
+  ],
+  "profiles": []
+}

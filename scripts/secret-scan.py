@@ -103,8 +103,10 @@ def main() -> int:
         for h in hosts:
             if h in blob:
                 bad.append((path, blob[:blob.index(h)].count(b"\n") + 1, "the server's address", "…"))
-        if b"\0" in blob[:8192]:
-            continue  # binary: only the address check applies
+        try:
+            blob.decode("utf-8")
+        except UnicodeDecodeError:
+            continue  # binary (meshes, models, images): only the address check applies; its bytes are not text
         for label, rx in patterns:
             for m in rx.finditer(blob):
                 bad.append((path, blob[:m.start()].count(b"\n") + 1, label, mask(m.group(0).decode("utf-8", "replace"))))

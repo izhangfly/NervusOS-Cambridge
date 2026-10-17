@@ -1,0 +1,15 @@
+/bin/
+/build/
+/native/build*/
+/out/
+/coverage/
+*.o
+*.obj
+*.a
+*.so
+*.dll
+*.exe
+*.test
+*.prof
+.idea/
+.vscode/

@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "resource_slots": [
+    {
+      "stable_role": "simulation.world.main",
+      "resource_type": "gazebo.simulation.motion.provider.resource.world",
+      "interface_id": "gazebo.simulation.motion.provider.control",
+      "interface_major": 1
+    },
+    {
+      "stable_role": "base.main",
+      "resource_type": "nervus.resource.motion.base",
+      "interface_id": "nervus.interface.motion.base",
+      "interface_major": 1
+    },
+    {
+      "stable_role": "arm.left",
+      "resource_type": "nervus.resource.manipulator.arm",
+      "interface_id": "nervus.interface.manipulator.arm",
+      "interface_major": 1
+    },
+    {
+      "stable_role": "arm.right",
+      "resource_type": "nervus.resource.manipulator.arm",
+      "interface_id": "nervus.interface.manipulator.arm",
+      "interface_major": 1
+    }
+  ],
+  "profiles": [
+    {
+      "schema_version": 1,
+      "profile_id": "gazebo.nao.fixed.v1",
+      "description": "Fixed-torso NAO compatibility profile for private joint-position control only.",
+      "matcher": {
+        "exact_name": "nervus_nao"
+      },
+      "frames": [
+        {
+          "role": "base",
+          "name": "Torso"
+        }
+      ],
+      "joint_groups": [
+        {
+          "role": "all_joints",
+          "joints": [
+            {"role": "head_pitch", "name": "HeadPitch", "axis": 0, "position_tolerance_rad": 0.01},
+            {"role": "head_yaw", "name": "HeadYaw", "axis": 0, "position_tolerance_rad": 0.01},
+            {"role": "left_ankle_pitch", "name": "LAnklePitch", "axis": 0, "position_tolerance_rad": 0.01},
+            {"role": "left_ankle_roll", "name": "LAnkleRoll", "axis": 0, "position_tolerance_rad": 0.01},
+            {"role": "left_elbow_roll", "name": "LElbowRoll", "axis": 0, "position_tolerance_rad": 0.01},
+            {"role": "left_elbow_yaw", "name": "LElbowYaw", "axis": 0, "position_tolerance_rad": 0.01},
+            {"role": "left_hip_pitch", "name": "LHipPitch", "axis": 0, "position_tolerance_rad": 0.01},
+            {"role": "left_hip_roll", "name": "LHipRoll", "axis": 0, "position_tolerance_rad": 0.01},
+            {"role": "left_hip_yaw_pitch", "name": "LHipYawPitch", "axis": 0, "position_tolerance_rad": 0.01},
+            {"role": "left_knee_pitch", "name": "LKneePitch", "axis": 0, "position_tolerance_rad": 0.01},
+            {"role": "left_shoulder_pitch", "name": "LShoulderPitch", "axis": 0, "position_tolerance_rad": 0.01},
+            {"role": "left_shoulder_roll", "name": "LShoulderRoll", "axis": 0, "position_tolerance_rad": 0.01},
+            {"role": "left_wrist_yaw", "name": "LWristYaw", "axis": 0, "position_tolerance_rad": 0.01},
+            {"role": "right_ankle_pitch", "name": "RAnklePitch", "axis": 0, "position_tolerance_rad": 0.01},
+            {"role": "right_ankle_roll", "name": "RAnkleRoll", "axis": 0, "position_tolerance_rad": 0.01},
+            {"role": "right_elbow_roll", "name": "RElbowRoll", "axis": 0, "position_tolerance_rad": 0.01},
+            {"role": "right_elbow_yaw", "name": "RElbowYaw", "axis": 0, "position_tolerance_rad": 0.01},
+            {"role": "right_hip_pitch", "name": "RHipPitch", "axis": 0, "position_tolerance_rad": 0.01},
+            {"role": "right_hip_roll", "name": "RHipRoll", "axis": 0, "position_tolerance_rad": 0.01},
+            {"role": "right_hip_yaw_pitch", "name": "RHipYawPitch", "axis": 0, "position_tolerance_rad": 0.01},
+            {"role": "right_knee_pitch", "name": "RKneePitch", "axis": 0, "position_tolerance_rad": 0.01},
+            {"role": "right_shoulder_pitch", "name": "RShoulderPitch", "axis": 0, "position_tolerance_rad": 0.01},
+            {"role": "right_shoulder_roll", "name": "RShoulderRoll", "axis": 0, "position_tolerance_rad": 0.01},
+            {"role": "right_wrist_yaw", "name": "RWristYaw", "axis": 0, "position_tolerance_rad": 0.01}
+          ]
+        }
+      ],
+      "command_bindings": [
+        {
+          "role": "joint_position",
+          "adapter": "ADAPTER_KIND_JOINT_POSITION",
+          "topic_template": "/model/{model}/joint/{joint}/{axis}/cmd_pos",
+          "message_type": "gz.msgs.Double"
+        }
+      ],
+      "state_sources": [
+        {
+          "role": "joint_state",
+          "kind": "STATE_SOURCE_KIND_JOINT_STATE",
+          "topic_template": "/world/{world}/model/{model}/joint_state",
+          "message_type": "gz.msgs.Model",
+          "optional": true
+        }
+      ],
+      "home_states": [
+        {
+          "role": "neutral",
+          "joint_group": "all_joints",
+          "position_rad": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        }
+      ],
+      "capabilities": [
+        {
+          "role": "compatibility.joints",
+          "semantic": "CAPABILITY_SEMANTIC_COMPATIBILITY_JOINT_CONTROL",
+          "adapter": "ADAPTER_KIND_JOINT_POSITION",
+          "interface_id": "gazebo.simulation.motion.provider.control",
+          "interface_major": 1,
+          "resource_roles": ["simulation.world.main"],
+          "joint_group": "all_joints",
+          "command_binding": "joint_position",
+          "state_sources": ["joint_state"],
+          "base_frame": "base",
+          "home_state": "neutral",
+          "limits": {
+            "max_joint_velocity_rad_s": 2.0,
+            "position_tolerance_rad": 0.01,
+            "settle_time_ms": 250
+          }
+        }
+      ]
+    }
+  ]
+}

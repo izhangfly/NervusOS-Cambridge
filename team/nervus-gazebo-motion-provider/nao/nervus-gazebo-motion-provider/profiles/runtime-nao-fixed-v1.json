@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "world": "nervus_home",
+  "instances": [
+    {
+      "profile_id": "gazebo.nao.fixed.v1",
+      "model_name": "nervus_nao",
+      "capability_resources": [
+        {
+          "capability_role": "compatibility.joints",
+          "resource_role": "simulation.world.main"
+        }
+      ]
+    }
+  ],
+  "discovery_timeout_ms": 5000,
+  "request_timeout_ms": 5000,
+  "log_level": "info"
+}

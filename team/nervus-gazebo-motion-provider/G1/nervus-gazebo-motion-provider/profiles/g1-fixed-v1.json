@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "resource_slots": [
+    {"stable_role":"simulation.world.main","resource_type":"gazebo.simulation.motion.provider.resource.world","interface_id":"gazebo.simulation.motion.provider.control","interface_major":1},
+    {"stable_role":"base.main","resource_type":"nervus.resource.motion.base","interface_id":"nervus.interface.motion.base","interface_major":1},
+    {"stable_role":"arm.left","resource_type":"nervus.resource.manipulator.arm","interface_id":"nervus.interface.manipulator.arm","interface_major":1},
+    {"stable_role":"arm.right","resource_type":"nervus.resource.manipulator.arm","interface_id":"nervus.interface.manipulator.arm","interface_major":1}
+  ],
+  "profiles": [
+    {
+      "schema_version": 1,
+      "profile_id": "gazebo.unitree.g1.mode15.fixed.v1",
+      "description": "Fixed-pelvis Unitree G1 mode 15 profile with bounded 29-joint position control and mandatory joint-state feedback.",
+      "matcher": {"exact_name":"nervus_g1"},
+      "frames": [
+        {"role":"base","name":"pelvis"},
+        {"role":"left_tcp","name":"left_wrist_yaw_link"},
+        {"role":"right_tcp","name":"right_wrist_yaw_link"}
+      ],
+      "joint_groups": [
+        {
+          "role": "all_joints",
+          "joints": [
+            {"role":"left_hip_pitch","name":"left_hip_pitch_joint","axis":0,"has_position_limits":true,"lower_position_rad":-2.5307,"upper_position_rad":2.8798,"max_velocity_rad_s":20,"position_tolerance_rad":0.01},
+            {"role":"left_hip_roll","name":"left_hip_roll_joint","axis":0,"has_position_limits":true,"lower_position_rad":-0.5236,"upper_position_rad":2.9671,"max_velocity_rad_s":20,"position_tolerance_rad":0.01},
+            {"role":"left_hip_yaw","name":"left_hip_yaw_joint","axis":0,"has_position_limits":true,"lower_position_rad":-2.7576,"upper_position_rad":2.7576,"max_velocity_rad_s":32,"position_tolerance_rad":0.01},
+            {"role":"left_knee","name":"left_knee_joint","axis":0,"has_position_limits":true,"lower_position_rad":-0.087267,"upper_position_rad":2.8798,"max_velocity_rad_s":20,"position_tolerance_rad":0.01},
+            {"role":"left_ankle_pitch","name":"left_ankle_pitch_joint","axis":0,"has_position_limits":true,"lower_position_rad":-0.87267,"upper_position_rad":0.5236,"max_velocity_rad_s":30,"position_tolerance_rad":0.01},
+            {"role":"left_ankle_roll","name":"left_ankle_roll_joint","axis":0,"has_position_limits":true,"lower_position_rad":-0.2618,"upper_position_rad":0.2618,"max_velocity_rad_s":30,"position_tolerance_rad":0.01},
+            {"role":"right_hip_pitch","name":"right_hip_pitch_joint","axis":0,"has_position_limits":true,"lower_position_rad":-2.5307,"upper_position_rad":2.8798,"max_velocity_rad_s":20,"position_tolerance_rad":0.01},
+            {"role":"right_hip_roll","name":"right_hip_roll_joint","axis":0,"has_position_limits":true,"lower_position_rad":-2.9671,"upper_position_rad":0.5236,"max_velocity_rad_s":20,"position_tolerance_rad":0.01},
+            {"role":"right_hip_yaw","name":"right_hip_yaw_joint","axis":0,"has_position_limits":true,"lower_position_rad":-2.7576,"upper_position_rad":2.7576,"max_velocity_rad_s":32,"position_tolerance_rad":0.01},
+            {"role":"right_knee","name":"right_knee_joint","axis":0,"has_position_limits":true,"lower_position_rad":-0.087267,"upper_position_rad":2.8798,"max_velocity_rad_s":20,"position_tolerance_rad":0.01},
+            {"role":"right_ankle_pitch","name":"right_ankle_pitch_joint","axis":0,"has_position_limits":true,"lower_position_rad":-0.87267,"upper_position_rad":0.5236,"max_velocity_rad_s":30,"position_tolerance_rad":0.01},
+            {"role":"right_ankle_roll","name":"right_ankle_roll_joint","axis":0,"has_position_limits":true,"lower_position_rad":-0.2618,"upper_position_rad":0.2618,"max_velocity_rad_s":30,"position_tolerance_rad":0.01},
+            {"role":"waist_yaw","name":"waist_yaw_joint","axis":0,"has_position_limits":true,"lower_position_rad":-2.618,"upper_position_rad":2.618,"max_velocity_rad_s":32,"position_tolerance_rad":0.01},
+            {"role":"waist_roll","name":"waist_roll_joint","axis":0,"has_position_limits":true,"lower_position_rad":-0.52,"upper_position_rad":0.52,"max_velocity_rad_s":30,"position_tolerance_rad":0.01},
+            {"role":"waist_pitch","name":"waist_pitch_joint","axis":0,"has_position_limits":true,"lower_position_rad":-0.52,"upper_position_rad":0.52,"max_velocity_rad_s":30,"position_tolerance_rad":0.01},
+            {"role":"left_shoulder_pitch","name":"left_shoulder_pitch_joint","axis":0,"has_position_limits":true,"lower_position_rad":-3.0892,"upper_position_rad":2.6704,"max_velocity_rad_s":37,"position_tolerance_rad":0.005},
+            {"role":"left_shoulder_roll","name":"left_shoulder_roll_joint","axis":0,"has_position_limits":true,"lower_position_rad":-1.5882,"upper_position_rad":2.2515,"max_velocity_rad_s":37,"position_tolerance_rad":0.005},
+            {"role":"left_shoulder_yaw","name":"left_shoulder_yaw_joint","axis":0,"has_position_limits":true,"lower_position_rad":-2.618,"upper_position_rad":2.618,"max_velocity_rad_s":37,"position_tolerance_rad":0.005},
+            {"role":"left_elbow","name":"left_elbow_joint","axis":0,"has_position_limits":true,"lower_position_rad":-1.0472,"upper_position_rad":2.0944,"max_velocity_rad_s":37,"position_tolerance_rad":0.005},
+            {"role":"left_wrist_roll","name":"left_wrist_roll_joint","axis":0,"has_position_limits":true,"lower_position_rad":-1.972222054,"upper_position_rad":1.972222054,"max_velocity_rad_s":37,"position_tolerance_rad":0.005},
+            {"role":"left_wrist_pitch","name":"left_wrist_pitch_joint","axis":0,"has_position_limits":true,"lower_position_rad":-1.614429558,"upper_position_rad":1.614429558,"max_velocity_rad_s":27,"position_tolerance_rad":0.005},
+            {"role":"left_wrist_yaw","name":"left_wrist_yaw_joint","axis":0,"has_position_limits":true,"lower_position_rad":-1.614429558,"upper_position_rad":1.614429558,"max_velocity_rad_s":27,"position_tolerance_rad":0.005},
+            {"role":"right_shoulder_pitch","name":"right_shoulder_pitch_joint","axis":0,"has_position_limits":true,"lower_position_rad":-3.0892,"upper_position_rad":2.6704,"max_velocity_rad_s":37,"position_tolerance_rad":0.005},
+            {"role":"right_shoulder_roll","name":"right_shoulder_roll_joint","axis":0,"has_position_limits":true,"lower_position_rad":-2.2515,"upper_position_rad":1.5882,"max_velocity_rad_s":37,"position_tolerance_rad":0.005},
+            {"role":"right_shoulder_yaw","name":"right_shoulder_yaw_joint","axis":0,"has_position_limits":true,"lower_position_rad":-2.618,"upper_position_rad":2.618,"max_velocity_rad_s":37,"position_tolerance_rad":0.005},
+            {"role":"right_elbow","name":"right_elbow_joint","axis":0,"has_position_limits":true,"lower_position_rad":-1.0472,"upper_position_rad":2.0944,"max_velocity_rad_s":37,"position_tolerance_rad":0.005},
+            {"role":"right_wrist_roll","name":"right_wrist_roll_joint","axis":0,"has_position_limits":true,"lower_position_rad":-1.972222054,"upper_position_rad":1.972222054,"max_velocity_rad_s":37,"position_tolerance_rad":0.005},
+            {"role":"right_wrist_pitch","name":"right_wrist_pitch_joint","axis":0,"has_position_limits":true,"lower_position_rad":-1.614429558,"upper_position_rad":1.614429558,"max_velocity_rad_s":27,"position_tolerance_rad":0.005},
+            {"role":"right_wrist_yaw","name":"right_wrist_yaw_joint","axis":0,"has_position_limits":true,"lower_position_rad":-1.614429558,"upper_position_rad":1.614429558,"max_velocity_rad_s":27,"position_tolerance_rad":0.005}
+          ]
+        }
+      ],
+      "command_bindings": [
+        {"role":"joint_position","adapter":"ADAPTER_KIND_JOINT_POSITION","topic_template":"/model/{model}/joint/{joint}/{axis}/cmd_pos","message_type":"gz.msgs.Double"}
+      ],
+      "state_sources": [
+        {"role":"joint_state","kind":"STATE_SOURCE_KIND_JOINT_STATE","topic_template":"/world/{world}/model/{model}/joint_state","message_type":"gz.msgs.Model","optional":false}
+      ],
+      "home_states": [
+        {"role":"neutral","joint_group":"all_joints","position_rad":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]}
+      ],
+      "capabilities": [
+        {
+          "role":"compatibility.joints",
+          "semantic":"CAPABILITY_SEMANTIC_COMPATIBILITY_JOINT_CONTROL",
+          "adapter":"ADAPTER_KIND_JOINT_POSITION",
+          "interface_id":"gazebo.simulation.motion.provider.control",
+          "interface_major":1,
+          "resource_roles":["simulation.world.main"],
+          "joint_group":"all_joints",
+          "command_binding":"joint_position",
+          "state_sources":["joint_state"],
+          "base_frame":"base",
+          "home_state":"neutral",
+          "limits":{"max_joint_velocity_rad_s":2.0,"position_tolerance_rad":0.005,"settle_time_ms":250}
+        }
+      ]
+    }
+  ]
+}
