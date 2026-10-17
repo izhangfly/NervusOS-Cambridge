@@ -68,6 +68,19 @@ TQDM = re.compile(r"Training:[^\r\n]*?(\d+)/(\d+) \[")
 MARK = re.compile(r"===== supervisor launch #\d+ [^\n]*? — ([^\n]*?) =====")
 
 
+def build_summary(data: Path) -> dict | None:
+    """What a policy was trained on: episodes and frames per source after the edits (from BUILD_REPORT.json)."""
+    rep = read_json(data / "BUILD_REPORT.json")
+    if not rep:
+        return None
+    per: dict[str, dict] = {}
+    for r in rep.get("report", []):
+        s = per.setdefault(r["source"], {"episodes": 0, "frames": 0})
+        s["episodes"] += 1
+        s["frames"] += r["kept"]
+    return {"episodes": rep.get("episodes"), "frames": rep.get("frames"), "fps": rep.get("fps"), "by_source": per}
+
+
 class Stopping(Exception):
     """The worker is shutting down."""
 
@@ -385,7 +398,7 @@ class Worker:
                "publish_meta": {"job": jid, "datasets": job["datasets"], "dataset": job["datasets"][0],
                                 "cameras": job.get("cameras"), "task": job.get("task"), "fps": fps,
                                 "units": {"joints": "deg", "gripper": "mm"}, "role": job.get("role", "trained"),
-                                "parent": parent, "contract": CONTRACT_VERSION, **facts}}
+                                "parent": parent, "contract": CONTRACT_VERSION, "build": build_summary(data), **facts}}
         write_json(cfg_path, cfg)
         self.state = "training"
         self.set_status(jid, state="training", phase="training", target=job["steps"])
@@ -795,7 +808,7 @@ class Worker:
                 shutil.copytree(c / "pretrained_model", tmp)
                 meta = dict(facts, job=jid, datasets=datasets, dataset=datasets[0], cameras=cams, task=cmeta.get("task"),
                             fps=fps, units={"joints": "deg", "gripper": "mm"}, role="candidate", parent=cur,
-                            contract=CONTRACT_VERSION, step=int(c.name),
+                            contract=CONTRACT_VERSION, step=int(c.name), build=build_summary(data),
                             gate={"metrics": metrics, "decision": decisions[c.name]}, created=now())
                 (tmp / "nervus_policy.json").write_text(json.dumps(meta, indent=2))
                 tmp.rename(SHARED / "policies" / name)

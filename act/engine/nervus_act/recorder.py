@@ -305,6 +305,12 @@ class Recorder:
                         with self.lock:
                             self.saved = self.dataset.meta.total_episodes
                         msg = f"Saved episode {self.saved}: {n} frames ({n / self.fps:.1f} s) in {time.time() - t0:.1f} s."
+                        joints = np.array([row["joints"] for row in trace], dtype=np.float64) if trace else np.zeros((0, 7))
+                        moved = float(np.abs(np.diff(joints[:, :6], axis=0)).sum()) if len(joints) > 1 else 0.0
+                        if moved < 5.0:
+                            # A stiff arm (teach mode off) records a take of nothing; it would teach "stand still".
+                            msg += (f" It barely moved ({moved:.0f}° in total): was the arm in teach mode? "
+                                    "Exclude it on the Data tab if it is not a real demonstration.")
                 except Exception as e:
                     traceback.print_exc()
                     msg = f"Save failed: {e}"

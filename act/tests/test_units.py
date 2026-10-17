@@ -67,6 +67,26 @@ def test_trim_edits_are_bounded_and_ordered():
         raise AssertionError("a trim ending before it starts was accepted")
 
 
+def test_a_policy_is_loadable_only_when_every_file_has_arrived():
+    import json
+    import tempfile
+    st = _store(Path(tempfile.mkdtemp()))
+    d = st.root / "policies" / "p1"
+    d.mkdir(parents=True)
+    (d / "model.safetensors").write_text("x")
+    (d / "config.json").write_text("{}")
+    p = {x["name"]: x for x in st.policies()}["p1"]
+    assert not p["complete"] and "nervus_policy.json" in p["missing"], p
+    (d / "nervus_policy.json").write_text("{}")
+    for pj, sf in (("policy_preprocessor.json", "pre.safetensors"), ("policy_postprocessor.json", "post.safetensors")):
+        (d / pj).write_text(json.dumps({"steps": [{"state_file": sf}]}))
+    p = {x["name"]: x for x in st.policies()}["p1"]
+    assert not p["complete"] and set(p["missing"]) == {"pre.safetensors", "post.safetensors"}, p
+    (d / "pre.safetensors").write_text("x")
+    (d / "post.safetensors").write_text("x")
+    assert {x["name"]: x for x in st.policies()}["p1"]["complete"]
+
+
 if __name__ == "__main__":
     import inspect
     fails = 0

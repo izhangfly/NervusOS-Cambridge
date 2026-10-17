@@ -107,18 +107,34 @@ class Store:
         return out
 
     # ---- policies ----
+    # Everything LeRobot needs to load a policy, plus the facts the runner uses. Syncthing delivers a policy file
+    # by file, so the folder can appear on the Dell before its last file does.
+    POLICY_FILES = ("config.json", "model.safetensors", "nervus_policy.json",
+                    "policy_preprocessor.json", "policy_postprocessor.json")
+
+    def policy_missing(self, d: Path) -> list[str]:
+        missing = [f for f in self.POLICY_FILES if not (d / f).is_file()]
+        for pj in ("policy_preprocessor.json", "policy_postprocessor.json"):
+            for step in (read_json(d / pj, {}) or {}).get("steps", []):
+                sf = step.get("state_file")
+                if sf and not (d / sf).is_file():
+                    missing.append(sf)
+        return missing
+
     def policies(self) -> list[dict]:
         cur = (read_json(self.root / "policies" / "CURRENT.json") or {}).get("name")
         out = []
         for d in sorted((self.root / "policies").iterdir()):
             if not d.is_dir() or d.name.startswith("."):
                 continue
-            if not ((d / "model.safetensors").is_file() and (d / "config.json").is_file()):
+            if not ((d / "model.safetensors").is_file() or (d / "config.json").is_file()):
                 continue
-            meta = read_json(d / "nervus_policy.json", {})
-            out.append({"name": d.name, "current": d.name == cur, **{k: meta.get(k) for k in (
+            meta = read_json(d / "nervus_policy.json", {}) or {}
+            missing = self.policy_missing(d)
+            out.append({"name": d.name, "current": d.name == cur, "complete": not missing, "missing": missing[:5],
+                        **{k: meta.get(k) for k in (
                 "dataset", "datasets", "job", "step", "cameras", "chunk_size", "role", "loss", "created", "parent",
-                "gate", "task")}})
+                "gate", "task", "build")}})
         out.sort(key=lambda p: (p.get("created") or "", p["name"]), reverse=True)
         return out
 

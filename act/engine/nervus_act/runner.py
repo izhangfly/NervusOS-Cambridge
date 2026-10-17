@@ -431,9 +431,12 @@ class Runner:
         with self.lock:
             if self.state in ("running", "moving", "loading"):
                 raise RuntimeError(f"not while {self.state}")
-            names = [p["name"] for p in self.store.policies()]
-            if name not in names:  # only names we list: never join arbitrary input onto a path
+            listed = {p["name"]: p for p in self.store.policies()}
+            if name not in listed:  # only names we list: never join arbitrary input onto a path
                 raise RuntimeError(f"unknown policy {name!r}")
+            if not listed[name]["complete"]:
+                raise RuntimeError(f"{name} is incomplete (missing {', '.join(listed[name]['missing'])}): if the Mac "
+                                   "published it, it is still arriving, so try again in a minute")
             self.state, self.message = "loading", f"Loading {name}…"
         try:
             facts = self._load_facts(name)
