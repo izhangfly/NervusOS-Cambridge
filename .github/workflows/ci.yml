@@ -15,8 +15,8 @@ jobs:
       matrix:
         module: [src/nervus-ipc, src/nervud, src/nervus-system-server]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: ${{ matrix.module }}/go.mod
           cache-dependency-path: ${{ matrix.module }}/go.sum
@@ -27,8 +27,8 @@ jobs:
     name: ACT unit tests
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - run: pip install numpy
@@ -38,6 +38,6 @@ jobs:
     name: secret scan
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       # The relay server's address is checked before every push on the machine that pushes; CI is not told it.
       - run: NERVUS_SCAN_HOSTS=none python3 scripts/secret-scan.py --all
