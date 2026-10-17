@@ -38,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -183,7 +184,8 @@ fun Field(
             BasicTextField(
                 value = value, onValueChange = onChange, enabled = enabled, singleLine = true,
                 textStyle = Sci.body.copy(color = if (enabled) Sci.text else Sci.dim),
-                cursorBrush = SolidColor(Sci.accent), modifier = Modifier.fillMaxWidth(),
+                cursorBrush = SolidColor(Sci.accent),
+                modifier = Modifier.fillMaxWidth().onFocusChanged { Typing.active = it.isFocused },
             )
         }
     }
