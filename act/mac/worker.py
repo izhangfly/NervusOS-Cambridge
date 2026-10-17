@@ -354,7 +354,9 @@ class Worker:
         are rarely the ones that work on the robot."""
         k = max(1, math.ceil(steps * 0.6 / save_freq / 4))
         every = save_freq * k
-        return every, max(every, steps - 3 * every)
+        # From the second half, and never past the end: a run shorter than one publishing interval still
+        # publishes its final checkpoint.
+        return every, min(steps, max(every, steps - 3 * every, steps // 2))
 
     def train(self, job: dict, wdir: Path, data: Path, facts: dict, keep_on_stop: bool = True):
         jid = job["id"]
