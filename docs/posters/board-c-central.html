@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<!--
+  ============================================================
+  BOARD ③ (CENTRAL) — Nervus OS ecosystem / business pitch board
+  60 × 90 cm PORTRAIT · dark "premium tech launch" style.
+  Palette: near-black ground + dark red / bright red / amber / bright yellow.
+  Straight corners, generous spacing, varied type. No icons/emoji.
+  Content lives in the top ~2/3; bottom ~1/3 left blank (subtle glow only)
+  for the team to add sponsors / members / tracks.
+  Chinese copy run through humanizer-zh (direct, human, no AI tells).
+  ============================================================
+-->
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nervus OS — Android for Robots · ADVX 2026</title>
+<style>
+  @page { size: 600mm 900mm; margin: 0; }
+
+  :root {
+    --ground:   #0B0A0A;
+    --ground-2: #141010;
+    --panel:    #17110F;
+    --panel-line: #3A2A22;
+
+    --red-deep: #7A0E0E;
+    --red:      #E23B2E;
+    --amber:    #C8860B;
+    --yellow:   #FFD23E;
+
+    --ink:      #F4ECDE;   /* warm off-white body */
+    --ink-dim:  #B7A992;
+    --ink-mute: #7C6F60;
+    --light-bridge: #EEF1F4;  /* the flanking light boards' ground */
+
+    --han:  "Hiragino Sans GB", "Heiti SC", "STHeiti", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+    --sans: "Helvetica Neue", "Arial", var(--han);
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+
+    --u: 1.4px;   /* print: 1mm */
+
+    --h-hero:  calc(75 * var(--u));
+    --h-mark:  calc(30 * var(--u));
+    --h-tag:   calc(18 * var(--u));
+    --h-intro: calc(9.5 * var(--u));
+    --h-sec:   calc(13 * var(--u));
+    --h-sec-en:calc(6.5 * var(--u));
+    --h-body:  calc(7.6 * var(--u));
+    --h-hub:   calc(15 * var(--u));
+    --h-node:  calc(8.5 * var(--u));
+    --h-nbody: calc(5.6 * var(--u));
+    --h-money: calc(6 * var(--u));
+    --h-micro: calc(5.2 * var(--u));
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: #201a17; font-family: var(--han); color: var(--ink); -webkit-font-smoothing: antialiased; }
+
+  .board {
+    position: relative;
+    width: calc(600 * var(--u));
+    height: calc(900 * var(--u));
+    margin: 20px auto;
+    background:
+      radial-gradient(120% 55% at 50% 100%, rgba(226,59,46,0.14), transparent 60%),
+      radial-gradient(90% 40% at 15% 88%, rgba(200,134,11,0.12), transparent 65%),
+      radial-gradient(90% 40% at 85% 82%, rgba(122,14,14,0.28), transparent 62%),
+      linear-gradient(180deg, #0A0908 0%, var(--ground) 42%, #0E0B0A 100%);
+    box-shadow: 0 0 80px rgba(0,0,0,0.6);
+    overflow: hidden;
+    padding: calc(20 * var(--u)) calc(48 * var(--u)) calc(16 * var(--u));
+  }
+
+  /* Long-side gradient bands: feather the black toward the light ground of the
+     flanking boards, with a warm red/amber glow inboard. Purely decorative. */
+  .edge { position: absolute; top: 0; bottom: 0; width: calc(88 * var(--u)); pointer-events: none; z-index: 0; }
+  .edge.l { left: 0;  background:
+      linear-gradient(90deg, rgba(238,241,244,0.55) 0%, rgba(238,241,244,0.12) 12%, transparent 46%),
+      linear-gradient(90deg, rgba(226,59,46,0.28) 0%, rgba(200,134,11,0.16) 34%, transparent 80%); }
+  .edge.r { right: 0; background:
+      linear-gradient(270deg, rgba(238,241,244,0.55) 0%, rgba(238,241,244,0.12) 12%, transparent 46%),
+      linear-gradient(270deg, rgba(226,59,46,0.28) 0%, rgba(200,134,11,0.16) 34%, transparent 80%); }
+  /* thin bright rule just inboard of each feather */
+  .edge.l::after, .edge.r::after { content:""; position:absolute; top: calc(60*var(--u)); bottom: calc(60*var(--u)); width: calc(1*var(--u));
+    background: linear-gradient(180deg, transparent, rgba(255,210,62,0.5), rgba(226,59,46,0.5), transparent); }
+  .edge.l::after { right: 0; } .edge.r::after { left: 0; }
+
+  .content { position: relative; z-index: 2; }
+
+  /* ---------- MASTHEAD ---------- */
+  .mast { display: grid; grid-template-columns: 1fr auto; align-items: start; }
+  .wordmark { font-family: var(--sans); font-weight: 800; font-size: var(--h-mark); letter-spacing: -0.5px;
+    color: var(--yellow); text-shadow: 0 0 calc(6*var(--u)) rgba(255,210,62,0.35); line-height: 1; }
+  .wordmark .os { color: var(--red); }
+  .hero { font-family: var(--han); font-weight: 800; font-size: calc(var(--h-hero) * 0.64); line-height: 0.98; white-space: nowrap;
+    color: var(--yellow); letter-spacing: calc(1*var(--u));
+    -webkit-text-stroke: calc(1.4*var(--u)) var(--yellow);
+    text-shadow: 0 0 calc(14*var(--u)) rgba(255,210,62,0.28), 0 0 calc(4*var(--u)) rgba(226,59,46,0.35);
+    margin-top: calc(6*var(--u)); }
+  .hero .b { color: var(--red); -webkit-text-stroke-color: var(--red); }
+  .tag { font-family: var(--han); font-weight: 700; font-size: var(--h-tag); color: var(--amber);
+    margin-top: calc(7*var(--u)); letter-spacing: calc(0.5*var(--u)); }
+  .tag .en { font-family: var(--mono); font-weight: 600; font-size: calc(0.62em); color: var(--ink-mute); }
+  .intro { font-family: var(--han); font-size: var(--h-intro); color: var(--ink); line-height: 1.55; margin-top: calc(9*var(--u));
+    max-width: calc(430*var(--u)); border-left: calc(3*var(--u)) solid var(--red); padding-left: calc(9*var(--u)); }
+  .intro strong { color: var(--yellow); font-weight: 700; }
+
+  .mast-right { display: flex; flex-direction: column; align-items: flex-end; gap: calc(4*var(--u)); }
+  .qr img { width: calc(68*var(--u)); height: calc(68*var(--u)); background: #fff; padding: calc(2.5*var(--u));
+    border: calc(2*var(--u)) solid var(--yellow); display: block; }
+  .qr-cap { font-family: var(--mono); font-size: var(--h-micro); color: var(--amber); letter-spacing: 0.5px; }
+  .kicker { font-family: var(--mono); font-size: var(--h-micro); color: var(--ink-mute); letter-spacing: 2px; text-transform: uppercase; text-align: right; }
+
+  /* ---------- SECTION HEADINGS ---------- */
+  .sec-h { display: flex; align-items: baseline; gap: calc(6*var(--u)); margin: calc(14*var(--u)) 0 calc(6*var(--u)); }
+  .sec-h .bar { width: calc(9*var(--u)); height: calc(9*var(--u)); background: var(--yellow); flex-shrink: 0; align-self: center; }
+  .sec-h .t { font-family: var(--sans); font-weight: 800; font-size: var(--h-sec); color: var(--yellow); letter-spacing: 0.5px; }
+  .sec-h .en { font-family: var(--mono); font-weight: 600; font-size: var(--h-sec-en); color: var(--ink-mute); letter-spacing: 1px; text-transform: uppercase; }
+
+  /* ---------- MIND MAP ---------- */
+  .mindmap { position: relative; height: calc(262 * var(--u)); margin-top: calc(4*var(--u)); }
+  .mm-lines { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; }
+  .mm-grid { position: absolute; inset: 0; z-index: 1; display: grid;
+    grid-template-columns: calc(168*var(--u)) 1fr calc(168*var(--u));
+    grid-template-rows: 1fr 1fr 1fr; align-items: center; gap: calc(6*var(--u)) calc(10*var(--u)); }
+
+  .hub { grid-column: 2; grid-row: 1 / 4; justify-self: center; align-self: center;
+    width: calc(150*var(--u)); text-align: center;
+    background: linear-gradient(160deg, var(--red) 0%, var(--red-deep) 100%);
+    border: calc(2*var(--u)) solid var(--yellow); padding: calc(11*var(--u)) calc(8*var(--u));
+    box-shadow: 0 0 calc(26*var(--u)) rgba(226,59,46,0.55); }
+  .hub .hub-mark { font-family: var(--sans); font-weight: 800; font-size: var(--h-hub); color: #fff; line-height: 1; }
+  .hub .hub-mark .os { color: var(--yellow); }
+  .hub .hub-sub { font-family: var(--han); font-weight: 700; font-size: var(--h-node); color: var(--yellow); margin-top: calc(3*var(--u)); }
+  .hub .hub-note { font-family: var(--mono); font-size: var(--h-micro); color: #FBE6C8; margin-top: calc(3*var(--u)); line-height: 1.35; }
+
+  .node { background: var(--panel); border: calc(1.5*var(--u)) solid var(--panel-line);
+    border-top: calc(4*var(--u)) solid var(--hue, var(--amber)); padding: calc(6*var(--u)) calc(8*var(--u)); }
+  .node.left  { justify-self: end; }
+  .node.right { justify-self: start; }
+  .node.n-users { --hue: var(--yellow); }
+  .node.n-indie { --hue: var(--amber); }
+  .node.n-us    { --hue: var(--red); }
+  .node.n-buyers{ --hue: var(--yellow); }
+  .node.n-corp  { --hue: var(--amber); }
+  .node.n-oem   { --hue: var(--red); }
+  .node .n-t { font-family: var(--sans); font-weight: 800; font-size: var(--h-node); color: var(--ink); line-height: 1.1; }
+  .node .n-t .en { font-family: var(--mono); font-weight: 600; font-size: calc(0.62em); color: var(--ink-mute); }
+  .node .n-d { font-family: var(--han); font-size: var(--h-nbody); color: var(--ink-dim); line-height: 1.36; margin-top: calc(2.5*var(--u)); }
+  .node .n-eg { font-family: var(--han); font-size: var(--h-micro); color: var(--ink-mute); line-height: 1.3; margin-top: calc(2*var(--u)); }
+  .node .money { display: inline-block; font-family: var(--han); font-weight: 700; font-size: var(--h-money); color: #0B0A0A;
+    background: var(--yellow); padding: calc(1*var(--u)) calc(4*var(--u)); margin-top: calc(3*var(--u)); }
+  .node .money .y { font-family: var(--mono); font-weight: 800; margin-right: calc(1.5*var(--u)); }
+
+  /* OEM logos row */
+  .oem-logos { display: flex; flex-wrap: wrap; gap: calc(4*var(--u)); margin-top: calc(3*var(--u)); }
+  .oem-item { display: flex; flex-direction: column; align-items: center; gap: calc(1.5*var(--u)); }
+  .oem-logo { width: calc(34*var(--u)); height: calc(20*var(--u)); background: #241a16; border: calc(1*var(--u)) dashed var(--amber);
+    display: flex; align-items: center; justify-content: center; }
+  .oem-logo span { font-family: var(--mono); font-size: calc(3.4*var(--u)); color: var(--ink-mute); letter-spacing: 0.5px; }
+  .oem-name { font-family: var(--han); font-weight: 700; font-size: var(--h-micro); color: var(--ink); text-align: center; line-height: 1.1; }
+  .oem-name .en { display:block; font-family: var(--mono); font-weight: 600; font-size: calc(3.6*var(--u)); color: var(--ink-mute); }
+  .oem-more { font-family: var(--han); font-size: var(--h-micro); color: var(--amber); align-self: center; line-height: 1.3; }
+
+  /* ---------- BUSINESS + PROSPECTS ---------- */
+  .biz-grid { display: grid; grid-template-columns: 1fr 1fr; gap: calc(12*var(--u)); margin-top: calc(2*var(--u)); }
+  .biz p { font-family: var(--han); font-size: var(--h-body); color: var(--ink); line-height: 1.62; }
+  .biz p + p { margin-top: calc(5*var(--u)); }
+  .biz strong { color: var(--yellow); font-weight: 700; }
+  .biz .em-red { color: var(--red); font-weight: 700; }
+  .biz .num { font-family: var(--mono); color: var(--amber); font-weight: 700; }
+
+  /* reserved blank zone marker (very subtle) */
+  .reserved { position: absolute; left: 0; right: 0; bottom: calc(20*var(--u)); text-align: center;
+    font-family: var(--mono); font-size: var(--h-micro); color: rgba(184,169,146,0.35); letter-spacing: 3px; z-index: 2; }
+
+  /* ---------- TRACTION (this week) ---------- */
+  .traction { margin-top: calc(11*var(--u)); border-top: calc(2*var(--u)) solid var(--amber); padding-top: calc(8*var(--u)); }
+  .tr-title { font-family: var(--sans); font-weight: 800; font-size: var(--h-sec); color: var(--yellow); }
+  .tr-title .en { font-family: var(--mono); font-weight: 600; font-size: var(--h-sec-en); color: var(--ink-mute); text-transform: uppercase; letter-spacing: 1px; margin-left: calc(3*var(--u)); }
+  .tr-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: calc(6*var(--u)); margin-top: calc(7*var(--u)); align-items: start; }
+  .ts { text-align: center; border-left: calc(2*var(--u)) solid var(--red); padding: calc(1*var(--u)) calc(4*var(--u)); }
+  .ts:first-child { border-left: none; }
+  .tn { font-family: var(--sans); font-weight: 800; font-size: calc(46*var(--u)); color: var(--yellow); line-height: 0.9;
+    text-shadow: 0 0 calc(12*var(--u)) rgba(255,210,62,0.3); }
+  .tn .plus { color: var(--red); font-size: 0.62em; }
+  .tl { font-family: var(--han); font-weight: 600; font-size: var(--h-nbody); color: var(--ink-dim); line-height: 1.32; margin-top: calc(4*var(--u)); }
+  .tr-statement { text-align: center; font-family: var(--han); font-weight: 800; font-size: var(--h-tag); color: var(--yellow);
+    background: linear-gradient(160deg, var(--red), var(--red-deep)); border: calc(2*var(--u)) solid var(--yellow);
+    padding: calc(8*var(--u)) calc(12*var(--u)); margin-top: calc(9*var(--u)); line-height: 1.42; }
+
+  /* PRINT: 1 --u = 1mm so the board fills the 600×900mm page exactly. */
+  @media print {
+    html, body { background: #0B0A0A; }
+    .board { margin: 0; box-shadow: none; page-break-after: avoid; }
+    :root { --u: 1mm; }
+  }
+</style>
+</head>
+<body>
+
+<div class="board">
+  <div class="edge l"></div>
+  <div class="edge r"></div>
+
+  <div class="content">
+
+    <!-- ===== MASTHEAD ===== -->
+    <div class="mast">
+      <div>
+        <div class="wordmark">Nervus<span class="os">OS</span></div>
+        <div class="hero">The robot's<br><span class="b">Android</span></div>
+        <div class="tag">One system for every robot &nbsp; <span class="en">one OS · any body</span></div>
+        <div class="intro">We've developed a universal robot operating system, connecting those who make robots, those who buy robots, and those who write applications. Robots from different brands can now install apps on demand, just like smartphones. A single robot can also have<strong> a bunch of custom features</strong>—just like Android did for smartphones.</div>
+      </div>
+      <div class="mast-right">
+        <div class="kicker">ADVX 2026<br>Board ② · Business</div>
+        <div class="qr"><img alt="github.com/Nervus-OS" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAlAAAAJQAQMAAAB7LMgGAAAABlBMVEULOkf///8iTK+9AAACUklEQVR42u3dQW4CMQwF0Kj3vzNtVVBix6EswLB4I1EYKK9SFl+OZ5KOy9OOgUKhUCgUCoW6UiMcv+e3x7j+qfnq9jp/53L5Gk87UCgUqjj+EmgJsHE7Xz9d313P5nfkFQqF6sqrWFutn8XfmT/jd+QVCoV6R17lWiqnlbxCoVCflFfxea2q1nmjvEKhUP15lXMo11N5pqh/hUKh3pNX8Z3HHlkx7CgU6vV5td3kkJIrzhPH4XYKw45CoXryKidUnBPme7JybSavUChUZ17l7no8y6mWryPKKxQK1ZNXOY/idcL/726QVygUqiev4nN8vc4Tq/6V+SAKhXpHXtXdqVh9Ve+qr1AoVN98MM4JY3Kd72PQv0KhUP15VVVQsRdf9a7iymfDjkKh+uqrmVZxjhivGa611SoYdhQK9fq8inco5HWCpx1ksmLYUShUR17tdVOcE8bVzbkyU1+hUKjevMpXCKs1OtWKHf0rFArVl1c5n/bM2u973ystw45CoTryKu+FvO+MPGuxOIOcuWbYUShUx3wwZtXetdr3Rs45J69QKFRnXlVZtd+3UO0wKq9QKFRnXu3d9FNPq+q7yysUCtWVV9U6nFxt7Xmmf4VCoXrz6jTTi72tejcs/SsUCtVbX+0Jlquv0z6k1g+iUKj++WC18vmUWFWfy7CjUKievMp1U8yreR5XDtqvD4VCfUZe5VzKVZj1OCgU6jPyqpr/3ettGXYUCtWTV+ddRvcVOPl/T8grFArVl1ePvFP9py/zQRQK1ZtXzzlQKBQKhUKhUD/HNyiZnYi1txZkAAAAAElFTkSuQmCC"></div>
+        <div class="qr-cap">github.com/Nervus-OS</div>
+      </div>
+    </div>
+
+    <!-- ===== MIND MAP ===== -->
+    <div class="sec-h"><span class="bar"></span><span class="t">Six Types of People in the Ecosystem</span><span class="en">who's in the ecosystem &nbsp;·&nbsp; ¥ = money</span></div>
+    <div class="mindmap">
+      <svg class="mm-lines" viewBox="0 0 100 100" preserveAspectRatio="none">
+        <g fill="none" stroke="#C8860B" stroke-width="1.1" vector-effect="non-scaling-stroke" opacity="0.7">
+          <line x1="50" y1="50" x2="18" y2="17"/>
+          <line x1="50" y1="50" x2="18" y2="50"/>
+          <line x1="50" y1="50" x2="18" y2="83"/>
+          <line x1="50" y1="50" x2="82" y2="17"/>
+          <line x1="50" y1="50" x2="82" y2="50"/>
+          <line x1="50" y1="50" x2="82" y2="83"/>
+        </g>
+      </svg>
+      <div class="mm-grid">
+        <!-- LEFT COLUMN -->
+        <div class="node left n-users" style="grid-column:1; grid-row:1;">
+          <div class="n-t">Personal User · C-end<span class="en"> consumers</span></div>
+          <div class="n-d">Use the home robot as a phone, install whatever is needed.</div>
+          <div class="n-eg">Companionship · Cleaning · Teaching Children · Rehabilitation</div>
+          <div class="money"><span class="y">¥</span>Store Commission · Subscription</div>
+        </div>
+        <div class="node left n-indie" style="grid-column:1; grid-row:2;">
+          <div class="n-t">Individual Developer<span class="en"> indie devs</span></div>
+          <div class="n-d">A single person can write an app for a robot.</div>
+          <div class="n-eg">Pet interaction · Fitness coach · Desktop assistant · Patrol script</div>
+          <div class="money"><span class="y">¥</span>App revenue sharing</div>
+        </div>
+        <div class="node left n-us" style="grid-column:1; grid-row:3;">
+          <div class="n-t">We · Platform<span class="en"> us</span></div>
+          <div class="n-d">Set standards, manage ecosystem, review applications. All money goes through this layer.</div>
+          <div class="n-eg">Team · Operations · Developer Relations · App Store</div>
+        </div>
+
+        <!-- HUB -->
+        <div class="hub">
+          <div class="hub-mark">Nervus<span class="os">OS</span></div>
+          <div class="hub-sub">Robot Application Ecosystem</div>
+          <div class="hub-note">A system<br>Connecting six types of people</div>
+        </div>
+
+        <!-- RIGHT COLUMN -->
+        <div class="node right n-buyers" style="grid-column:3; grid-row:1;">
+          <div class="n-t">Industry users<span class="en"> who buys to work</span></div>
+          <div class="n-d">People who buy robots to work.</div>
+          <div class="n-eg">Factory · Warehousing logistics · Mall guide · Patrol security · Scientific research education</div>
+          <div class="money"><span class="y">¥</span>Authorization · Service fee</div>
+        </div>
+        <div class="node right n-corp" style="grid-column:3; grid-row:2;">
+          <div class="n-t">Enterprise Developers<span class="en"> corporate devs</span></div>
+          <div class="n-d">Move your own software to the robot.</div>
+          <div class="n-eg">Teams like Kewoos, Midea, and Haier that make smart hardware</div>
+          <div class="money"><span class="y">¥</span>Authorization · Customization</div>
+        </div>
+        <div class="node right n-oem" style="grid-column:3; grid-row:3;">
+          <div class="n-t">OEM hardware makers<span class="en"> hardware makers</span></div>
+          <div class="n-d">People who make robots, pre-installed NervusOS at factory.</div>
+          <div class="oem-logos">
+            <div class="oem-item"><div class="oem-logo"><span>LOGO</span></div><div class="oem-name">AgileX<span class="en">In Use</span></div></div>
+            <div class="oem-item"><div class="oem-logo"><span>LOGO</span></div><div class="oem-name">Unitree<span class="en">In Use</span></div></div>
+            <div class="oem-more">+ DeepRobotics · Fourier · AgiBot · Kepler · …</div>
+          </div>
+          <div class="money"><span class="y">¥</span>Pre-installed Authorization · Split</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== BUSINESS MODEL ===== -->
+    <div class="sec-h"><span class="bar"></span><span class="t">How to make money</span><span class="en">the business model</span></div>
+    <div class="biz">
+      <p>We don't sell hardware. The body is handed over to the manufacturer, the application is handed over to the developers, and we only do the middle layer of the operating system—the money comes from <strong>application revenue sharing</strong> and <strong>factory pre-installation authorization</strong>. Traditional robots are one-time sales, and the relationship ends after the sale; with NervusOS installed, it can continuously grow new features, <span class="em-red">the money keeps flowing</span>. We help manufacturers who only do B-end reach consumers, turning one-time hardware business into a continuously growing software ecosystem.</p>
+    </div>
+
+    <!-- ===== TRACTION (3 days) ===== -->
+    <div class="traction">
+      <div class="tr-title">What have we verified in these three days <span class="en">traction · in 3 days</span></div>
+      <div class="tr-stats">
+        <div class="ts"><div class="tn">30<span class="plus">+</span></div><div class="tl">teams want to come<br>to write App for us</div></div>
+        <div class="ts"><div class="tn">4</div><div class="tl">Apps<br>are under development</div></div>
+        <div class="ts"><div class="tn">1</div><div class="tl">one<br>is about to launch</div></div>
+        <div class="ts"><div class="tn">2</div><div class="tl">Apps using RDK S100<br>running local vision/language large models</div></div>
+      </div>
+      <div class="tr-statement">Development chain, ecosystem chain, this week they are running smoothly —— not a single PPT page, but real people are writing things on it.</div>
+    </div>
+
+  </div>
+
+  <div class="reserved">↓ Leave blank below · Sponsor / Team ↓</div>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<!--
+  ============================================================
+  POSTER: Nervus OS — Four-Layer Portable Control Stack
+  ADVX 2026 · technical architecture poster for judges + investors
+  Built with posterly conventions (github.com/Chenruishuo/posterly):
+    measurement-driven --u canvas, @page size, print media override,
+    calc(N*var(--u)) sizing, identity mark, data-measure-role.
+  CUSTOM SKELETON (architecture flowchart, not a paper poster):
+    header → thesis bar → 4-layer stack HERO → apps → protocol/safety → footer
+
+  DESIGN DIRECTION
+    - Concept: "subway-map for a robot OS" — four color-coded layers stacked
+      vertically, joined by named bus PORTS, with a safety/arbiter rail riding
+      the full height. Reproduces + upgrades the team's existing NervusOS
+      diagram so the brand voice carries.
+    - Hero moment: the 4-layer control stack (loudest element; everything
+      else is quieter reference around it).
+    - Palette: the team's own per-layer hues (App purple / Nervus teal /
+      DimOS green / Hardware amber / Safety red). Layer color is a *semantic*
+      system here (like a transit map), not decoration.
+    - Voice: bilingual — Chinese headings/prose, English + mono technical terms.
+  CANVAS: 600mm × 900mm PORTRAIT (2:3). Print --u = 1mm so 600u/900u == 600/900 mm.
+  ============================================================
+-->
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="generator" content="posterly">
+<title>Nervus OS — Four-Layer Portable Control Stack · ADVX 2026</title>
+
+<style>
+  /* =========================================================
+     CANVAS — 600mm × 900mm PORTRAIT
+     Print: 1 --u = 1mm → 600u × 900u == 600mm × 900mm.
+     RETARGET: change @page size here AND .poster width/height below in sync.
+     ========================================================= */
+  @page { size: 600mm 900mm; margin: 0; }
+
+  :root {
+    /* ===== DESIGN TOKENS (only place color / font-size literals live) ===== */
+
+    /* Per-layer semantic hues — the team's existing NervusOS palette. */
+    --app:      #6E5A8C;   /* L1 Applications  */
+    --nervus:   #0F6E8C;   /* L2 Nervus OS     (primary accent / the star) */
+    --dimos:    #3F7A5E;   /* L3 DimOS         */
+    --hw:       #8A6A3F;   /* L4 Robots        */
+    --danger:   #B4453C;   /* safety / redline */
+    --hot-amber: #E8890C; --hot-red: #C0392B; --hot-yellow: #F5B301;  /* hardware highlight */
+
+    /* Primary accent = Nervus teal. */
+    --accent:        #0F6E8C;
+    --accent-deep:   #0B4E63;
+    --accent-light:  #E7F2F6;
+    --accent-soft:   #CFE4EC;
+    --accent-ink:    #FFFFFF;
+
+    /* Emphasis register ("★ key", flagship, ours). Warm brass, AA on white. */
+    --emph:          #B07E2B;
+    --emph-soft:     #FBF1DC;
+    --emph-ink:      #4A3410;
+
+    /* Text */
+    --text-primary:   #16202B;
+    --text-secondary: #4C5A66;
+    --text-muted:     #7C8A96;
+
+    /* Backgrounds */
+    --bg-page:        #EEF1F4;
+    --bg-card:        #FFFFFF;
+    --bg-card-tint:   #F6F8FA;
+    --bg-emphasis:    var(--accent-light);
+
+    /* Borders */
+    --border-soft:    #D3DBE2;
+    --border-strong:  var(--accent);
+
+    --bg-screen:      #232a31;
+
+    /* Base unit. Print: 1mm; screen preview: 1.5px. */
+    --u: 1.5px;
+
+    /* Font-size scale (9 steps), all in --u. */
+    --fs-1: calc(5.1 * var(--u));    /* micro label / chip     */
+    --fs-2: calc(6 * var(--u));    /* small caption          */
+    --fs-3: calc(7.2 * var(--u));  /* caption / table        */
+    --fs-4: calc(8.5 * var(--u));   /* body text              */
+    --fs-5: calc(9.8 * var(--u)); /* strong body / role     */
+    --fs-6: calc(13 * var(--u));   /* section title          */
+    --fs-7: calc(15.5 * var(--u));   /* layer name             */
+    --fs-8: calc(21 * var(--u));   /* stat number            */
+    --fs-9: calc(30 * var(--u));   /* main title             */
+
+    /* Fonts — Chinese leads with Hiragino Sans GB: PingFang SC is a macOS
+       "Reserved" font that headless Chrome matches by name but cannot render,
+       so it must NOT lead the stack (it would blank every CJK glyph with no
+       fallback). Hiragino/Heiti/STHeiti all render; PingFang/Noto/YaHei kept
+       as portability fallbacks for other machines. Mono = SF Mono. */
+    --han:  "Hiragino Sans GB", "Heiti SC", "STHeiti", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+    --sans: "Inter", "Helvetica Neue", var(--han);
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+
+    --shadow-screen: 0 0 60px rgba(0,0,0,0.5);
+    --shadow-card: 0 calc(1 * var(--u)) calc(4 * var(--u)) rgba(15,110,140,0.07);
+    --ps-mark-ink: var(--accent-deep);
+    --rs: 0;
+    /* ===== END DESIGN TOKENS ===== */
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  /* BASE DEFENSES — wrap & ink safety. */
+  p, li, dd, .body-text, .role, .caption, .section-title, .layer-role { text-wrap: pretty; }
+  .title, .thesis-line { text-wrap: balance; }
+
+  html, body {
+    background: var(--bg-screen);
+    font-family: var(--han);
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.5;
+  }
+
+  /* Poster container — exact print dimensions. */
+  .poster {
+    width: calc(600 * var(--u));
+    height: calc(900 * var(--u));
+    background: var(--bg-page);
+    background-image:
+      radial-gradient(ellipse at top left,     rgba(15,110,140,0.06), transparent 42%),
+      radial-gradient(ellipse at bottom right,  rgba(138,106,63,0.05), transparent 48%);
+    margin: 20px auto;
+    padding: calc(13 * var(--u)) calc(22 * var(--u)) calc(8 * var(--u));
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    gap: calc(4 * var(--u));
+    box-shadow: var(--shadow-screen);
+    position: relative;
+    overflow: hidden;
+  }
+  .poster::before {
+    content: "";
+    position: absolute; top: 0; left: 0; right: 0;
+    height: calc(7 * var(--u));
+    background: linear-gradient(90deg,
+      var(--app) 0%, var(--app) 25%,
+      var(--nervus) 25%, var(--nervus) 50%,
+      var(--dimos) 50%, var(--dimos) 75%,
+      var(--hw) 75%, var(--hw) 100%);
+  }
+
+  /* =========================== HEADER =========================== */
+  .header {
+    display: grid;
+    grid-template-columns: auto minmax(50%, 1fr) auto;
+    align-items: center;
+    gap: calc(12 * var(--u));
+    padding: calc(2 * var(--u)) calc(2 * var(--u)) calc(4 * var(--u));
+    border-bottom: calc(2 * var(--u)) solid var(--accent);
+  }
+  .venue-badge {
+    justify-self: start;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; min-width: calc(78 * var(--u));
+    border-right: calc(1 * var(--u)) solid var(--border-soft);
+    padding-right: calc(12 * var(--u));
+  }
+  .venue-badge .vb-venue { font-family: var(--sans); font-weight: 800; font-size: var(--fs-9);
+    color: var(--accent-deep); line-height: 0.95; letter-spacing: -1px; }
+  .venue-badge .vb-year  { font-family: var(--mono); font-size: var(--fs-4); color: var(--text-secondary);
+    margin-top: calc(3 * var(--u)); letter-spacing: 2px; }
+  .venue-badge .vb-tag   { font-family: var(--sans); font-size: var(--fs-2); color: var(--accent);
+    font-weight: 700; margin-top: calc(3 * var(--u)); letter-spacing: 1.5px; }
+
+  .title-block { text-align: center; min-width: 0; }
+  .title { font-family: var(--sans); font-weight: 800; font-size: var(--fs-9);
+    line-height: 1.0; color: var(--accent-deep); letter-spacing: -1px; }
+  .title .accent { color: var(--nervus); }
+  .title .reg { color: var(--emph); font-weight: 800; }
+  .subtitle { font-family: var(--han); font-weight: 600; font-size: var(--fs-5);
+    color: var(--text-primary); margin-top: calc(2 * var(--u)); }
+  .subtitle .en { font-family: var(--mono); font-weight: 600; color: var(--text-secondary);
+    font-size: var(--fs-3); }
+  .tagline { font-family: var(--han); font-size: var(--fs-3); color: var(--text-secondary);
+    margin-top: calc(2 * var(--u)); font-style: normal; }
+  .authors-line { font-family: var(--sans); font-size: var(--fs-2); color: var(--accent);
+    font-weight: 600; margin-top: calc(2.5 * var(--u)); }
+  .authors-line .aff { color: var(--text-secondary); font-weight: 400; display: block;
+    margin-top: calc(2 * var(--u)); font-size: var(--fs-2); font-family: var(--mono); }
+
+  .right-block { justify-self: end; display: flex; align-items: center; gap: calc(8 * var(--u)); }
+  .qr-block { display: flex; flex-direction: column; align-items: center; gap: calc(2 * var(--u)); }
+  .qr-block img { width: calc(72 * var(--u)); height: calc(72 * var(--u));
+    border: calc(2 * var(--u)) solid var(--accent); border-radius: calc(3 * var(--u) * var(--rs));
+    background: white; padding: calc(2 * var(--u)); }
+  .qr-label { font-family: var(--mono); font-size: var(--fs-1); color: var(--accent); font-weight: 600;
+    letter-spacing: 0.5px; }
+
+  /* =========================== BODY =========================== */
+  .body { display: flex; flex-direction: column; gap: calc(4 * var(--u)); min-height: 0; }
+  /* Each band takes its natural height (never shrink/overlap a sibling). The
+     canvas is sized so the natural total fits; overflow would clip, not stack. */
+  .body > * { flex: 0 0 auto; min-width: 0; }
+  .band { display: flex; flex-direction: column; }
+  .band-head { margin-bottom: calc(2.5 * var(--u)); }
+
+  /* Section eyebrow used atop each band. */
+  .eyebrow { font-family: var(--mono); font-size: var(--fs-2); letter-spacing: 2px;
+    text-transform: uppercase; color: var(--text-muted); }
+  .eyebrow .zh { font-family: var(--han); letter-spacing: 1px; color: var(--text-secondary);
+    font-weight: 600; }
+
+  /* --- generic card / band --- */
+  .card { background: var(--bg-card); border-radius: calc(5 * var(--u) * var(--rs));
+    border: calc(1 * var(--u)) solid var(--border-soft); box-shadow: var(--shadow-card);
+    position: relative; }
+
+  /* ===== THESIS BAR ===== */
+  .thesis {
+    display: grid; grid-template-columns: 1fr auto; align-items: stretch;
+    gap: calc(12 * var(--u));
+    background: var(--accent-deep);
+    background-image: radial-gradient(ellipse at left, rgba(255,255,255,0.06), transparent 60%);
+    border-radius: calc(5 * var(--u) * var(--rs));
+    padding: calc(5 * var(--u)) calc(12 * var(--u));
+    color: #fff;
+  }
+  .thesis-eyebrow { font-family: var(--mono); font-size: var(--fs-2); letter-spacing: 2px;
+    text-transform: uppercase; color: var(--accent-soft); }
+  .thesis-line { font-family: var(--han); font-weight: 700; font-size: var(--fs-5);
+    line-height: 1.24; margin-top: calc(2 * var(--u)); }
+  .thesis-line .hot { color: #FFD98A; }
+  .thesis-line .en { display: block; font-family: var(--mono); font-weight: 500;
+    font-size: var(--fs-3); color: var(--accent-soft); margin-top: calc(3 * var(--u)); letter-spacing: 0.3px; }
+  .stat-row { display: grid; grid-template-columns: repeat(4, auto); gap: calc(2 * var(--u)) calc(11 * var(--u));
+    align-items: center; padding-left: calc(12 * var(--u)); border-left: calc(1 * var(--u)) solid rgba(255,255,255,0.18); }
+  .stat { text-align: center; }
+  .stat .n { font-family: var(--sans); font-weight: 800; font-size: var(--fs-8); line-height: 1; color: #fff; }
+  .stat .n .em { color: #FFD98A; }
+  .stat .l { font-family: var(--mono); font-size: var(--fs-1); color: var(--accent-soft);
+    letter-spacing: 0.5px; margin-top: calc(2 * var(--u)); }
+  .stat .l .zh { font-family: var(--han); display: block; color: #EAF3F6; font-size: var(--fs-2); font-weight: 600; }
+
+  /* ===== 4-LAYER STACK (HERO) ===== */
+  .stack-wrap { display: grid; grid-template-columns: 1fr calc(118 * var(--u)); gap: calc(6 * var(--u)); min-height: 0; }
+  .stack-flow { display: flex; flex-direction: column; gap: 0; min-width: 0; }
+
+  .layer { background: var(--bg-card); border: calc(1 * var(--u)) solid var(--border-soft);
+    border-left: calc(6 * var(--u)) solid var(--hue); border-radius: calc(4 * var(--u) * var(--rs));
+    box-shadow: var(--shadow-card);
+    display: grid; grid-template-columns: calc(126 * var(--u)) 1fr; gap: calc(8 * var(--u));
+    padding: calc(2.5 * var(--u)) calc(11 * var(--u)); }
+  .layer.l-app    { --hue: var(--app); }
+  .layer.l-nervus { --hue: var(--nervus); border-color: var(--nervus); border-width: calc(2 * var(--u));
+    border-left-width: calc(8 * var(--u)); background: var(--accent-light); }
+  .layer.l-dimos  { --hue: var(--dimos); }
+  .layer.l-hw     { --hue: var(--hw); }
+
+  .layer .l-rail { border-right: calc(1 * var(--u)) dashed var(--border-soft); padding-right: calc(9 * var(--u));
+    display: flex; flex-direction: column; gap: calc(2 * var(--u)); }
+  .l-tier { font-family: var(--mono); font-size: var(--fs-1); letter-spacing: 1.5px; font-weight: 700; color: var(--hue); }
+  .l-name { font-family: var(--sans); font-weight: 800; font-size: var(--fs-6); line-height: 1.05; color: var(--text-primary); }
+  .l-name .en { display: block; font-family: var(--mono); font-size: var(--fs-2); font-weight: 600;
+    color: var(--text-secondary); letter-spacing: 0; margin-top: calc(0.5 * var(--u)); }
+  .layer-role { font-size: var(--fs-2); color: var(--text-secondary); line-height: 1.32; margin-top: calc(1 * var(--u)); }
+  .l-repo { font-family: var(--mono); font-size: var(--fs-1); color: var(--text-muted); line-height: 1.35;
+    margin-top: auto; padding-top: calc(2 * var(--u)); }
+
+  .l-cells { display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: calc(5 * var(--u)); align-content: center; }
+  .cell { background: var(--bg-card-tint); border: calc(1 * var(--u)) solid var(--border-soft);
+    border-radius: calc(2 * var(--u) * var(--rs)); padding: calc(1.5 * var(--u)) calc(4 * var(--u)); }
+  .cell h4 { font-family: var(--han); font-size: var(--fs-3); font-weight: 700; color: var(--text-primary); line-height: 1.2; }
+  .cell h4 .en { display: block; font-family: var(--mono); font-size: var(--fs-1); font-weight: 600;
+    color: var(--text-muted); letter-spacing: 0; margin-top: calc(0.5 * var(--u)); }
+  /* This board gives the stack the whole page, so per-cell descriptions are
+     restored — the layers can breathe (print guide: distance-first, generous
+     whitespace, one focal message per board). */
+  .cell p { display: block; font-size: var(--fs-1); color: var(--text-secondary);
+    line-height: 1.28; margin-top: calc(1 * var(--u)); }
+  .cell.key { border-color: var(--hue); border-left: calc(3 * var(--u)) solid var(--hue);
+    background: color-mix(in srgb, var(--hue) 8%, var(--bg-card-tint)); }
+  .cell.key h4 { color: var(--hue); }
+
+  /* Bus port connectors between layers. */
+  .port { display: grid; grid-template-columns: calc(126 * var(--u)) 1fr; align-items: center;
+    gap: calc(8 * var(--u)); padding: calc(0.25 * var(--u)) calc(9 * var(--u)); }
+  .port .p-arrow { justify-self: center; color: var(--accent); font-size: var(--fs-5); font-weight: 700; line-height: 1; }
+  .port .p-body { display: flex; align-items: baseline; flex-wrap: wrap; gap: calc(2 * var(--u)) calc(4 * var(--u)); }
+  .port .p-name { font-family: var(--mono); font-size: var(--fs-2); font-weight: 700; color: var(--accent-deep);
+    letter-spacing: 0.5px; }
+  .port .p-name .zh { font-family: var(--han); }
+
+  /* chips */
+  .chip { font-family: var(--mono); font-size: var(--fs-1); padding: calc(0.5 * var(--u)) calc(3 * var(--u));
+    border: calc(1 * var(--u)) solid var(--border-soft); border-radius: calc(2 * var(--u) * var(--rs));
+    background: var(--bg-card); color: var(--text-secondary); white-space: nowrap; line-height: 1.45; }
+  .chip.zh { font-family: var(--han); }
+  .chip.hot { border-color: var(--accent); color: var(--accent); }
+  .chip.wire { border-color: var(--hw); color: var(--hw); }
+  .chip.warm { border-color: var(--emph); color: var(--emph); }
+
+  /* Arbiter rail (rides full stack height). */
+  .arbiter-rail { background: var(--bg-card); border: calc(1 * var(--u)) solid var(--border-soft);
+    border-top: calc(4 * var(--u)) solid var(--danger); border-radius: calc(4 * var(--u) * var(--rs));
+    box-shadow: var(--shadow-card); padding: calc(6 * var(--u)) calc(7 * var(--u));
+    display: flex; flex-direction: column; }
+  .arbiter-rail .ar-title { font-family: var(--sans); font-weight: 800; font-size: var(--fs-5); color: var(--danger); line-height: 1.1; }
+  .arbiter-rail .ar-title .en { display: block; font-family: var(--mono); font-size: var(--fs-1); font-weight: 600;
+    color: var(--text-muted); margin-top: calc(1 * var(--u)); letter-spacing: 0.5px; }
+  .arbiter-rail .ar-sub { font-size: var(--fs-2); color: var(--text-secondary); line-height: 1.4;
+    margin-top: calc(3 * var(--u)); }
+  .prio { display: flex; flex-direction: column; gap: calc(2 * var(--u)); margin-top: calc(5 * var(--u)); }
+  .lvl { font-family: var(--mono); font-size: var(--fs-2); padding: calc(2 * var(--u)) calc(4 * var(--u));
+    border: calc(1 * var(--u)) solid var(--border-soft); border-radius: calc(2 * var(--u) * var(--rs));
+    background: var(--bg-card-tint); display: flex; justify-content: space-between; align-items: center; }
+  .lvl .lv-n { font-weight: 800; }
+  .lvl.s3 { border-color: var(--danger); color: var(--danger); font-weight: 700; background: #FBEDEC; }
+  .lvl.s2 { border-color: var(--accent); color: var(--accent-deep); font-weight: 700; }
+  .lvl.s1 { color: var(--text-secondary); }
+  .lvl.s0 { color: var(--text-muted); }
+  .prio-gt { text-align: center; color: var(--text-muted); font-family: var(--mono); font-size: var(--fs-1); line-height: 0.6; }
+  .ar-mech { margin-top: calc(5 * var(--u)); padding-top: calc(4 * var(--u)); border-top: calc(1 * var(--u)) dashed var(--border-soft); }
+  .ar-redline { margin-top: auto; padding-top: calc(4 * var(--u)); border-top: calc(1 * var(--u)) dashed var(--border-soft); }
+  .rl-tag { font-family: var(--mono); font-size: var(--fs-1); font-weight: 700; color: var(--danger); letter-spacing: 0.5px; }
+  .rl-tag.am { color: var(--accent-deep); }
+  .ar-mech p, .ar-redline p { font-size: var(--fs-2); color: var(--text-secondary); line-height: 1.38; margin-top: calc(1.5 * var(--u)); }
+  .ar-mech code, .ar-redline code { font-family: var(--mono); font-size: 0.92em; color: var(--accent-deep); }
+  .ar-mech strong, .ar-redline strong { color: var(--text-primary); }
+
+  /* ===== APPS BAND ===== */
+  .band-head { display: flex; align-items: baseline; gap: calc(6 * var(--u)); margin-bottom: calc(1 * var(--u)); }
+  .band-head .bh-title { font-family: var(--sans); font-weight: 800; font-size: var(--fs-6); color: var(--accent-deep); }
+  .band-head .bh-title .en { font-family: var(--mono); font-weight: 600; font-size: var(--fs-3); color: var(--text-secondary); }
+
+  .apps-grid { display: grid; grid-template-columns: 1fr 1fr; gap: calc(6 * var(--u)); }
+  .app-card { background: var(--bg-card); border: calc(1 * var(--u)) solid var(--border-soft);
+    border-radius: calc(5 * var(--u) * var(--rs)); box-shadow: var(--shadow-card);
+    padding: calc(4 * var(--u)) calc(8 * var(--u)); position: relative; display: flex; flex-direction: column; }
+  .app-card.flagship { border-left: calc(6 * var(--u)) solid var(--app); }
+  .app-card.partner  { border-left: calc(6 * var(--u)) solid var(--emph); }
+  .app-tag { position: absolute; top: calc(6 * var(--u)); right: calc(8 * var(--u));
+    font-family: var(--mono); font-size: var(--fs-1); font-weight: 700; letter-spacing: 0.5px;
+    padding: calc(1 * var(--u)) calc(4 * var(--u)); border-radius: calc(2 * var(--u) * var(--rs)); }
+  .app-tag.a1 { background: color-mix(in srgb, var(--app) 14%, #fff); color: var(--app); }
+  .app-tag.a2 { background: var(--emph-soft); color: var(--emph-ink); }
+  .app-title { font-family: var(--han); font-weight: 800; font-size: var(--fs-5); color: var(--text-primary);
+    line-height: 1.2; padding-right: calc(46 * var(--u)); }
+  .app-title .en { display: block; font-family: var(--mono); font-size: var(--fs-2); font-weight: 600;
+    color: var(--text-secondary); margin-top: calc(1 * var(--u)); }
+  .app-desc { font-size: var(--fs-3); color: var(--text-secondary); line-height: 1.34; margin-top: calc(2 * var(--u)); }
+  .app-desc .kw { color: var(--accent); font-weight: 700; }
+  .app-desc .kwp { color: var(--app); font-weight: 700; }
+
+  /* dataflow chain */
+  .flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: calc(1.5 * var(--u)); margin: calc(2.5 * var(--u)) 0; }
+  .flow .step { flex: 1 1 auto; min-width: 0; background: var(--bg-card-tint);
+    border: calc(1 * var(--u)) solid var(--border-soft); border-radius: calc(2 * var(--u) * var(--rs));
+    padding: calc(2 * var(--u)) calc(3 * var(--u)); text-align: center; display: flex; flex-direction: column; justify-content: center; }
+  .flow .step .s-name { font-family: var(--han); font-weight: 700; font-size: var(--fs-2); color: var(--text-primary); line-height: 1.15; }
+  .flow .step .s-sub { font-family: var(--mono); font-size: var(--fs-1); color: var(--text-muted); line-height: 1.2; margin-top: calc(0.5 * var(--u)); }
+  .flow .step.hw { border-color: var(--hw); }
+  .flow .step.os { border-color: var(--nervus); background: var(--accent-light); }
+  .flow .arrow { align-self: center; color: var(--accent); font-family: var(--mono); font-weight: 700; font-size: var(--fs-3); flex: 0 0 auto; }
+
+  .callout { border-radius: calc(3 * var(--u) * var(--rs)); padding: calc(2.5 * var(--u)) calc(7 * var(--u));
+    font-size: var(--fs-3); line-height: 1.32; margin-top: calc(2.5 * var(--u)); }
+  .callout.accent { background: var(--accent); color: #fff; }
+  .callout.accent strong { color: #FFD98A; }
+  .callout.emph { background: var(--emph-soft); color: var(--emph-ink); border-left: calc(4 * var(--u)) solid var(--emph); }
+  .callout.emph strong { color: var(--emph-ink); }
+  .app-meta { font-family: var(--mono); font-size: var(--fs-1); color: var(--text-muted); margin-top: calc(3 * var(--u)); }
+
+  /* ===== EXTENSIBILITY STRIP ===== */
+  .extend { background: var(--bg-card); border: calc(1 * var(--u)) solid var(--border-soft);
+    border-left: calc(6 * var(--u)) solid var(--dimos); border-radius: calc(5 * var(--u) * var(--rs));
+    box-shadow: var(--shadow-card); padding: calc(5 * var(--u)) calc(10 * var(--u)); }
+  .extend-grid { display: grid; grid-template-columns: auto 1fr; gap: calc(12 * var(--u)); align-items: center; }
+  .extend-head .eh-t { font-family: var(--sans); font-weight: 800; font-size: var(--fs-5); color: var(--dimos); line-height: 1.1; }
+  .extend-head .eh-t .en { display: block; font-family: var(--mono); font-size: var(--fs-2); font-weight: 600; color: var(--text-secondary); margin-top: calc(1 * var(--u)); }
+  .steps4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: calc(4 * var(--u)); }
+  .st4 { background: var(--bg-card-tint); border: calc(1 * var(--u)) solid var(--border-soft);
+    border-top: calc(2 * var(--u)) solid var(--dimos); border-radius: calc(2 * var(--u) * var(--rs));
+    padding: calc(2.5 * var(--u)) calc(4 * var(--u)); }
+  .st4 .n { font-family: var(--mono); font-weight: 800; font-size: var(--fs-4); color: var(--dimos); }
+  .st4 .t { font-family: var(--han); font-size: var(--fs-2); font-weight: 700; color: var(--text-primary); line-height: 1.25; margin-top: calc(0.5 * var(--u)); }
+  .st4 .t .en { display: block; font-family: var(--mono); font-weight: 600; font-size: var(--fs-1); color: var(--text-muted); }
+
+  /* ===== BOTTOM BAND (proof | market) ===== */
+  .detail-grid, .bottom-grid { display: grid; grid-template-columns: 1fr 1fr; gap: calc(6 * var(--u)); }
+  .detail { background: var(--bg-card); border: calc(1 * var(--u)) solid var(--border-soft);
+    border-radius: calc(5 * var(--u) * var(--rs)); box-shadow: var(--shadow-card); padding: calc(4 * var(--u)) calc(9 * var(--u)); }
+  .detail.safety { border-top: calc(3 * var(--u)) solid var(--danger); }
+  .detail.proof  { border-left: calc(6 * var(--u)) solid var(--nervus); }
+  .detail.market { border-left: calc(6 * var(--u)) solid var(--dimos); }
+  .market-roles { font-size: var(--fs-3); color: var(--text-secondary); line-height: 1.4; margin-top: calc(2 * var(--u)); }
+  .market-roles strong { color: var(--dimos); font-weight: 800; }
+  .market-close { font-family: var(--han); font-size: var(--fs-3); color: var(--accent-deep); font-weight: 600;
+    margin-top: calc(3 * var(--u)); padding: calc(2.5 * var(--u)) calc(6 * var(--u)); background: var(--accent-light);
+    border-radius: calc(3 * var(--u) * var(--rs)); border-left: calc(3 * var(--u)) solid var(--emph); }
+  .market-close strong { color: var(--emph-ink); }
+  .detail.market .steps4 { margin-top: calc(3 * var(--u)); }
+  .detail .section-title { font-family: var(--sans); font-weight: 800; font-size: var(--fs-5);
+    color: var(--accent-deep); display: flex; align-items: center; gap: calc(4 * var(--u)); }
+  .detail.safety .section-title { color: var(--danger); }
+  .detail .section-title .en { font-family: var(--mono); font-weight: 600; font-size: var(--fs-2); color: var(--text-secondary); }
+  .detail ul { list-style: none; margin-top: calc(2 * var(--u)); display: flex; flex-direction: column; gap: calc(1.5 * var(--u)); }
+  .detail li { font-size: var(--fs-3); color: var(--text-secondary); line-height: 1.34; padding-left: 0; position: relative; }
+  .detail li::before { content: ""; }
+  .detail.safety li::before { color: var(--danger); }
+  .detail li strong { color: var(--text-primary); font-weight: 700; }
+  .detail li code, .mono-i { font-family: var(--mono); font-size: 0.92em; color: var(--accent-deep); }
+
+  .iface-table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: var(--fs-1); margin-top: calc(3 * var(--u)); }
+  .iface-table td { padding: calc(1.5 * var(--u)) calc(3 * var(--u)); border-bottom: calc(1 * var(--u)) solid var(--border-soft); vertical-align: top; line-height: 1.35; }
+  .iface-table td.if-name { font-weight: 700; color: var(--accent-deep); white-space: nowrap; font-family: var(--sans); }
+  .iface-table td.if-methods { color: var(--text-secondary); }
+
+  /* =========================== FOOTER =========================== */
+  .footer { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap;
+    gap: calc(2 * var(--u)) calc(10 * var(--u)); padding-top: calc(6 * var(--u));
+    border-top: calc(1 * var(--u)) solid var(--border-soft); font-family: var(--mono);
+    font-size: var(--fs-3); color: var(--text-muted); }
+  .footer strong { color: var(--accent-deep); font-family: var(--sans); }
+  .footer .repo { color: var(--accent); font-weight: 600; overflow-wrap: anywhere; }
+  .footer .zh { font-family: var(--han); }
+
+  /* Identity mark — corner signature. */
+  .ps-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+  .corner-sig { position: absolute; right: calc(4 * var(--u)); bottom: calc(3 * var(--u));
+    width: calc(6 * var(--u)); height: calc(6 * var(--u)); color: var(--ps-mark-ink); opacity: 0.45;
+    pointer-events: none; user-select: none; }
+  .corner-sig svg { display: block; width: 100%; height: 100%; }
+  [data-ps-mark="woven"] { display: inline-block; width: 0.82em; height: 0.82em; vertical-align: -0.14em; line-height: 0; }
+  [data-ps-mark="woven"] svg { display: block; width: 100%; height: 100%; }
+
+  /* Grid-blowout guards. */
+  .stack-flow, .column, .card, .app-card, .detail { min-width: 0; }
+
+  /* =========================================================
+     PRINT OVERRIDE — KEEP LAST.
+     ========================================================= */
+  /* --- hardware-we-use highlight (bright + bold) + SDK / more-apps emphasis --- */
+  .cell.hw { border: calc(1.5*var(--u)) solid var(--hot-amber); border-left: calc(5*var(--u)) solid var(--hot-red); background: #FCF3E4; }
+  .cell.hw h4 { color: var(--hot-red); font-size: var(--fs-4); font-weight: 800; }
+  .cell.hw h4 .en { color: #8A4B0A; font-weight: 700; }
+  .cell .badge { display: inline-block; font-family: var(--sans); font-size: var(--fs-1); font-weight: 800; color: #1a1a1a;
+    background: var(--hot-yellow); padding: 0 calc(3*var(--u)); margin-left: calc(3*var(--u)); }
+  .cell .badge.soon { background: #E7E0CF; color: #6b6250; }
+  .cell.sdk { grid-column: span 2; border: calc(2*var(--u)) solid var(--hot-red); background: #FCEEE9; }
+  .cell.sdk h4 { color: var(--hot-red); font-size: var(--fs-5); font-weight: 800; }
+  .cell.sdk h4 .en { color: var(--hot-amber); }
+  .cell.more { border: calc(1.5*var(--u)) solid var(--hot-amber); background: #FFF6E0; }
+  .cell.more h4 { color: var(--hot-amber); font-size: var(--fs-4); font-weight: 800; }
+  .layer.l-hw { border-color: var(--hot-red); }
+  .layer.l-hw .l-cells { grid-template-columns: repeat(2, 1fr); gap: calc(5*var(--u)); }
+
+  /* --- live demo strip (Ring -> PiPER) --- */
+  .demo-band { background: var(--bg-card); border: calc(1.5*var(--u)) solid var(--hot-red);
+    border-left: calc(6*var(--u)) solid var(--hot-red); box-shadow: var(--shadow-card);
+    padding: calc(3*var(--u)) calc(11*var(--u)); }
+  .demo-head { font-family: var(--sans); font-weight: 800; font-size: var(--fs-6); color: var(--hot-red); }
+  .demo-head .en { font-family: var(--mono); font-weight: 600; font-size: var(--fs-3); color: var(--text-secondary); }
+  .demo-band .flow .step.hw { border-color: var(--hot-red); background:#FCF3E4; }
+  .demo-band .flow .step.hw .s-name { color: var(--hot-red); }
+  .demo-note { font-size: var(--fs-4); color: var(--text-primary); line-height: 1.4; margin-top: calc(2*var(--u)); }
+  .demo-note strong { color: var(--hot-red); }
+
+  /* --- L2 is the star: ~3x the other layers, detailed kernel modules --- */
+  .layer.l2-star { padding: calc(6*var(--u)) calc(11*var(--u)); border-width: calc(3*var(--u)); border-left-width: calc(10*var(--u)); }
+  .layer.l2-star .l-name { font-size: var(--fs-7); }
+  .layer.l2-star .l-cells { gap: calc(4*var(--u)); }
+  .layer.l2-star .cell h4 { font-size: var(--fs-4); }
+  /* compact the supporting layers (L1 except the SDK cell, and L3): chips, no prose */
+  .layer.l-app .cell:not(.sdk) p, .layer.l-dimos .cell p { display: none; }
+
+  @media print {
+    html, body { background: white; }
+    .poster { margin: 0; box-shadow: none; width: 600mm; height: 900mm; page-break-after: avoid; }
+    :root { --u: 1mm; }
+  }
+</style>
+</head>
+<body>
+
+<div class="poster" data-measure-role="poster"
+     data-posterly-contract="identity-v1" data-ps-identity="on">
+
+  <svg class="ps-sprite" data-color-exempt="logo" aria-hidden="true"><defs>
+    <symbol id="psReg" viewBox="0 0 100 100">
+      <circle cx="50" cy="50" r="25" fill="none" stroke="currentColor" stroke-width="8"/>
+      <line x1="50" y1="7" x2="50" y2="93" stroke="currentColor" stroke-width="8"/>
+      <line x1="7" y1="50" x2="93" y2="50" stroke="currentColor" stroke-width="8"/>
+    </symbol>
+  </defs></svg>
+
+  <!-- =========================== HEADER =========================== -->
+  <header class="header" data-measure-role="header">
+    <div class="venue-badge">
+      <div class="vb-venue">ADVX</div>
+      <div class="vb-year">2026</div>
+      <div class="vb-tag">BOARD ① · Architecture</div>
+    </div>
+
+    <div class="title-block">
+      <h1 class="title">Nervus <span class="accent">OS</span></h1>
+      <div class="subtitle">Robot's Android &nbsp;<span class="en">Android for Robots — an OS &amp; app store for any machine</span></div>
+      <div class="tagline">Any brand robot, download and install App like a phone —— One set of App runs on different bodies</div>
+      <div class="authors-line">Nervus OS Team &nbsp;·&nbsp; ADVX 2026 Hackathon &nbsp;·&nbsp; RDK S100 · Ubuntu 22.04 · aarch64 · PREEMPT_RT</div>
+    </div>
+
+    <div class="right-block">
+      <div class="qr-block">
+        <img data-color-exempt="logo" alt="QR → github.com/Nervus-OS"
+             src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAlAAAAJQAQMAAAB7LMgGAAAABlBMVEULOkf///8iTK+9AAACUklEQVR42u3dQW4CMQwF0Kj3vzNtVVBix6EswLB4I1EYKK9SFl+OZ5KOy9OOgUKhUCgUCoW6UiMcv+e3x7j+qfnq9jp/53L5Gk87UCgUqjj+EmgJsHE7Xz9d313P5nfkFQqF6sqrWFutn8XfmT/jd+QVCoV6R17lWiqnlbxCoVCflFfxea2q1nmjvEKhUP15lXMo11N5pqh/hUKh3pNX8Z3HHlkx7CgU6vV5td3kkJIrzhPH4XYKw45CoXryKidUnBPme7JybSavUChUZ17l7no8y6mWryPKKxQK1ZNXOY/idcL/726QVygUqiev4nN8vc4Tq/6V+SAKhXpHXtXdqVh9Ve+qr1AoVN98MM4JY3Kd72PQv0KhUP15VVVQsRdf9a7iymfDjkKh+uqrmVZxjhivGa611SoYdhQK9fq8inco5HWCpx1ksmLYUShUR17tdVOcE8bVzbkyU1+hUKjevMpXCKs1OtWKHf0rFArVl1c5n/bM2u973ystw45CoTryKu+FvO+MPGuxOIOcuWbYUShUx3wwZtXetdr3Rs45J69QKFRnXlVZtd+3UO0wKq9QKFRnXu3d9FNPq+q7yysUCtWVV9U6nFxt7Xmmf4VCoXrz6jTTi72tejcs/SsUCtVbX+0Jlquv0z6k1g+iUKj++WC18vmUWFWfy7CjUKievMp1U8yreR5XDtqvD4VCfUZe5VzKVZj1OCgU6jPyqpr/3ettGXYUCtWTV+ddRvcVOPl/T8grFArVl1ePvFP9py/zQRQK1ZtXzzlQKBQKhUKhUD/HNyiZnYi1txZkAAAAAElFTkSuQmCC">
+        <div class="qr-label">github.com/Nervus-OS</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- =========================== BODY =========================== -->
+  <div class="body" data-measure-role="body">
+
+    <!-- ===== THESIS BAR ===== -->
+    <section class="thesis" data-measure-role="card">
+      <div>
+        <div class="thesis-eyebrow">Design Contract · Design Agreement</div>
+        <div class="thesis-line">
+          Switch to another robot, <span class="hot">only replace one Provider</span>, core zero changes
+          <span class="en">Swap the robot → swap one Provider. The kernel never changes.</span>
+        </div>
+      </div>
+      <div class="stat-row">
+        <div class="stat"><div class="n">4</div><div class="l">Layers<span class="zh">Layer Control Stack</span></div></div>
+        <div class="stat"><div class="n">2</div><div class="l">Bus ports<span class="zh">Port protocol</span></div></div>
+        <div class="stat"><div class="n">3</div><div class="l">Sided market<span class="zh">Manufacturer·Developer·User</span></div></div>
+        <div class="stat"><div class="n"><span class="em">∞</span></div><div class="l">App slots<span class="zh">Open access</span></div></div>
+      </div>
+    </section>
+
+    <!-- ===== 4-LAYER STACK (HERO) ===== -->
+    <section class="band" data-measure-role="card">
+    <div class="band-head">
+      <span class="bh-title">Runtime Architecture <span class="en">Runtime Architecture</span></span>
+      <span class="eyebrow">Between each layer is <span class="zh">real online protocol</span> · not a function call</span>
+    </div>
+    <div class="stack-wrap">
+      <div class="stack-flow">
+
+        <!-- L1 -->
+        <div class="layer l-app" data-measure-role="card">
+          <div class="l-rail">
+            <div class="l-tier">L1 · Top Layer</div>
+            <div class="l-name">Application Layer<span class="en">Applications</span></div>
+            <div class="layer-role">Anyone can write an App for the robot. Each App runs separately, manages its own permissions, and requires one-time authorization during installation.</div>
+            <div class="l-repo">Open Source SDK · nervus-app-sdk · .nspkg Signed Installation</div>
+          </div>
+          <div class="l-cells">
+            <div class="cell hw"><h4>Ring-driven robotic arm<span class="en">Ring → PiPER · flagship demo</span></h4><p>Put on the Zilo ring, move your hand, and the robotic arm follows. Live demo below.</p></div>
+            <div class="cell"><h4>Alien · Limo · Collaboration<span class="en">Alien · Limo · Collaboration</span></h4><p>The partner's car can still run in the same system.</p></div>
+            <div class="cell"><h3>Actions Sets<span class="en">Action Sets</span></h3><p>Drag and drop to choreograph actions, no coding required.</p></div>
+            <div class="cell sdk"><h4>Open Source SDK · Everyone Can Build Robot Apps<span class="en">open Kotlin SDK</span></h4><p>Open up system capabilities—individuals, companies, can all start building their own robot apps.</p></div>
+            <div class="cell more"><h4>More Apps Coming Soon<span class="en">more landing…</span></h4><p>viaim voice, DimOS visualization… all on the way.</p></div>
+          </div>
+        </div>
+
+        <!-- PORT A -->
+        <div class="port">
+          <div class="p-arrow">↕</div>
+          <div class="p-body">
+            <span class="p-name">Port A · Port A — <span class="mono-i">nervus-ipc</span></span>
+            <span class="chip">UDS · protobuf Envelope</span>
+            <span class="chip">Request / Response</span>
+            <span class="chip">SO_PEERCRED Identity</span>
+            <span class="chip">AcquireControl Lease</span>
+          </div>
+        </div>
+
+        <!-- L2 — THE STAR: system kernel, ~3x the other layers -->
+        <div class="layer l-nervus l2-star" data-measure-role="card">
+          <div class="l-rail">
+            <div class="l-tier">L2 · Central Layer · System Kernel</div>
+            <div class="l-name">Nervus OS<span class="en">nervud · Go kernel · ~16k lines</span></div>
+            <div class="layer-role">The core of the whole board. All App instructions must go through here: bus, permissions, arbitration, package management, and capability routing are all inside the kernel. It only schedules and arbitrates, <strong>does not touch</strong> high-frequency physical control— that's DimOS's job.</div>
+            <div class="l-repo">nervud · nervus-ipc · nervus-system-server</div>
+          </div>
+          <div class="l-cells">
+            <div class="cell key"><h4>Control Focus Arbiter<span class="en">internal/control</span></h4><p>Who currently holds the body · Priority SAFETY&gt;HUMAN&gt;AI · Can be preempted, can be audited.</p></div>
+            <div class="cell key"><h4>Three-layer Safety<span class="en">internal/safety</span></h4><p>Emergency stop FIFO 95 · halt/settle · Generation number latching, bypassing DimOS directly to execution layer.</p></div>
+            <div class="cell key"><h4>Pack Atomic Motion Gate<span class="en">internal/motiongate</span></h4><p>Motion state machine packed into an atomic word + generation number rollback, take over immediately effective.</p></div>
+            <div class="cell"><h4>Permission Model<span class="en">internal/permission</span></h4><p>Interface → Permission Directory · Decided by permission intersection at installation.</p></div>
+            <div class="cell"><h4>IPC Control Plane<span class="en">internal/ipc</span></h4><p>UDS + Protobuf Envelope · <span class="mono-i">SO_PEERCRED/PEERPIDFD</span> Take trusted identity.</p></div>
+            <div class="cell"><h4>Real-time Scheduling<span class="en">PREEMPT_RT</span></h4><p><span class="mono-i">sched_setattr</span> SCHED_FIFO · Emergency stop channel zero heap allocation.</p></div>
+            <div class="cell"><h4>Package Manager<span class="en">package manager</span></h4><p><span class="mono-i">.nspkg</span> Ed25519 signature · Install/Uninstall —— Application store backend.</p></div>
+            <div class="cell"><h4>Capability List + Endpoint Resolution<span class="en">profile · resolve</span></h4><p>Declare device and capability · Capability → Provider · Capability → Resource handle.</p></div>
+            <div class="cell"><h4>Model-agnostic AI Gateway<span class="en">tool-calling</span></h4><p>System capability encapsulated as tool, any brain driving any body.</p></div>
+          </div>
+        </div>
+
+        <!-- PORT B -->
+        <div class="port">
+          <div class="p-arrow">↕</div>
+          <div class="p-body">
+            <span class="p-name">Port B · Port B — <span class="zh">Capability → Provider Binding</span></span>
+            <span class="chip hot zh">Robot Profile → Provider</span>
+            <span class="chip zh">Ability → Drive Instantiation</span>
+            <span class="chip">Manipulator@1 · BaseMotion@1</span>
+            <span class="chip warm zh">Switch robot = Switch Provider · Core remains unchanged</span>
+          </div>
+        </div>
+
+        <!-- L3 -->
+        <div class="layer l-dimos" data-measure-role="card">
+          <div class="l-rail">
+            <div class="l-tier">L3 · Driver Adaptation Layer</div>
+            <div class="l-name">DimOS<span class="en">Dimensional OS</span></div>
+            <div class="layer-role">Hardware Manipulation and Autonomous Navigation. Located below Nervus OS <strong>as a Provider</strong>, uniformly under its control.</div>
+            <div class="l-repo">dimensionalOS/dimos · Pure Python · No ROS</div>
+          </div>
+          <div class="l-cells">
+            <div class="cell hw"><h4>Unitree GO2 Provider<span class="en">unitree-go2</span></h4><p>Single · Multi-robot Synchronization · Formation Following.</p></div>
+            <div class="cell"><h4>SLAM · A* Planning<span class="en">navigation</span></h4><p>Mapping while moving, finding the path by itself.</p></div>
+            <div class="cell hw"><h4>Manipulator Provider<span class="en">PiPER · NERO</span></h4><p>Connected via <span class="mono-i">piper_sdk</span> bridge, driving real arms.</p></div>
+            <div class="cell hw"><h4>Limo Provider<span class="en">mobile base</span></h4><p>Differential/Ackermann chassis, serial port drive.</p></div>
+            <div class="cell"><h4>Replay Mode<span class="en">--replay</span></h4><p>Run the full stack demo without real robots.</p></div>
+          </div>
+        </div>
+
+        <!-- PORT C -->
+        <div class="port">
+          <div class="p-arrow">↕</div>
+          <div class="p-body">
+            <span class="p-name">Port C · <span class="zh">Transport Layer Transport</span></span>
+            <span class="chip wire">WebRTC + AES-128</span>
+            <span class="chip wire">SocketCAN · CAN 2.0B · 1 Mbps</span>
+            <span class="chip">0x151 Motion · 0x155–157 Joint · 0x159 Gripper</span>
+            <span class="chip wire">serial (Limo)</span>
+          </div>
+        </div>
+
+        <!-- L4 -->
+        <div class="layer l-hw" data-measure-role="card">
+          <div class="l-rail">
+            <div class="l-tier">L4 · Body Layer</div>
+            <div class="l-name">Robot Body<span class="en">Robots</span></div>
+            <div class="layer-role">Robots from different brands can use the same set of capability interfaces. The ones below are the bodies we are currently running.</div>
+            <div class="l-repo">Computing Board · RDK S100 (D-Robotics) · Ubuntu 22.04 · aarch64</div>
+          </div>
+          <div class="l-cells">
+            <div class="cell hw"><h4>AgileX PiPER <span class="badge">In Use</span><span class="en">6-DOF arm · gripper</span></h4><p>Six-axis arm + gripper, connected to <span class="mono-i">can0</span>. </p></div>
+            <div class="cell hw"><h4>AgileX NERO <span class="badge">In Use</span><span class="en">2nd arm</span></h4><p>Second robotic arm, connected to <span class="mono-i">can1</span>. </p></div>
+            <div class="cell hw"><h3>AgileX Limo Pro <span class="badge">In Use</span><span class="en">mobile base</span></h4><p>Mobile chassis, serial port driven. </p></div>
+            <div class="cell hw"><h4>Unitree GO2 Air <span class="badge soon">In Progress</span><span class="en">quadruped dog</span></h4><p>Quadruped robot dog, WebRTC in progress. </p></div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ARBITER RAIL -->
+      <aside class="arbiter-rail">
+        <div class="ar-title">At this moment who controls the body<span class="en">Control Focus Arbiter</span></div>
+        <div class="ar-sub"><strong>An Android does not have, a robot uniquely possesses a layer.</strong> GUI, AI, ring are equal control sources in the Arbiter's eyes; priority <strong>can be declared, can be preempted, can be audited</strong>. When AI is driving the arm, a gesture immediately lets humans override AI, and the arm stops.</div>
+        <div class="prio">
+          <div class="lvl s3"><span>SAFETY Safety</span><span class="lv-n">3</span></div>
+          <div class="prio-gt">▲</div>
+          <div class="lvl s2"><span>HUMAN Human</span><span class="lv-n">2</span></div>
+          <div class="prio-gt">▲</div>
+          <div class="lvl s1"><span>AI Intelligent Agent</span><span class="lv-n">1</span></div>
+          <div class="prio-gt">▲</div>
+          <div class="lvl s0"><span>NONE None</span><span class="lv-n">0</span></div>
+        </div>
+        <div class="ar-mech">
+          <div class="rl-tag am">⟲ Seize Mechanism · MECHANISM</div>
+          <p>The motion state machine is packed into a <strong>single atomic word</strong> + <strong>revert generation number</strong>; the takeover takes effect immediately at the moment of return.</p>
+        </div>
+        <div class="ar-redline">
+          <div class="rl-tag">◼ LEVEL-0 · PREEMPT_RT</div>
+          <p><code>sched_setattr</code> SCHED_FIFO emergency stop channel, <strong>zero heap allocation</strong>; central collapse or GC, execution layer independent stop, direct to entity, bypass DimOS.</p>
+        </div>
+      </aside>
+    </div>
+    </section>
+
+    <!-- ===== LIVE DEMO: Ring -> PiPER ===== -->
+    <div class="demo-band" data-measure-role="card">
+      <div class="demo-head">Live Demo · Ring-Driven Robotic Arm <span class="en">a flick of the hand, the arm follows</span></div>
+      <div class="flow">
+        <div class="step hw"><span class="s-name">Zilo Ring</span><span class="s-sub">Move Hand</span></div>
+        <span class="arrow">&#8594;</span>
+        <div class="step"><span class="s-name">nring</span><span class="s-sub">Bluetooth Read IMU</span></div>
+        <span class="arrow">&#8594;</span>
+        <div class="step"><span class="s-name">Calculate Pose</span><span class="s-sub">RingArmMapper</span></div>
+        <span class="arrow">&#8594;</span>
+        <div class="step os"><span class="s-name">Manipulator@1</span><span class="s-sub">MoveToPose</span></div>
+        <span class="arrow">&#8594;</span>
+        <div class="step os"><span class="s-name">nervud</span><span class="s-sub">Arbitration + Lease</span></div>
+        <span class="arrow">&#8594;</span>
+        <div class="step"><span class="s-name">DimOS</span><span class="s-sub">Mechanical Arm Provider</span></div>
+        <span class="arrow">&#8594;</span>
+        <div class="step hw"><span class="s-name">PiPER</span><span class="s-sub">Real Arm Moves</span></div>
+      </div>
+      <div class="demo-note">App only says one sentence "Move your hand here", the rest is left to the system —— <strong>switch to a robotic dog, it's still this sentence</strong>. This is "change the robot, without changing the code".</div>
+    </div>
+
+
+  </div>
+
+  <!-- =========================== FOOTER =========================== -->
+  <div class="footer" data-measure-role="footer">
+    <div>
+      <strong>Nervus OS</strong> · ADVX 2026 &nbsp;·&nbsp;
+      repos: <span class="repo">nervud · nervus-ipc · nervus-app-sdk · nervus-packaging · nervus-system-software · nring</span>
+    </div>
+    <div>
+      <span class="repo">github.com/Nervus-OS</span> &nbsp;·&nbsp; <span class="zh">Scan to join the organization</span> ↗
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

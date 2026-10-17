@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<!--
+  ============================================================
+  POSTER: Nervus OS — Four-Layer Portable Control Stack
+  ADVX 2026 · technical architecture poster for judges + investors
+  Built with posterly conventions (github.com/Chenruishuo/posterly):
+    measurement-driven --u canvas, @page size, print media override,
+    calc(N*var(--u)) sizing, identity mark, data-measure-role.
+  CUSTOM SKELETON (architecture flowchart, not a paper poster):
+    header → thesis bar → 4-layer stack HERO → apps → protocol/safety → footer
+
+  DESIGN DIRECTION
+    - Concept: "subway-map for a robot OS" — four color-coded layers stacked
+      vertically, joined by named bus PORTS, with a safety/arbiter rail riding
+      the full height. Reproduces + upgrades the team's existing NervusOS
+      diagram so the brand voice carries.
+    - Hero moment: the 4-layer control stack (loudest element; everything
+      else is quieter reference around it).
+    - Palette: the team's own per-layer hues (App purple / Nervus teal /
+      DimOS green / Hardware amber / Safety red). Layer color is a *semantic*
+      system here (like a transit map), not decoration.
+    - Voice: bilingual — Chinese headings/prose, English + mono technical terms.
+  CANVAS: 600mm × 900mm PORTRAIT (2:3). Print --u = 1mm so 600u/900u == 600/900 mm.
+  ============================================================
+-->
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="generator" content="posterly">
+<title>Nervus OS — Four-Layer Portable Control Stack · ADVX 2026</title>
+
+<style>
+  /* =========================================================
+     CANVAS — 600mm × 900mm PORTRAIT
+     Print: 1 --u = 1mm → 600u × 900u == 600mm × 900mm.
+     RETARGET: change @page size here AND .poster width/height below in sync.
+     ========================================================= */
+  @page { size: 600mm 900mm; margin: 0; }
+
+  :root {
+    /* ===== DESIGN TOKENS (only place color / font-size literals live) ===== */
+
+    /* Per-layer semantic hues — the team's existing NervusOS palette. */
+    --app:      #6E5A8C;   /* L1 Applications  */
+    --nervus:   #0F6E8C;   /* L2 Nervus OS     (primary accent / the star) */
+    --dimos:    #3F7A5E;   /* L3 DimOS         */
+    --hw:       #8A6A3F;   /* L4 Robots        */
+    --danger:   #B4453C;   /* safety / redline */
+
+    /* Primary accent = Nervus teal. */
+    --accent:        #0F6E8C;
+    --accent-deep:   #0B4E63;
+    --accent-light:  #E7F2F6;
+    --accent-soft:   #CFE4EC;
+    --accent-ink:    #FFFFFF;
+
+    /* Emphasis register ("★ key", flagship, ours). Warm brass, AA on white. */
+    --emph:          #B07E2B;
+    --emph-soft:     #FBF1DC;
+    --emph-ink:      #4A3410;
+
+    /* Text */
+    --text-primary:   #16202B;
+    --text-secondary: #4C5A66;
+    --text-muted:     #7C8A96;
+
+    /* Backgrounds */
+    --bg-page:        #EEF1F4;
+    --bg-card:        #FFFFFF;
+    --bg-card-tint:   #F6F8FA;
+    --bg-emphasis:    var(--accent-light);
+
+    /* Borders */
+    --border-soft:    #D3DBE2;
+    --border-strong:  var(--accent);
+
+    --bg-screen:      #232a31;
+
+    /* Base unit. Print: 1mm; screen preview: 1.5px. */
+    --u: 1.5px;
+
+    /* Font-size scale (9 steps), all in --u. */
+    --fs-1: calc(6 * var(--u));    /* micro label / chip     */
+    --fs-2: calc(7 * var(--u));    /* small caption          */
+    --fs-3: calc(8.5 * var(--u));  /* caption / table        */
+    --fs-4: calc(10 * var(--u));   /* body text              */
+    --fs-5: calc(11.5 * var(--u)); /* strong body / role     */
+    --fs-6: calc(14 * var(--u));   /* section title          */
+    --fs-7: calc(17 * var(--u));   /* layer name             */
+    --fs-8: calc(21 * var(--u));   /* stat number            */
+    --fs-9: calc(30 * var(--u));   /* main title             */
+
+    /* Fonts — Chinese leads with Hiragino Sans GB: PingFang SC is a macOS
+       "Reserved" font that headless Chrome matches by name but cannot render,
+       so it must NOT lead the stack (it would blank every CJK glyph with no
+       fallback). Hiragino/Heiti/STHeiti all render; PingFang/Noto/YaHei kept
+       as portability fallbacks for other machines. Mono = SF Mono. */
+    --han:  "Hiragino Sans GB", "Heiti SC", "STHeiti", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+    --sans: "Inter", "Helvetica Neue", var(--han);
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+
+    --shadow-screen: 0 0 60px rgba(0,0,0,0.5);
+    --shadow-card: 0 calc(1 * var(--u)) calc(4 * var(--u)) rgba(15,110,140,0.07);
+    --ps-mark-ink: var(--accent-deep);
+    --rs: 1;
+    /* ===== END DESIGN TOKENS ===== */
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  /* BASE DEFENSES — wrap & ink safety. */
+  p, li, dd, .body-text, .role, .caption, .section-title, .layer-role { text-wrap: pretty; }
+  .title, .thesis-line { text-wrap: balance; }
+
+  html, body {
+    background: var(--bg-screen);
+    font-family: var(--han);
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.5;
+  }
+
+  /* Poster container — exact print dimensions. */
+  .poster {
+    width: calc(600 * var(--u));
+    height: calc(900 * var(--u));
+    background: var(--bg-page);
+    background-image:
+      radial-gradient(ellipse at top left,     rgba(15,110,140,0.06), transparent 42%),
+      radial-gradient(ellipse at bottom right,  rgba(138,106,63,0.05), transparent 48%);
+    margin: 20px auto;
+    padding: calc(13 * var(--u)) calc(14 * var(--u)) calc(11 * var(--u));
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    gap: calc(6 * var(--u));
+    box-shadow: var(--shadow-screen);
+    position: relative;
+    overflow: hidden;
+  }
+  .poster::before {
+    content: "";
+    position: absolute; top: 0; left: 0; right: 0;
+    height: calc(7 * var(--u));
+    background: linear-gradient(90deg,
+      var(--app) 0%, var(--app) 25%,
+      var(--nervus) 25%, var(--nervus) 50%,
+      var(--dimos) 50%, var(--dimos) 75%,
+      var(--hw) 75%, var(--hw) 100%);
+  }
+
+  /* =========================== HEADER =========================== */
+  .header {
+    display: grid;
+    grid-template-columns: auto minmax(50%, 1fr) auto;
+    align-items: center;
+    gap: calc(12 * var(--u));
+    padding: calc(2 * var(--u)) calc(2 * var(--u)) calc(4 * var(--u));
+    border-bottom: calc(2 * var(--u)) solid var(--accent);
+  }
+  .venue-badge {
+    justify-self: start;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; min-width: calc(78 * var(--u));
+    border-right: calc(1 * var(--u)) solid var(--border-soft);
+    padding-right: calc(12 * var(--u));
+  }
+  .venue-badge .vb-venue { font-family: var(--sans); font-weight: 800; font-size: var(--fs-9);
+    color: var(--accent-deep); line-height: 0.95; letter-spacing: -1px; }
+  .venue-badge .vb-year  { font-family: var(--mono); font-size: var(--fs-4); color: var(--text-secondary);
+    margin-top: calc(3 * var(--u)); letter-spacing: 2px; }
+  .venue-badge .vb-tag   { font-family: var(--sans); font-size: var(--fs-2); color: var(--accent);
+    font-weight: 700; margin-top: calc(3 * var(--u)); letter-spacing: 1.5px; }
+
+  .title-block { text-align: center; min-width: 0; }
+  .title { font-family: var(--sans); font-weight: 800; font-size: var(--fs-9);
+    line-height: 1.0; color: var(--accent-deep); letter-spacing: -1px; }
+  .title .accent { color: var(--nervus); }
+  .title .reg { color: var(--emph); font-weight: 800; }
+  .subtitle { font-family: var(--han); font-weight: 600; font-size: var(--fs-5);
+    color: var(--text-primary); margin-top: calc(2 * var(--u)); }
+  .subtitle .en { font-family: var(--mono); font-weight: 600; color: var(--text-secondary);
+    font-size: var(--fs-3); }
+  .tagline { font-family: var(--han); font-size: var(--fs-3); color: var(--text-secondary);
+    margin-top: calc(2 * var(--u)); font-style: normal; }
+  .authors-line { font-family: var(--sans); font-size: var(--fs-2); color: var(--accent);
+    font-weight: 600; margin-top: calc(2.5 * var(--u)); }
+  .authors-line .aff { color: var(--text-secondary); font-weight: 400; display: block;
+    margin-top: calc(2 * var(--u)); font-size: var(--fs-2); font-family: var(--mono); }
+
+  .right-block { justify-self: end; display: flex; align-items: center; gap: calc(8 * var(--u)); }
+  .qr-block { display: flex; flex-direction: column; align-items: center; gap: calc(2 * var(--u)); }
+  .qr-block img { width: calc(72 * var(--u)); height: calc(72 * var(--u));
+    border: calc(2 * var(--u)) solid var(--accent); border-radius: calc(3 * var(--u) * var(--rs));
+    background: white; padding: calc(2 * var(--u)); }
+  .qr-label { font-family: var(--mono); font-size: var(--fs-1); color: var(--accent); font-weight: 600;
+    letter-spacing: 0.5px; }
+
+  /* =========================== BODY =========================== */
+  .body { display: flex; flex-direction: column; gap: calc(4 * var(--u)); min-height: 0; }
+  /* Each band takes its natural height (never shrink/overlap a sibling). The
+     canvas is sized so the natural total fits; overflow would clip, not stack. */
+  .body > * { flex: 0 0 auto; min-width: 0; }
+  .band { display: flex; flex-direction: column; }
+  .band-head { margin-bottom: calc(2.5 * var(--u)); }
+
+  /* Section eyebrow used atop each band. */
+  .eyebrow { font-family: var(--mono); font-size: var(--fs-2); letter-spacing: 2px;
+    text-transform: uppercase; color: var(--text-muted); }
+  .eyebrow .zh { font-family: var(--han); letter-spacing: 1px; color: var(--text-secondary);
+    font-weight: 600; }
+
+  /* --- generic card / band --- */
+  .card { background: var(--bg-card); border-radius: calc(5 * var(--u) * var(--rs));
+    border: calc(1 * var(--u)) solid var(--border-soft); box-shadow: var(--shadow-card);
+    position: relative; }
+
+  /* ===== THESIS BAR ===== */
+  .thesis {
+    display: grid; grid-template-columns: 1fr auto; align-items: stretch;
+    gap: calc(12 * var(--u));
+    background: var(--accent-deep);
+    background-image: radial-gradient(ellipse at left, rgba(255,255,255,0.06), transparent 60%);
+    border-radius: calc(5 * var(--u) * var(--rs));
+    padding: calc(5 * var(--u)) calc(12 * var(--u));
+    color: #fff;
+  }
+  .thesis-eyebrow { font-family: var(--mono); font-size: var(--fs-2); letter-spacing: 2px;
+    text-transform: uppercase; color: var(--accent-soft); }
+  .thesis-line { font-family: var(--han); font-weight: 700; font-size: var(--fs-5);
+    line-height: 1.24; margin-top: calc(2 * var(--u)); }
+  .thesis-line .hot { color: #FFD98A; }
+  .thesis-line .en { display: block; font-family: var(--mono); font-weight: 500;
+    font-size: var(--fs-3); color: var(--accent-soft); margin-top: calc(3 * var(--u)); letter-spacing: 0.3px; }
+  .stat-row { display: grid; grid-template-columns: repeat(4, auto); gap: calc(2 * var(--u)) calc(11 * var(--u));
+    align-items: center; padding-left: calc(12 * var(--u)); border-left: calc(1 * var(--u)) solid rgba(255,255,255,0.18); }
+  .stat { text-align: center; }
+  .stat .n { font-family: var(--sans); font-weight: 800; font-size: var(--fs-8); line-height: 1; color: #fff; }
+  .stat .n .em { color: #FFD98A; }
+  .stat .l { font-family: var(--mono); font-size: var(--fs-1); color: var(--accent-soft);
+    letter-spacing: 0.5px; margin-top: calc(2 * var(--u)); }
+  .stat .l .zh { font-family: var(--han); display: block; color: #EAF3F6; font-size: var(--fs-2); font-weight: 600; }
+
+  /* ===== 4-LAYER STACK (HERO) ===== */
+  .stack-wrap { display: grid; grid-template-columns: 1fr calc(118 * var(--u)); gap: calc(6 * var(--u)); min-height: 0; }
+  .stack-flow { display: flex; flex-direction: column; gap: 0; min-width: 0; }
+
+  .layer { background: var(--bg-card); border: calc(1 * var(--u)) solid var(--border-soft);
+    border-left: calc(6 * var(--u)) solid var(--hue); border-radius: calc(4 * var(--u) * var(--rs));
+    box-shadow: var(--shadow-card);
+    display: grid; grid-template-columns: calc(126 * var(--u)) 1fr; gap: calc(8 * var(--u));
+    padding: calc(2.5 * var(--u)) calc(9 * var(--u)); }
+  .layer.l-app    { --hue: var(--app); }
+  .layer.l-nervus { --hue: var(--nervus); border-color: var(--nervus); border-width: calc(2 * var(--u));
+    border-left-width: calc(8 * var(--u)); background: var(--accent-light); }
+  .layer.l-dimos  { --hue: var(--dimos); }
+  .layer.l-hw     { --hue: var(--hw); }
+
+  .layer .l-rail { border-right: calc(1 * var(--u)) dashed var(--border-soft); padding-right: calc(9 * var(--u));
+    display: flex; flex-direction: column; gap: calc(2 * var(--u)); }
+  .l-tier { font-family: var(--mono); font-size: var(--fs-1); letter-spacing: 1.5px; font-weight: 700; color: var(--hue); }
+  .l-name { font-family: var(--sans); font-weight: 800; font-size: var(--fs-6); line-height: 1.05; color: var(--text-primary); }
+  .l-name .en { display: block; font-family: var(--mono); font-size: var(--fs-2); font-weight: 600;
+    color: var(--text-secondary); letter-spacing: 0; margin-top: calc(0.5 * var(--u)); }
+  .layer-role { font-size: var(--fs-2); color: var(--text-secondary); line-height: 1.32; margin-top: calc(1 * var(--u)); }
+  .l-repo { font-family: var(--mono); font-size: var(--fs-1); color: var(--text-muted); line-height: 1.35;
+    margin-top: auto; padding-top: calc(2 * var(--u)); }
+
+  .l-cells { display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: calc(3 * var(--u)); align-content: center; }
+  .cell { background: var(--bg-card-tint); border: calc(1 * var(--u)) solid var(--border-soft);
+    border-radius: calc(2 * var(--u) * var(--rs)); padding: calc(1.5 * var(--u)) calc(4 * var(--u)); }
+  .cell h4 { font-family: var(--han); font-size: var(--fs-3); font-weight: 700; color: var(--text-primary); line-height: 1.2; }
+  .cell h4 .en { display: block; font-family: var(--mono); font-size: var(--fs-1); font-weight: 600;
+    color: var(--text-muted); letter-spacing: 0; margin-top: calc(0.5 * var(--u)); }
+  /* This board gives the stack the whole page, so per-cell descriptions are
+     restored — the layers can breathe (print guide: distance-first, generous
+     whitespace, one focal message per board). */
+  .cell p { display: block; font-size: var(--fs-1); color: var(--text-secondary);
+    line-height: 1.28; margin-top: calc(1 * var(--u)); }
+  .cell.key { border-color: var(--hue); border-left: calc(3 * var(--u)) solid var(--hue);
+    background: color-mix(in srgb, var(--hue) 8%, var(--bg-card-tint)); }
+  .cell.key h4 { color: var(--hue); }
+
+  /* Bus port connectors between layers. */
+  .port { display: grid; grid-template-columns: calc(126 * var(--u)) 1fr; align-items: center;
+    gap: calc(8 * var(--u)); padding: calc(0.25 * var(--u)) calc(9 * var(--u)); }
+  .port .p-arrow { justify-self: center; color: var(--accent); font-size: var(--fs-5); font-weight: 700; line-height: 1; }
+  .port .p-body { display: flex; align-items: baseline; flex-wrap: wrap; gap: calc(2 * var(--u)) calc(4 * var(--u)); }
+  .port .p-name { font-family: var(--mono); font-size: var(--fs-2); font-weight: 700; color: var(--accent-deep);
+    letter-spacing: 0.5px; }
+  .port .p-name .zh { font-family: var(--han); }
+
+  /* chips */
+  .chip { font-family: var(--mono); font-size: var(--fs-1); padding: calc(0.5 * var(--u)) calc(3 * var(--u));
+    border: calc(1 * var(--u)) solid var(--border-soft); border-radius: calc(2 * var(--u) * var(--rs));
+    background: var(--bg-card); color: var(--text-secondary); white-space: nowrap; line-height: 1.45; }
+  .chip.zh { font-family: var(--han); }
+  .chip.hot { border-color: var(--accent); color: var(--accent); }
+  .chip.wire { border-color: var(--hw); color: var(--hw); }
+  .chip.warm { border-color: var(--emph); color: var(--emph); }
+
+  /* Arbiter rail (rides full stack height). */
+  .arbiter-rail { background: var(--bg-card); border: calc(1 * var(--u)) solid var(--border-soft);
+    border-top: calc(4 * var(--u)) solid var(--danger); border-radius: calc(4 * var(--u) * var(--rs));
+    box-shadow: var(--shadow-card); padding: calc(6 * var(--u)) calc(7 * var(--u));
+    display: flex; flex-direction: column; }
+  .arbiter-rail .ar-title { font-family: var(--sans); font-weight: 800; font-size: var(--fs-5); color: var(--danger); line-height: 1.1; }
+  .arbiter-rail .ar-title .en { display: block; font-family: var(--mono); font-size: var(--fs-1); font-weight: 600;
+    color: var(--text-muted); margin-top: calc(1 * var(--u)); letter-spacing: 0.5px; }
+  .arbiter-rail .ar-sub { font-size: var(--fs-2); color: var(--text-secondary); line-height: 1.4;
+    margin-top: calc(3 * var(--u)); }
+  .prio { display: flex; flex-direction: column; gap: calc(2 * var(--u)); margin-top: calc(5 * var(--u)); }
+  .lvl { font-family: var(--mono); font-size: var(--fs-2); padding: calc(2 * var(--u)) calc(4 * var(--u));
+    border: calc(1 * var(--u)) solid var(--border-soft); border-radius: calc(2 * var(--u) * var(--rs));
+    background: var(--bg-card-tint); display: flex; justify-content: space-between; align-items: center; }
+  .lvl .lv-n { font-weight: 800; }
+  .lvl.s3 { border-color: var(--danger); color: var(--danger); font-weight: 700; background: #FBEDEC; }
+  .lvl.s2 { border-color: var(--accent); color: var(--accent-deep); font-weight: 700; }
+  .lvl.s1 { color: var(--text-secondary); }
+  .lvl.s0 { color: var(--text-muted); }
+  .prio-gt { text-align: center; color: var(--text-muted); font-family: var(--mono); font-size: var(--fs-1); line-height: 0.6; }
+  .ar-mech { margin-top: calc(5 * var(--u)); padding-top: calc(4 * var(--u)); border-top: calc(1 * var(--u)) dashed var(--border-soft); }
+  .ar-redline { margin-top: auto; padding-top: calc(4 * var(--u)); border-top: calc(1 * var(--u)) dashed var(--border-soft); }
+  .rl-tag { font-family: var(--mono); font-size: var(--fs-1); font-weight: 700; color: var(--danger); letter-spacing: 0.5px; }
+  .rl-tag.am { color: var(--accent-deep); }
+  .ar-mech p, .ar-redline p { font-size: var(--fs-2); color: var(--text-secondary); line-height: 1.38; margin-top: calc(1.5 * var(--u)); }
+  .ar-mech code, .ar-redline code { font-family: var(--mono); font-size: 0.92em; color: var(--accent-deep); }
+  .ar-mech strong, .ar-redline strong { color: var(--text-primary); }
+
+  /* ===== APPS BAND ===== */
+  .band-head { display: flex; align-items: baseline; gap: calc(6 * var(--u)); margin-bottom: calc(1 * var(--u)); }
+  .band-head .bh-title { font-family: var(--sans); font-weight: 800; font-size: var(--fs-6); color: var(--accent-deep); }
+  .band-head .bh-title .en { font-family: var(--mono); font-weight: 600; font-size: var(--fs-3); color: var(--text-secondary); }
+
+  .apps-grid { display: grid; grid-template-columns: 1fr 1fr; gap: calc(6 * var(--u)); }
+  .app-card { background: var(--bg-card); border: calc(1 * var(--u)) solid var(--border-soft);
+    border-radius: calc(5 * var(--u) * var(--rs)); box-shadow: var(--shadow-card);
+    padding: calc(4 * var(--u)) calc(8 * var(--u)); position: relative; display: flex; flex-direction: column; }
+  .app-card.flagship { border-left: calc(6 * var(--u)) solid var(--app); }
+  .app-card.partner  { border-left: calc(6 * var(--u)) solid var(--emph); }
+  .app-tag { position: absolute; top: calc(6 * var(--u)); right: calc(8 * var(--u));
+    font-family: var(--mono); font-size: var(--fs-1); font-weight: 700; letter-spacing: 0.5px;
+    padding: calc(1 * var(--u)) calc(4 * var(--u)); border-radius: calc(2 * var(--u) * var(--rs)); }
+  .app-tag.a1 { background: color-mix(in srgb, var(--app) 14%, #fff); color: var(--app); }
+  .app-tag.a2 { background: var(--emph-soft); color: var(--emph-ink); }
+  .app-title { font-family: var(--han); font-weight: 800; font-size: var(--fs-5); color: var(--text-primary);
+    line-height: 1.2; padding-right: calc(46 * var(--u)); }
+  .app-title .en { display: block; font-family: var(--mono); font-size: var(--fs-2); font-weight: 600;
+    color: var(--text-secondary); margin-top: calc(1 * var(--u)); }
+  .app-desc { font-size: var(--fs-3); color: var(--text-secondary); line-height: 1.34; margin-top: calc(2 * var(--u)); }
+  .app-desc .kw { color: var(--accent); font-weight: 700; }
+  .app-desc .kwp { color: var(--app); font-weight: 700; }
+
+  /* dataflow chain */
+  .flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: calc(1.5 * var(--u)); margin: calc(2.5 * var(--u)) 0; }
+  .flow .step { flex: 1 1 auto; min-width: 0; background: var(--bg-card-tint);
+    border: calc(1 * var(--u)) solid var(--border-soft); border-radius: calc(2 * var(--u) * var(--rs));
+    padding: calc(2 * var(--u)) calc(3 * var(--u)); text-align: center; display: flex; flex-direction: column; justify-content: center; }
+  .flow .step .s-name { font-family: var(--han); font-weight: 700; font-size: var(--fs-2); color: var(--text-primary); line-height: 1.15; }
+  .flow .step .s-sub { font-family: var(--mono); font-size: var(--fs-1); color: var(--text-muted); line-height: 1.2; margin-top: calc(0.5 * var(--u)); }
+  .flow .step.hw { border-color: var(--hw); }
+  .flow .step.os { border-color: var(--nervus); background: var(--accent-light); }
+  .flow .arrow { align-self: center; color: var(--accent); font-family: var(--mono); font-weight: 700; font-size: var(--fs-3); flex: 0 0 auto; }
+
+  .callout { border-radius: calc(3 * var(--u) * var(--rs)); padding: calc(2.5 * var(--u)) calc(7 * var(--u));
+    font-size: var(--fs-3); line-height: 1.32; margin-top: calc(2.5 * var(--u)); }
+  .callout.accent { background: var(--accent); color: #fff; }
+  .callout.accent strong { color: #FFD98A; }
+  .callout.emph { background: var(--emph-soft); color: var(--emph-ink); border-left: calc(4 * var(--u)) solid var(--emph); }
+  .callout.emph strong { color: var(--emph-ink); }
+  .app-meta { font-family: var(--mono); font-size: var(--fs-1); color: var(--text-muted); margin-top: calc(3 * var(--u)); }
+
+  /* ===== EXTENSIBILITY STRIP ===== */
+  .extend { background: var(--bg-card); border: calc(1 * var(--u)) solid var(--border-soft);
+    border-left: calc(6 * var(--u)) solid var(--dimos); border-radius: calc(5 * var(--u) * var(--rs));
+    box-shadow: var(--shadow-card); padding: calc(5 * var(--u)) calc(10 * var(--u)); }
+  .extend-grid { display: grid; grid-template-columns: auto 1fr; gap: calc(12 * var(--u)); align-items: center; }
+  .extend-head .eh-t { font-family: var(--sans); font-weight: 800; font-size: var(--fs-5); color: var(--dimos); line-height: 1.1; }
+  .extend-head .eh-t .en { display: block; font-family: var(--mono); font-size: var(--fs-2); font-weight: 600; color: var(--text-secondary); margin-top: calc(1 * var(--u)); }
+  .steps4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: calc(4 * var(--u)); }
+  .st4 { background: var(--bg-card-tint); border: calc(1 * var(--u)) solid var(--border-soft);
+    border-top: calc(2 * var(--u)) solid var(--dimos); border-radius: calc(2 * var(--u) * var(--rs));
+    padding: calc(2.5 * var(--u)) calc(4 * var(--u)); }
+  .st4 .n { font-family: var(--mono); font-weight: 800; font-size: var(--fs-4); color: var(--dimos); }
+  .st4 .t { font-family: var(--han); font-size: var(--fs-2); font-weight: 700; color: var(--text-primary); line-height: 1.25; margin-top: calc(0.5 * var(--u)); }
+  .st4 .t .en { display: block; font-family: var(--mono); font-weight: 600; font-size: var(--fs-1); color: var(--text-muted); }
+
+  /* ===== BOTTOM BAND (proof | market) ===== */
+  .detail-grid, .bottom-grid { display: grid; grid-template-columns: 1fr 1fr; gap: calc(6 * var(--u)); }
+  .detail { background: var(--bg-card); border: calc(1 * var(--u)) solid var(--border-soft);
+    border-radius: calc(5 * var(--u) * var(--rs)); box-shadow: var(--shadow-card); padding: calc(4 * var(--u)) calc(9 * var(--u)); }
+  .detail.safety { border-top: calc(3 * var(--u)) solid var(--danger); }
+  .detail.proof  { border-left: calc(6 * var(--u)) solid var(--nervus); }
+  .detail.market { border-left: calc(6 * var(--u)) solid var(--dimos); }
+  .market-roles { font-size: var(--fs-3); color: var(--text-secondary); line-height: 1.4; margin-top: calc(2 * var(--u)); }
+  .market-roles strong { color: var(--dimos); font-weight: 800; }
+  .market-close { font-family: var(--han); font-size: var(--fs-3); color: var(--accent-deep); font-weight: 600;
+    margin-top: calc(3 * var(--u)); padding: calc(2.5 * var(--u)) calc(6 * var(--u)); background: var(--accent-light);
+    border-radius: calc(3 * var(--u) * var(--rs)); border-left: calc(3 * var(--u)) solid var(--emph); }
+  .market-close strong { color: var(--emph-ink); }
+  .detail.market .steps4 { margin-top: calc(3 * var(--u)); }
+  .detail .section-title { font-family: var(--sans); font-weight: 800; font-size: var(--fs-5);
+    color: var(--accent-deep); display: flex; align-items: center; gap: calc(4 * var(--u)); }
+  .detail.safety .section-title { color: var(--danger); }
+  .detail .section-title .en { font-family: var(--mono); font-weight: 600; font-size: var(--fs-2); color: var(--text-secondary); }
+  .detail ul { list-style: none; margin-top: calc(2 * var(--u)); display: flex; flex-direction: column; gap: calc(1.5 * var(--u)); }
+  .detail li { font-size: var(--fs-3); color: var(--text-secondary); line-height: 1.3; padding-left: calc(8 * var(--u)); position: relative; }
+  .detail li::before { content: "▸"; position: absolute; left: 0; color: var(--accent); font-size: var(--fs-2); top: calc(0.5 * var(--u)); }
+  .detail.safety li::before { color: var(--danger); }
+  .detail li strong { color: var(--text-primary); font-weight: 700; }
+  .detail li code, .mono-i { font-family: var(--mono); font-size: 0.92em; color: var(--accent-deep); }
+
+  .iface-table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: var(--fs-1); margin-top: calc(3 * var(--u)); }
+  .iface-table td { padding: calc(1.5 * var(--u)) calc(3 * var(--u)); border-bottom: calc(1 * var(--u)) solid var(--border-soft); vertical-align: top; line-height: 1.35; }
+  .iface-table td.if-name { font-weight: 700; color: var(--accent-deep); white-space: nowrap; font-family: var(--sans); }
+  .iface-table td.if-methods { color: var(--text-secondary); }
+
+  /* =========================== FOOTER =========================== */
+  .footer { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap;
+    gap: calc(2 * var(--u)) calc(10 * var(--u)); padding-top: calc(6 * var(--u));
+    border-top: calc(1 * var(--u)) solid var(--border-soft); font-family: var(--mono);
+    font-size: var(--fs-3); color: var(--text-muted); }
+  .footer strong { color: var(--accent-deep); font-family: var(--sans); }
+  .footer .repo { color: var(--accent); font-weight: 600; overflow-wrap: anywhere; }
+  .footer .zh { font-family: var(--han); }
+
+  /* Identity mark — corner signature. */
+  .ps-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+  .corner-sig { position: absolute; right: calc(4 * var(--u)); bottom: calc(3 * var(--u));
+    width: calc(6 * var(--u)); height: calc(6 * var(--u)); color: var(--ps-mark-ink); opacity: 0.45;
+    pointer-events: none; user-select: none; }
+  .corner-sig svg { display: block; width: 100%; height: 100%; }
+  [data-ps-mark="woven"] { display: inline-block; width: 0.82em; height: 0.82em; vertical-align: -0.14em; line-height: 0; }
+  [data-ps-mark="woven"] svg { display: block; width: 100%; height: 100%; }
+
+  /* Grid-blowout guards. */
+  .stack-flow, .column, .card, .app-card, .detail { min-width: 0; }
+
+  /* =========================================================
+     PRINT OVERRIDE — KEEP LAST.
+     ========================================================= */
+  @media print {
+    html, body { background: white; }
+    .poster { margin: 0; box-shadow: none; width: 600mm; height: 900mm; page-break-after: avoid; }
+    :root { --u: 1mm; }
+  }
+  /* ===== SYSTEM FLOWCHART (Board B) ===== */
+  .fc-intro { background: var(--accent-deep); color:#fff; border-radius: calc(5*var(--u)*var(--rs));
+    padding: calc(5*var(--u)) calc(12*var(--u)); background-image: radial-gradient(ellipse at left, rgba(255,255,255,.06), transparent 60%); }
+  .fc-intro .t { font-family: var(--han); font-weight:700; font-size: var(--fs-6); line-height:1.25; }
+  .fc-intro .t .hot { color:#FFD98A; font-family: var(--mono); font-weight:600; font-size: var(--fs-4); }
+  .fc-intro .s { font-family: var(--mono); font-size: var(--fs-3); color: var(--accent-soft); margin-top: calc(2.5*var(--u)); line-height:1.4; }
+  .fc-intro .s .zh { font-family: var(--han); }
+
+  .flowchart { display:grid; grid-template-columns: 1fr calc(156*var(--u)); gap: calc(9*var(--u)); align-items:stretch; margin-top: calc(7*var(--u)); }
+  .spine { display:flex; flex-direction:column; gap:0; min-width:0; }
+
+  .node { background: var(--bg-card); border: calc(1*var(--u)) solid var(--border-soft);
+    border-left: calc(6*var(--u)) solid var(--hue); border-radius: calc(4*var(--u)*var(--rs));
+    box-shadow: var(--shadow-card); padding: calc(7*var(--u)) calc(11*var(--u)); }
+  .node.n-src, .node.n-app { --hue: var(--app); }
+  .node.n-os  { --hue: var(--nervus); border-color: var(--nervus); border-width: calc(2*var(--u)); border-left-width: calc(8*var(--u)); background: var(--accent-light); }
+  .node.n-dim { --hue: var(--dimos); }
+  .node.n-hw  { --hue: var(--hw); }
+  .node .n-head { display:flex; align-items:baseline; gap: calc(5*var(--u)); }
+  .node .n-tier { font-family: var(--mono); font-size: var(--fs-2); font-weight:700; color: var(--hue); letter-spacing:1px; flex-shrink:0; }
+  .node .n-name { font-family: var(--sans); font-weight:800; font-size: var(--fs-7); color: var(--text-primary); line-height:1.1; }
+  .node .n-name .en { font-family: var(--mono); font-weight:600; font-size: var(--fs-2); color: var(--text-secondary); }
+  .node .n-body { font-size: var(--fs-3); color: var(--text-secondary); line-height:1.36; margin-top: calc(2*var(--u)); }
+  .node .n-body strong { color: var(--text-primary); }
+  .node .n-chips { display:flex; flex-wrap:wrap; gap: calc(2.5*var(--u)); margin-top: calc(3*var(--u)); }
+
+  .src-row { display:grid; grid-template-columns: repeat(4,1fr); gap: calc(3*var(--u)); margin-top: calc(3*var(--u)); }
+  .src { background: color-mix(in srgb, var(--app) 8%, var(--bg-card)); border: calc(1*var(--u)) solid color-mix(in srgb, var(--app) 30%, var(--border-soft));
+    border-radius: calc(3*var(--u)*var(--rs)); padding: calc(4.5*var(--u)) calc(3*var(--u)); text-align:center; }
+  .src .sn { font-family: var(--han); font-weight:700; font-size: var(--fs-3); color: var(--app); line-height:1.15; }
+  .src .ss { font-family: var(--mono); font-size: var(--fs-1); color: var(--text-muted); margin-top: calc(1*var(--u)); }
+
+  .sarrow { display:flex; align-items:center; gap: calc(5*var(--u)); padding: calc(5.5*var(--u)) 0 calc(5.5*var(--u)) calc(16*var(--u)); }
+  .sarrow .a { color: var(--accent); font-family: var(--mono); font-weight:800; font-size: var(--fs-6); line-height:1; flex-shrink:0; }
+  .sarrow .lbl { font-family: var(--mono); font-size: var(--fs-3); color: var(--accent-deep); font-weight:700; line-height:1.3; }
+  .sarrow .lbl .zh { font-family: var(--han); }
+  .sarrow .lbl .sub { color: var(--text-muted); font-weight:400; }
+
+  .gates { display:flex; flex-direction:column; gap: calc(3*var(--u)); margin-top: calc(4*var(--u)); }
+  .gate { display:grid; grid-template-columns: calc(17*var(--u)) 1fr auto; align-items:center; gap: calc(5*var(--u));
+    background: var(--bg-card); border: calc(1*var(--u)) solid var(--accent-soft); border-radius: calc(2.5*var(--u)*var(--rs));
+    padding: calc(3.5*var(--u)) calc(6*var(--u)); }
+  .gate .g-n { font-family: var(--mono); font-weight:800; font-size: var(--fs-3); color:#fff; background: var(--nervus);
+    border-radius: 50%; width: calc(15*var(--u)); height: calc(15*var(--u)); display:flex; align-items:center; justify-content:center; }
+  .gate .g-name { font-family: var(--han); font-weight:700; font-size: var(--fs-4); color: var(--text-primary); line-height:1.2; }
+  .gate .g-name .en { font-family: var(--mono); font-weight:600; font-size: var(--fs-1); color: var(--text-secondary); }
+  .gate .g-rule { font-family: var(--mono); font-size: var(--fs-1); color: var(--danger); white-space:nowrap; font-weight:700; }
+  .gate.g-arb { border-color: var(--danger); border-width: calc(1.5*var(--u)); background: #FCF1F0; }
+  .gate.g-arb .g-n { background: var(--danger); }
+
+  .safety-lane { background: #FBEDEC; border: calc(1.5*var(--u)) solid var(--danger); border-radius: calc(4*var(--u)*var(--rs));
+    padding: calc(6*var(--u)) calc(8*var(--u)); display:flex; flex-direction:column; gap: calc(2.5*var(--u)); }
+  .safety-lane .sl-title { font-family: var(--sans); font-weight:800; font-size: var(--fs-5); color: var(--danger); line-height:1.12; }
+  .safety-lane .sl-title .en { display:block; font-family: var(--mono); font-size: var(--fs-1); font-weight:600; color: var(--text-secondary); margin-top: calc(1.5*var(--u)); letter-spacing:.3px; }
+  .safety-lane .sl-lead { font-size: var(--fs-2); color: var(--text-secondary); line-height:1.35; margin: calc(1*var(--u)) 0 calc(1*var(--u)); }
+  .sl-step { background:#fff; border: calc(1*var(--u)) solid var(--danger); border-radius: calc(2.5*var(--u)*var(--rs));
+    padding: calc(2.5*var(--u)) calc(4.5*var(--u)); }
+  .sl-step .st { font-family: var(--han); font-weight:800; font-size: var(--fs-3); color: var(--danger); }
+  .sl-step .sd { font-family: var(--mono); font-size: var(--fs-1); color: var(--text-secondary); line-height:1.32; margin-top: calc(1*var(--u)); }
+  .sl-step .sd .zh { font-family: var(--han); }
+  .sl-arrow { text-align:center; color: var(--danger); font-family: var(--mono); font-weight:800; font-size: var(--fs-5); line-height:.5; }
+  .sl-tap { font-family: var(--han); font-size: var(--fs-2); color:#fff; background: var(--danger); font-weight:800; text-align:center;
+    margin-top: calc(2*var(--u)); padding: calc(2*var(--u)); border-radius: calc(2.5*var(--u)*var(--rs)); }
+
+  /* flowchart footer band: design principles + legend */
+  .fc-foot { margin-top: calc(9*var(--u)); display:flex; flex-direction:column; gap: calc(5*var(--u)); }
+  .fp-grid { display:grid; grid-template-columns: repeat(3,1fr); gap: calc(6*var(--u)); }
+  .fp { background: var(--bg-card); border: calc(1*var(--u)) solid var(--border-soft); border-top: calc(4*var(--u)) solid var(--accent);
+    border-radius: calc(4*var(--u)*var(--rs)); box-shadow: var(--shadow-card); padding: calc(6*var(--u)) calc(9*var(--u)); }
+  .fp.fp-safe { border-top-color: var(--danger); }
+  .fp.fp-dim  { border-top-color: var(--dimos); }
+  .fp .fp-k { font-family: var(--sans); font-weight:800; font-size: var(--fs-5); color: var(--accent-deep); line-height:1.22; }
+  .fp.fp-safe .fp-k { color: var(--danger); }
+  .fp.fp-dim  .fp-k { color: var(--dimos); }
+  .fp .fp-en { font-family: var(--mono); font-size: var(--fs-2); color: var(--text-muted); margin-top: calc(1.5*var(--u)); }
+  .fp .fp-d { font-size: var(--fs-3); color: var(--text-secondary); line-height:1.42; margin-top: calc(3*var(--u)); }
+  .fp .fp-d strong { color: var(--text-primary); }
+  .fc-legend { display:flex; flex-wrap:wrap; align-items:center; gap: calc(3*var(--u)) calc(9*var(--u));
+    padding: calc(4.5*var(--u)) calc(8*var(--u)); background: var(--bg-card-tint); border: calc(1*var(--u)) solid var(--border-soft);
+    border-radius: calc(3*var(--u)*var(--rs)); }
+  .fc-legend .lg-title { font-family: var(--mono); font-size: var(--fs-2); font-weight:700; letter-spacing:1.5px; color: var(--text-muted); text-transform:uppercase; }
+  .fc-legend .lg { display:flex; align-items:center; gap: calc(2.5*var(--u)); font-family: var(--han); font-size: var(--fs-3); color: var(--text-secondary); font-weight:600; }
+  .fc-legend .lg.mono { font-family: var(--mono); font-weight:700; color: var(--accent-deep); font-size: var(--fs-2); }
+  .fc-legend .lg.mono.safe { color: var(--danger); }
+  .fc-legend i { width: calc(9*var(--u)); height: calc(9*var(--u)); border-radius: calc(2*var(--u)); display:inline-block; }
+  .fc-legend .li-app{ background:var(--app); } .fc-legend .li-os{ background:var(--nervus); }
+  .fc-legend .li-dim{ background:var(--dimos); } .fc-legend .li-hw{ background:var(--hw); } .fc-legend .li-safe{ background:var(--danger); }
+
+</style>
+</head>
+<body>
+
+<div class="poster" data-measure-role="poster"
+     data-posterly-contract="identity-v1" data-ps-identity="on">
+
+  <svg class="ps-sprite" data-color-exempt="logo" aria-hidden="true"><defs>
+    <symbol id="psReg" viewBox="0 0 100 100">
+      <circle cx="50" cy="50" r="25" fill="none" stroke="currentColor" stroke-width="8"/>
+      <line x1="50" y1="7" x2="50" y2="93" stroke="currentColor" stroke-width="8"/>
+      <line x1="7" y1="50" x2="93" y2="50" stroke="currentColor" stroke-width="8"/>
+    </symbol>
+  </defs></svg>
+
+  <!-- =========================== HEADER =========================== -->
+  <header class="header" data-measure-role="header">
+    <div class="venue-badge">
+      <div class="vb-venue">ADVX</div>
+      <div class="vb-year">2026</div>
+      <div class="vb-tag">BOARD ② · Process</div>
+    </div>
+
+    <div class="title-block">
+      <h1 class="title">Nervus <span class="accent">OS</span></h1>
+      <div class="subtitle">Robot's Android &nbsp;<span class="en">Android for Robots — an OS &amp; app store for any machine</span></div>
+      <div class="tagline">Any brand robot, download and install App like a phone —— One set of App runs on different bodies</div>
+      <div class="authors-line">Nervus OS Team &nbsp;·&nbsp; ADVX 2026 Hackathon &nbsp;·&nbsp; RDK S100 · Ubuntu 22.04 · aarch64 · PREEMPT_RT</div>
+    </div>
+
+    <div class="right-block">
+      <div class="qr-block">
+        <img data-color-exempt="logo" alt="QR → github.com/Nervus-OS"
+             src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAlAAAAJQAQMAAAB7LMgGAAAABlBMVEULOkf///8iTK+9AAACUklEQVR42u3dQW4CMQwF0Kj3vzNtVVBix6EswLB4I1EYKK9SFl+OZ5KOy9OOgUKhUCgUCoW6UiMcv+e3x7j+qfnq9jp/53L5Gk87UCgUqjj+EmgJsHE7Xz9d313P5nfkFQqF6sqrWFutn8XfmT/jd+QVCoV6R17lWiqnlbxCoVCflFfxea2q1nmjvEKhUP15lXMo11N5pqh/hUKh3pNX8Z3HHlkx7CgU6vV5td3kkJIrzhPH4XYKw45CoXryKidUnBPme7JybSavUChUZ17l7no8y6mWryPKKxQK1ZNXOY/idcL/726QVygUqiev4nN8vc4Tq/6V+SAKhXpHXtXdqVh9Ve+qr1AoVN98MM4JY3Kd72PQv0KhUP15VVVQsRdf9a7iymfDjkKh+uqrmVZxjhivGa611SoYdhQK9fq8inco5HWCpx1ksmLYUShUR17tdVOcE8bVzbkyU1+hUKjevMpXCKs1OtWKHf0rFArVl1c5n/bM2u973ystw45CoTryKu+FvO+MPGuxOIOcuWbYUShUx3wwZtXetdr3Rs45J69QKFRnXlVZtd+3UO0wKq9QKFRnXu3d9FNPq+q7yysUCtWVV9U6nFxt7Xmmf4VCoXrz6jTTi72tejcs/SsUCtVbX+0Jlquv0z6k1g+iUKj++WC18vmUWFWfy7CjUKievMp1U8yreR5XDtqvD4VCfUZe5VzKVZj1OCgU6jPyqpr/3ettGXYUCtWTV+ddRvcVOPl/T8grFArVl1ePvFP9py/zQRQK1ZtXzzlQKBQKhUKhUD/HNyiZnYi1txZkAAAAAElFTkSuQmCC">
+        <div class="qr-label">github.com/Nervus-OS</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- =========================== BODY =========================== -->
+  <div class="body" data-measure-role="body">
+
+    <!-- ===== INTRO ===== -->
+    <section class="fc-intro" data-measure-role="card">
+      <div class="t">A journey of one command · <span class="hot">One command's journey through Nervus OS</span></div>
+      <div class="s"><span class="zh">Control source</span> &#8594; App &#8594; <span class="zh">Port A/IPC</span> &#8594; <span class="zh">Kernel Five Gates</span> &#8594; <span class="zh">Port B/Provider</span> &#8594; DimOS &#8594; <span class="zh">Port C/Transmission</span> &#8594; <span class="zh">Body</span> &nbsp;·&nbsp; <span class="zh">Security channel full bypass inspection</span></div>
+    </section>
+
+    <!-- ===== FLOWCHART ===== -->
+    <div class="flowchart" data-measure-role="card">
+
+      <!-- MAIN SPINE -->
+      <div class="spine">
+
+        <div class="node n-src" data-measure-role="card">
+          <div class="n-head"><span class="n-tier">SOURCES</span><span class="n-name">Control Source <span class="en">peer control sources</span></span></div>
+          <div class="src-row">
+            <div class="src"><div class="sn">Zilo Ring</div><div class="ss">IMU + gesture</div></div>
+            <div class="src"><div class="sn">GUI · Cockpit</div><div class="ss">on-screen</div></div>
+            <div class="src"><div class="sn">AI Gateway</div><div class="ss">Tool-Calling</div></div>
+            <div class="src"><div class="sn">Headset · More</div><div class="ss">WebSpatial…</div></div>
+          </div>
+          <div class="n-body">In the eyes of the arbiter, all are <strong>equal</strong> —— who currently controls the body is decided by the focus of control, not who connected first.</div>
+        </div>
+
+        <div class="sarrow"><span class="a">&#8595;</span><span class="lbl"><span class="zh">Hold control lease · Only call standard interface methods</span> <span class="sub">Manipulator@1.MoveToPose · BaseMotion@1.setVelocity</span></span></div>
+
+        <div class="node n-app" data-measure-role="card">
+          <div class="n-head"><span class="n-tier">L1</span><span class="n-name">Application App <span class="en">Kotlin SDK · signed .nspkg</span></span></div>
+          <div class="n-body">Declare required interfaces, hold HUMAN/AI lease, only send standard interface requests —— <strong>Do not touch hardware, do not know which robot it is behind</strong>. </div>
+        </div>
+
+        <div class="sarrow"><span class="a">&#8595;</span><span class="lbl">Port A · Port A — nervus-ipc <span class="sub">UDS · protobuf Envelope · Request/Response</span></span></div>
+
+        <div class="node n-os" data-measure-role="card">
+          <div class="n-head"><span class="n-tier">L2</span><span class="n-name">nervud kernel <span class="en">Go · the 5 gates every command passes</span></span></div>
+          <div class="gates">
+            <div class="gate"><span class="g-n">1</span><span class="g-name">Identity Hello <span class="en">SO_PEERCRED / PEERPIDFD</span></span><span class="g-rule">Spoof &#8594; Deny</span></div>
+            <div class="gate"><span class="g-n">2</span><span class="g-name">Resolve Endpoint Resolve <span class="en">capability &#8594; resource handle</span></span><span class="g-rule">No Provider &#8594; Deny</span></div>
+            <div class="gate"><span class="g-n">3</span><span class="g-name">Permission <span class="en">interface &#8594; permission catalog</span></span><span class="g-rule">Not Granted &#8594; Deny</span></div>
+            <div class="gate g-arb"><span class="g-n">4</span><span class="g-name">Control Focus Arbiter <span class="en">lease · SAFETY&gt;HUMAN&gt;AI</span></span><span class="g-rule">Non-Focus &#8594; Deny/Queue</span></div>
+            <div class="gate"><span class="g-n">5</span><span class="g-name">Motion Gate <span class="en">atomic word + undo epoch</span></span><span class="g-rule">Latch &#8594; Dispatch</span></div>
+          </div>
+        </div>
+
+        <div class="sarrow"><span class="a">&#8595;</span><span class="lbl">Port B · Port B — <span class="zh">Capability &#8594; Provider Binding</span> <span class="sub">Robot Profile · Dispatch</span></span></div>
+
+        <div class="node n-dim" data-measure-role="card">
+          <div class="n-head"><span class="n-tier">L3</span><span class="n-name">DimOS Provider <span class="en">Python · driver + autonomy</span></span></div>
+          <div class="n-body">Translate the intent of standard interface into low-level instructions: inverse kinematics <span class="mono-i">Pinocchio</span> · Navigation SLAM/A* · Device drivers. Located below the kernel, <strong>replacable as a whole</strong>. </div>
+        </div>
+
+        <div class="sarrow"><span class="a">&#8595;</span><span class="lbl">Port C · Port C — <span class="zh">Transport</span> <span class="sub">SocketCAN 2.0B 1Mbps · WebRTC · serial</span></span></div>
+
+        <div class="node n-hw" data-measure-role="card">
+          <div class="n-head"><span class="n-tier">L4</span><span class="n-name">Body Hardware <span class="en">actuation</span></span></div>
+          <div class="n-chips">
+            <span class="chip wire">PiPER · CAN 0x151</span>
+            <span class="chip wire">GO2 · WebRTC</span>
+            <span class="chip wire">Limo · serial</span>
+            <span class="chip zh">Joint / Chassis Actuation</span>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- SAFETY / PREEMPTION LANE -->
+      <aside class="safety-lane" data-measure-role="card">
+        <div class="sl-title">Security · Preemption Channel<span class="en">Safety / preemption — bypasses the whole stack</span></div>
+        <div class="sl-lead">This one does not go through the above five gates. Runs in parallel at any moment, directly reaching the execution layer.</div>
+        <div class="sl-step"><div class="st">① Human Gesture Takeover</div><div class="sd"><span class="zh">Focus switches from HUMAN &gt; AI, AI's dispatch is immediately invalidated.</span></div></div>
+        <div class="sl-arrow">&#8595;</div>
+        <div class="sl-step"><div class="st">② Safety Judgment · Lockout</div><div class="sd"><span class="zh">Epoch++ lockout parking intention.</span></div></div>
+        <div class="sl-arrow">&#8595;</div>
+        <div class="sl-step"><div class="st">③ PREEMPT_RT Emergency Stop</div><div class="sd">sched_setattr SCHED_FIFO·<span class="zh">Zero Heap Allocation Dedicated Channel</span></div></div>
+        <div class="sl-arrow">&#8595;</div>
+        <div class="sl-step"><div class="st">④ Direct Execution Layer</div><div class="sd"><span class="zh">Bypassing DimOS, takes effect at the moment of return.</span></div></div>
+        <div class="sl-tap">&#9664; Bypass Injection L4 Body</div>
+      </aside>
+
+    </div>
+
+    <!-- ===== DESIGN PRINCIPLES + LEGEND ===== -->
+    <div class="fc-foot">
+      <div class="fp-grid">
+        <div class="fp">
+          <div class="fp-k">Online protocol, not function call</div>
+          <div class="fp-en">real wire protocol at every boundary</div>
+          <div class="fp-d">Each layer is a <strong>changeable, isolatable, auditable</strong> protocol boundary —— changing a robot only changes one Provider, core zero modifications.</div>
+        </div>
+        <div class="fp fp-safe">
+          <div class="fp-k">Five sequential enforcement gates, one gate not passed is rejected</div>
+          <div class="fp-en">five gates · fail-closed</div>
+          <div class="fp-d">Identity → Parsing → Permissions → Arbitration → Movement gate, check each gate one by one; if any gate is not passed, the command<strong>is rejected on the spot</strong>, connection can be closed.</div>
+        </div>
+        <div class="fp fp-dim">
+          <div class="fp-k">Security is independent of runtime</div>
+          <div class="fp-en">safety below the runtime</div>
+          <div class="fp-d">Secure the channel and execute in parallel, reaching the execution layer directly; even if the kernel crashes or GC occurs, <strong>the downtime takes effect at the moment of return</strong>.</div>
+        </div>
+      </div>
+      <div class="fc-legend">
+        <span class="lg-title">Legend Legend</span>
+        <span class="lg"><i class="li-app"></i>L1 Application</span>
+        <span class="lg"><i class="li-os"></i>L2 Kernel</span>
+        <span class="lg"><i class="li-dim"></i>L3 DimOS</span>
+        <span class="lg"><i class="li-hw"></i>L4 Unit</span>
+        <span class="lg"><i class="li-safe"></i>Safe Passage</span>
+        <span class="lg mono">&#8595; Main Path main path</span>
+        <span class="lg mono safe">&#9664; Safety Bypass safety bypass</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- =========================== FOOTER =========================== -->
+  <div class="footer" data-measure-role="footer">
+    <div>
+      <strong>Nervus OS</strong> · ADVX 2026 &nbsp;·&nbsp;
+      repos: <span class="repo">nervud · nervus-ipc · nervus-app-sdk · nervus-packaging · nervus-system-software · nring</span>
+    </div>
+    <div>
+      <span class="repo">github.com/Nervus-OS</span> &nbsp;·&nbsp; <span class="zh">Scan to join the organization</span> ↗
+    </div>
+  </div>
+
+  <span class="corner-sig" data-ps-mark="corner" data-color-exempt="logo"
+        aria-hidden="true"><svg viewBox="0 0 100 100"><use href="#psReg"/></svg></span>
+
+</div>
+
+</body>
+</html>
