@@ -43,7 +43,7 @@ import numpy as np
 
 from .datasets import Datasets
 from .hardware import JOINTS, Arm, ArmError, Camera, mono
-from .store import Store, read_json, utc_now, write_json
+from .store import CONTRACT, Store, read_json, utc_now, write_json
 
 DEFAULT_PARAMS = {
     "replan_every": 10,          # steps between new chunks (1..chunk_size)
@@ -566,6 +566,7 @@ class Runner:
             self.rollout = None
             if self.params["record_rollouts"] and not dry:
                 self.rollout = RolloutRecorder(self.store.root / "rollouts", rid, {
+                    "contract": CONTRACT["version"],  # the Mac rejects packages from any other contract
                     "source": "nervus-act engine", "policy": self.policy_name, "params": dict(self.params),
                     "task": self.facts.get("task"), "dataset": self.facts.get("dataset"),
                     "joint_names": JOINTS, "cameras": [k.removeprefix("observation.images.") for k in self.policy.image_keys],

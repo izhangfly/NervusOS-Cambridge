@@ -282,6 +282,8 @@ class SimCamera:
                 self.frame, self.stamp = frame, t
                 self.seq += 1
             self.times.append(t)
+            if nxt < time.monotonic() - period:
+                nxt = time.monotonic()  # fell behind (a slow first frame): don't burst to catch up
             time.sleep(max(0.0, nxt - time.monotonic()))
 
     def latest(self):
