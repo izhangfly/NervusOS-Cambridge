@@ -55,11 +55,12 @@ fun OverviewTab(studio: Studio) {
     val s = studio.status
     Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         Column(Modifier.weight(1.4f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 val roles = s["cameras"].obj.keys.toList().ifEmpty { listOf("wrist", "scene") }
-                for (r in roles) CameraView(studio, r, Modifier.weight(1f).fillMaxHeight())
+                for (r in roles) CameraView(studio, r, Modifier.weight(1f).aspectRatio(4f / 3f))
             }
             NextStep(studio, Modifier.fillMaxWidth())
+            Spacer(Modifier.weight(1f))
         }
         Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             ArmPanel(studio)

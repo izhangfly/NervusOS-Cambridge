@@ -204,7 +204,7 @@ fun PoliciesTab(studio: Studio) {
     }
     Panel("Policies", Modifier.fillMaxSize()) {
         if (studio.policies.isEmpty()) Text("Nothing published yet. Train one on the Train tab.", style = Sci.small)
-        Row(Modifier.padding(bottom = 6.dp)) {
+        else Row(Modifier.padding(bottom = 6.dp)) {
             for ((h, w) in listOf("name" to 300, "role" to 100, "step" to 90, "loss" to 80, "trials" to 120, "gate" to 200, "created" to 170)) {
                 Text(h.uppercase(), style = Sci.small.copy(fontSize = 11.sp), modifier = Modifier.width(w.dp))
             }
