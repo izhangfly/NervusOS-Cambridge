@@ -20,6 +20,10 @@ still fails is left as it was and reported. Results are cached (~/.cache/nervus-
 translates what changed.
 
 Needs Ollama (https://ollama.com) with the model pulled: `ollama pull qwen3:8b`.
+
+On a 16 GB Mac the model (about 6 GB resident) and an ACT training run cannot share memory: training slowed from
+2 s to 320 s a step. So before each file the tool reads the ACT worker's heartbeat (NERVUS_TRANSLATE_YIELD_TO,
+default ~/Shared/NervusACT/workers/mac.json) and, while the worker is training, unloads the model and waits.
 """
 from __future__ import annotations
 
@@ -37,6 +41,31 @@ MODEL = os.environ.get("NERVUS_TRANSLATE_MODEL", "qwen3:8b")
 OLLAMA = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
 CACHE = Path(os.environ.get("NERVUS_TRANSLATE_CACHE", "~/.cache/nervus-translate")).expanduser()
 CHUNK = 1800  # characters of Markdown per request
+YIELD_TO = Path(os.environ.get("NERVUS_TRANSLATE_YIELD_TO", "~/Shared/NervusACT/workers/mac.json")).expanduser()
+BUSY = {"preparing", "training", "gating"}
+
+
+def yield_to_training(model: str):
+    """Wait while the ACT worker trains, with the model unloaded so training gets the memory."""
+    told = False
+    while True:
+        try:
+            w = json.loads(YIELD_TO.read_text())
+            busy = w.get("state") in BUSY and time.time() - float(w.get("epoch", 0)) < 120
+        except Exception:
+            busy = False
+        if not busy:
+            return
+        if not told:
+            print(f"  the ACT worker is {w.get('state')}: unloading the model and waiting", flush=True)
+            try:
+                body = json.dumps({"model": model, "keep_alive": 0}).encode()
+                urllib.request.urlopen(urllib.request.Request(f"{OLLAMA}/api/generate", data=body,
+                                                              headers={"Content-Type": "application/json"}), timeout=30).read()
+            except Exception:
+                pass
+            told = True
+        time.sleep(60)
 
 # CJK punctuation, ideographs and full-width forms, from code points so this file stays ASCII.
 CJK = re.compile("[%s]" % "".join(f"{chr(a)}-{chr(b)}" for a, b in (
@@ -327,6 +356,7 @@ def main() -> int:
     tr = Translator()
     t0 = time.time()
     for n, p in enumerate(targets, 1):
+        yield_to_training(tr.model)
         print(f"[{n}/{len(targets)}] {p}", flush=True)
         translate_file(tr, p)
     for path in map(Path, a.paths):
