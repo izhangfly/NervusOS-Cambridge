@@ -1,0 +1,23 @@
+{
+  "package_id": "com.nervus.piperring",
+  "version": "0.1.0",
+  "name": "Piper Ring Control",
+  "description": "Drive the AgileX PiPER arm with the Zilo smart ring (6-axis IMU).",
+  "icon": "assets/icon.png",
+  "components": [
+    {
+      "id": "piper_ring",
+      "type": "app",
+      "entry": "lib/piper-ring.jar",
+      "runtime": "jvm",
+      "launch_mode": "manual",
+      "interfaces": [
+        "nervus.interface.manipulator.arm"
+      ]
+    }
+  ],
+  "permissions": [
+    "nervus.permission.manipulator.control"
+  ],
+  "_notes": "VERIFY manifest schema against nervud/internal/pkgregistry/manifest.go. The desktop Launcher (L1) shows this as a clickable app icon; launch_mode:manual = user starts it. The Python ring sidecar (ring-sidecar/ring_bridge.py) is NOT a Nervus component — it is a helper service started alongside the app; see README."
+}
