@@ -140,7 +140,7 @@ fun TeleopScreen(p: Pipeline) {
                         // corner telemetry
                         Column(Modifier.align(Alignment.TopStart).padding(14.dp)) {
                             Text("CAM · FRONT · $camFormat", style = Hud.label.copy(color = Hud.cyan))
-                            Text("${"%.0f".format(camFps)} FPS IN · ${"%.0f".format(visionFps)} FPS TRACKED", style = Hud.label)
+                            Text("${"%.0f".format(camFps)} FPS IN · " + if (p.visionIdle) "STANDBY: NOBODY IN VIEW" else "${"%.0f".format(visionFps)} FPS TRACKED", style = Hud.label)
                         }
                         Column(Modifier.align(Alignment.BottomStart).padding(14.dp)) {
                             val o = obs

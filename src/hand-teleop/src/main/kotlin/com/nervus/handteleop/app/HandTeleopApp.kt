@@ -6,6 +6,7 @@ import com.nervus.handteleop.camera.CameraSource
 import com.nervus.handteleop.control.ArmLink
 import com.nervus.handteleop.control.Teleop
 import com.nervus.handteleop.control.TeleopSettings
+import com.nervus.handteleop.control.TeleopStatus
 import com.nervus.handteleop.ui.TeleopScreen
 import com.nervus.handteleop.vision.HandEstimator
 import com.nervus.handteleop.vision.Observation
@@ -87,6 +88,9 @@ class Pipeline(
         private set
     @Volatile var visionFps: Float = 0f
         private set
+    /** True while nobody is in view and the arm is not engaged: the models then run five times a second. */
+    @Volatile var visionIdle: Boolean = false
+        private set
     @Volatile private var running = false
     private val threads = ArrayList<Thread>()
 
@@ -101,7 +105,9 @@ class Pipeline(
 
     private fun visionLoop() {
         val tracker = try {
-            val threads = (Runtime.getRuntime().availableProcessors() / 2).coerceIn(2, 4)
+            // Two threads per model: a full pass stays under the 50 ms the 20 Hz arm loop needs, and the app
+            // no longer takes every core of the laptop (four threads each ran it at 355% CPU for hours).
+            val threads = 2
             Tracker(
                 PoseEstimator(resource("models/yolo26n-pose_320.onnx"), threads),
                 HandEstimator(resource("models/hand_landmark.onnx"), threads),
@@ -114,19 +120,34 @@ class Pipeline(
         var lastSeq = -1L
         var count = 0
         var windowStart = System.nanoTime()
+        var lastPerson = System.nanoTime()
+        var nextPass = 0L
         while (running) {
+            val wait = nextPass - System.nanoTime()
+            if (wait > 0) {
+                Thread.sleep(wait / 1_000_000, (wait % 1_000_000).toInt())
+                continue
+            }
             val frame = camera.latest()
             if (frame == null || frame.sequence == lastSeq) {
                 Thread.sleep(3)
                 continue
             }
             lastSeq = frame.sequence
+            val passStart = System.nanoTime()
             try {
-                latest.set(tracker.process(frame))
+                val obs = tracker.process(frame)
+                latest.set(obs)
+                if (obs.body != null) lastPerson = System.nanoTime()
                 visionError = null
             } catch (e: Exception) {
                 visionError = e.message
             }
+            // The arm loop runs at 20 Hz, so tracking faster than that buys nothing. With nobody in view and the
+            // arm not engaged, look five times a second until someone steps in.
+            val engaged = teleop.status.phase != TeleopStatus.Phase.IDLE
+            visionIdle = !engaged && System.nanoTime() - lastPerson > 3_000_000_000L
+            nextPass = passStart + if (visionIdle) 200_000_000L else 50_000_000L
             count++
             val now = System.nanoTime()
             if (now - windowStart > 1_000_000_000L) {
