@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PiPER · ACT Policy Training</title>
+<meta name="description" content="Live training telemetry for an ACT imitation-learning policy on the AgileX PiPER arm, fine-tuned from demonstrations plus live human corrections.">
+<meta property="og:title" content="PiPER · ACT Policy Training">
+<meta property="og:description" content="Live training telemetry for an ACT imitation-learning policy on the AgileX PiPER arm, fine-tuned from demonstrations plus live human corrections.">
+<meta property="og:type" content="website">
+<meta name="theme-color" content="#f2f1ec">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23111110'/%3E%3Ccircle cx='16' cy='16' r='7' fill='%23e0461a'/%3E%3C/svg%3E">
+<link rel="preload" href="assets/inter-latin-wght.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="app.css?v=7240f95d">
+</head>
+<body>
+<div class="page">
+
+  <header class="masthead grid">
+    <div class="c-6 eyebrow">Robot Learning <span class="sep">/</span> Post-training</div>
+    <div class="c-6 status-line">
+      <span class="status" id="status"><span class="status-dot"></span><span id="status-text">Connecting</span></span>
+      <span class="updated" id="updated">—</span>
+    </div>
+  </header>
+
+  <nav class="sessions" id="sessions" aria-label="Training sessions"></nav>
+
+  <section class="hero grid">
+    <div class="c-8">
+      <h1>PiPER<br>Pick&#8209;and&#8209;Place</h1>
+      <p class="lede">An Action Chunking Transformer learning to pick up a block and place it on a target — trained from <span id="lede-episodes">50</span> demonstrations and live human corrections on a single Apple&nbsp;Silicon laptop.</p>
+    </div>
+    <dl class="c-4 facts">
+      <div><dt>Robot</dt><dd id="f-robot">—</dd></div>
+      <div><dt>Policy</dt><dd id="f-policy">—</dd></div>
+      <div><dt>Data</dt><dd id="f-data">—</dd></div>
+      <div><dt>Compute</dt><dd id="f-compute">—</dd></div>
+    </dl>
+  </section>
+
+  <section class="progress-block">
+    <div class="progress-head grid">
+      <div class="c-6"><span class="label">Progress</span> <span class="progress-count" id="p-count">—</span></div>
+      <div class="c-6 right"><span class="label">Estimated completion</span> <span class="progress-eta" id="p-eta">—</span></div>
+    </div>
+    <div class="track" id="track"><div class="fill" id="fill"></div><div class="ticks" id="ticks"></div></div>
+    <div class="track-scale" id="track-scale"></div>
+  </section>
+
+  <section class="kpis grid" id="kpis">
+    <div class="kpi c-2"><div class="label">Step</div><div class="kpi-value" id="k-step">—</div><div class="kpi-sub" id="k-step-sub">&nbsp;</div></div>
+    <div class="kpi c-2"><div class="label">Training loss</div><div class="kpi-value" id="k-loss">—</div><div class="kpi-sub" id="k-loss-sub">&nbsp;</div></div>
+    <div class="kpi c-2"><div class="label">Best loss</div><div class="kpi-value" id="k-best">—</div><div class="kpi-sub" id="k-best-sub">&nbsp;</div></div>
+    <div class="kpi c-2"><div class="label">Throughput</div><div class="kpi-value" id="k-rate">—</div><div class="kpi-sub" id="k-rate-sub">&nbsp;</div></div>
+    <div class="kpi c-2"><div class="label">Epochs</div><div class="kpi-value" id="k-epoch">—</div><div class="kpi-sub" id="k-epoch-sub">&nbsp;</div></div>
+    <div class="kpi c-2"><div class="label">Elapsed</div><div class="kpi-value" id="k-elapsed">—</div><div class="kpi-sub" id="k-elapsed-sub">&nbsp;</div></div>
+  </section>
+
+  <nav class="controls" id="controls" aria-label="Chart view">
+    <div class="control">
+      <span class="label">Range</span>
+      <div class="seg" data-control="range">
+        <button data-value="all" aria-pressed="true">All</button>
+        <button data-value="20000" aria-pressed="false">Last 20K</button>
+        <button data-value="5000" aria-pressed="false">Last 5K</button>
+      </div>
+    </div>
+    <div class="control">
+      <span class="label">Smoothing</span>
+      <div class="seg" data-control="smooth">
+        <button data-value="0" aria-pressed="true">Off</button>
+        <button data-value="0.6" aria-pressed="false">0.6</button>
+        <button data-value="0.9" aria-pressed="false">0.9</button>
+      </div>
+    </div>
+    <div class="control hint">Scroll or pinch a chart to zoom · drag to pan · step charts stay in sync</div>
+    <div class="control push">
+      <button class="btn" id="present" aria-pressed="false">Presentation view</button>
+    </div>
+  </nav>
+
+  <section class="section">
+    <div class="section-head grid"><div class="c-12"><span class="section-no">01</span><h2>Optimization</h2></div></div>
+    <div class="grid cards">
+      <article class="card c-8" data-chart="loss">
+        <header class="card-head">
+          <div><h3>Training loss</h3><p class="sub">L1 action error + KL regularizer, averaged per 200 steps</p></div>
+          <div class="actions">
+            <div class="seg small" data-scale="loss"><button data-value="log" aria-pressed="true">Log</button><button data-value="value" aria-pressed="false">Linear</button></div>
+            <button class="btn ghost" data-act="table">Table</button><button class="btn ghost" data-act="png">PNG</button><button class="btn ghost" data-act="reset">Reset</button>
+          </div>
+        </header>
+        <div class="chart tall"></div><div class="table-view" hidden></div>
+        <footer class="card-foot">Vertical rules mark saved checkpoints.</footer>
+      </article>
+      <aside class="c-4 notes" id="notes">
+        <div class="note"><div class="label">Loss reduction</div><div class="note-value" id="n-reduction">—</div><div class="kpi-sub" id="n-reduction-sub">&nbsp;</div></div>
+        <div class="note"><div class="label">Change, last 2K steps</div><div class="note-value" id="n-recent">—</div><div class="kpi-sub" id="n-recent-sub">&nbsp;</div></div>
+        <div class="note"><div class="label">Samples seen</div><div class="note-value" id="n-samples">—</div><div class="kpi-sub" id="n-samples-sub">&nbsp;</div></div>
+        <div class="note"><div class="label">Checkpoints</div><div class="note-value" id="n-ckpt">—</div><div class="kpi-sub" id="n-ckpt-sub">&nbsp;</div></div>
+      </aside>
+      <article class="card c-6" data-chart="grad">
+        <header class="card-head">
+          <div><h3>Gradient norm</h3><p class="sub">Global L2 norm before clipping</p></div>
+          <div class="actions">
+            <div class="seg small" data-scale="grad"><button data-value="log" aria-pressed="true">Log</button><button data-value="value" aria-pressed="false">Linear</button></div>
+            <button class="btn ghost" data-act="table">Table</button><button class="btn ghost" data-act="png">PNG</button><button class="btn ghost" data-act="reset">Reset</button>
+          </div>
+        </header>
+        <div class="chart"></div><div class="table-view" hidden></div>
+      </article>
+      <article class="card c-6" data-chart="lr">
+        <header class="card-head">
+          <div><h3>Learning rate</h3><p class="sub">AdamW, transformer and ResNet-18 backbone</p></div>
+          <div class="actions"><button class="btn ghost" data-act="table">Table</button><button class="btn ghost" data-act="png">PNG</button><button class="btn ghost" data-act="reset">Reset</button></div>
+        </header>
+        <div class="chart"></div><div class="table-view" hidden></div>
+      </article>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-head grid"><div class="c-12"><span class="section-no">02</span><h2>Throughput</h2></div></div>
+    <div class="grid cards">
+      <article class="card c-6" data-chart="rate">
+        <header class="card-head">
+          <div><h3>Training speed</h3><p class="sub">Steps per second — GPU compute vs. wall clock incl. checkpoint I/O</p></div>
+          <div class="actions"><button class="btn ghost" data-act="table">Table</button><button class="btn ghost" data-act="png">PNG</button><button class="btn ghost" data-act="reset">Reset</button></div>
+        </header>
+        <div class="chart"></div><div class="table-view" hidden></div>
+      </article>
+      <article class="card c-6" data-chart="steptime">
+        <header class="card-head">
+          <div><h3>Time per step</h3><p class="sub">Seconds, split into model update and data loading</p></div>
+          <div class="actions"><button class="btn ghost" data-act="table">Table</button><button class="btn ghost" data-act="png">PNG</button><button class="btn ghost" data-act="reset">Reset</button></div>
+        </header>
+        <div class="chart"></div><div class="table-view" hidden></div>
+      </article>
+      <article class="card c-12" data-chart="timeline">
+        <header class="card-head">
+          <div><h3>Steps over time</h3><p class="sub">Completed optimizer steps against wall-clock time, with projected finish</p></div>
+          <div class="actions"><button class="btn ghost" data-act="table">Table</button><button class="btn ghost" data-act="png">PNG</button><button class="btn ghost" data-act="reset">Reset</button></div>
+        </header>
+        <div class="chart"></div><div class="table-view" hidden></div>
+      </article>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-head grid"><div class="c-12"><span class="section-no">03</span><h2>System</h2></div></div>
+    <div class="grid cards">
+      <article class="card c-4" data-chart="mem">
+        <header class="card-head">
+          <div><h3>Free memory</h3><p class="sub">System-wide, percent of 16&nbsp;GB unified memory</p></div>
+          <div class="actions"><button class="btn ghost" data-act="table">Table</button><button class="btn ghost" data-act="png">PNG</button></div>
+        </header>
+        <div class="chart short"></div><div class="table-view short" hidden></div>
+      </article>
+      <article class="card c-4" data-chart="rss">
+        <header class="card-head">
+          <div><h3>Trainer memory</h3><p class="sub">Resident set size of the training process, MB</p></div>
+          <div class="actions"><button class="btn ghost" data-act="table">Table</button><button class="btn ghost" data-act="png">PNG</button></div>
+        </header>
+        <div class="chart short"></div><div class="table-view short" hidden></div>
+      </article>
+      <article class="card c-4" data-chart="disk">
+        <header class="card-head">
+          <div><h3>Free disk</h3><p class="sub">Gigabytes available for checkpoints</p></div>
+          <div class="actions"><button class="btn ghost" data-act="table">Table</button><button class="btn ghost" data-act="png">PNG</button></div>
+        </header>
+        <div class="chart short"></div><div class="table-view short" hidden></div>
+      </article>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-head grid"><div class="c-12"><span class="section-no">04</span><h2>Checkpoints</h2></div></div>
+    <div class="grid">
+      <div class="c-12 table-wrap">
+        <table class="data" id="ckpt-table">
+          <thead><tr><th class="num">Step</th><th>Saved</th><th class="num">Loss</th><th class="num">Epoch</th><th class="num">Policy size</th><th>Availability</th></tr></thead>
+          <tbody><tr><td colspan="6" class="empty">The first checkpoint is written at step 5,000.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-head grid"><div class="c-12"><span class="section-no">05</span><h2>Configuration</h2></div></div>
+    <div class="grid config">
+      <dl class="c-4 spec" id="spec-model"><div class="spec-title">Model</div></dl>
+      <dl class="c-4 spec" id="spec-training"><div class="spec-title">Training</div></dl>
+      <dl class="c-4 spec" id="spec-dataset"><div class="spec-title">Dataset</div></dl>
+    </div>
+  </section>
+
+  <footer class="colophon grid">
+    <div class="c-6">Live telemetry from LeRobot training logs, refreshed every minute.</div>
+    <div class="c-6 right" id="colophon-time">&nbsp;</div>
+  </footer>
+</div>
+<script src="assets/echarts.min.js"></script>
+<script src="app.js?v=7240f95d"></script>
+</body>
+</html>

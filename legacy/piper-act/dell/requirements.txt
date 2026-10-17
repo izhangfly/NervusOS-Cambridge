@@ -1,0 +1,15 @@
+# Pure-PyPI dependencies for the Piper CAN teleop (Windows/macOS/Linux).
+# Tested together: python-can 4.6.1 + pyusb 1.3.1 + gs_usb 0.3.1.
+#
+# piper_sdk is deliberately NOT on this list — install it from the vendored
+# ./piper_sdk folder (see README). The pip release can lag or diverge from the
+# source this work was built and tested against.
+
+python-can==4.6.1
+pyusb==1.3.1
+gs_usb==0.3.1
+
+# Windows only: pyusb's libusb1 backend needs libusb-1.0.dll. This package
+# bundles it where pyusb can find it. Harmless on macOS/Linux (already provided
+# by the OS or Homebrew).
+libusb

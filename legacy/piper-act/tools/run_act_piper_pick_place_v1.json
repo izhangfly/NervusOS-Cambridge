@@ -1,0 +1,30 @@
+{
+  "_why": "See ~/Shared/Piper Arm/UPDATE.md [MAC] 2026-09-14 entry. Deviations from TRAINING INSTRUCTIONS.md: chunk_size 30 (was 100), steps 100000 (was 50000), save_freq 5000 (was 10000).",
+  "output_dir": "outputs/train/act_piper_pick_place_v1",
+  "steps": 100000,
+  "args": [
+    "--dataset.repo_id=local/piper_pick_place",
+    "--dataset.root=/Users/ianzhang/Shared/Piper Arm/datasets/piper_pick_place",
+    "--dataset.image_transforms.enable=true",
+    "--policy.type=act",
+    "--policy.device=mps",
+    "--policy.push_to_hub=false",
+    "--policy.chunk_size=30",
+    "--policy.n_action_steps=30",
+    "--batch_size=8",
+    "--save_freq=5000",
+    "--log_freq=200",
+    "--job_name=act_piper_pick_place_v1",
+    "--wandb.enable=false"
+  ],
+  "poll_s": 30,
+  "hang_timeout_s": 900,
+  "backoff_base_s": 30,
+  "max_restarts": 12,
+  "min_free_gb": 6,
+  "publish_dir": "/Users/ianzhang/Shared/Piper Arm/policies",
+  "publish_prefix": "act_pick_place_v1",
+  "publish_min_step": 10000,
+  "publish_every": 10000,
+  "on_finish_note": "/Users/ianzhang/Shared/Piper Arm/UPDATE.md"
+}

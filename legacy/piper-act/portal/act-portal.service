@@ -1,0 +1,20 @@
+[Unit]
+Description=ACT Robot Policy Training Portal (static, port 8850)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/act-portal/server.py
+Environment=PORT=8850
+DynamicUser=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+ReadOnlyPaths=/opt/act-portal
+Restart=always
+RestartSec=3
+MemoryMax=200M
+
+[Install]
+WantedBy=multi-user.target

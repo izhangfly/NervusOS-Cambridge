@@ -1,0 +1,70 @@
+{
+  "contract_version": 1,
+  "updated": "2026-09-14",
+  "spec": "AUTOMATED POST-TRAINING.md (this file is the machine-readable part; the .md explains it)",
+  "change_rule": "Only a deliberate, announced change bumps contract_version. Both sides refuse to run on a version they do not know. Whoever bumps it must tell the user, who then updates the other machine.",
+
+  "ownership": {
+    "dell_writes": ["posttrain/rollouts/<run_id>/**", "deploy/runs/**", "deploy/runs/results.csv"],
+    "mac_writes": ["posttrain/mac/**", "policies/<new_name>/**", "policies/CURRENT.json"],
+    "both_read_only": ["posttrain/CONTRACT.json", "datasets/piper_pick_place/**"],
+    "rule": "Neither machine edits or deletes files the other one owns. Built datasets and training outputs stay local on the Mac, only finished policies are published."
+  },
+
+  "task": "pick up the white block and place it on the red area",
+  "robot_type": "piper_follower",
+  "fps": 15,
+  "joint_names": ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6", "gripper"],
+  "state_units": "lerobot_robot_piper normalization: joint1..joint6 in -100..100, gripper 0..100 = raw 0..68000 (clamped). Identical to datasets/piper_pick_place observation.state.",
+  "image": {"feature": "observation.images.wrist", "camera": "Dabai DC1", "height": 480, "width": 640, "dataset_channel_order": "RGB"},
+  "base_dataset": "datasets/piper_pick_place",
+
+  "rollout_package": {
+    "dir": "posttrain/rollouts/<run_id>/",
+    "run_id": "YYYYMMDD-HHMMSS_<checkpoint name>",
+    "complete_when": "READY exists. READY is written last, after the operator marked Success/Fail; its text is the outcome. Ignore any folder without READY.",
+    "files": {
+      "episode.jsonl": "one JSON row per 15 Hz control step, in order",
+      "wrist.mp4": "mp4v video; decoded frame i (BGR from OpenCV, convert to RGB) is exactly the image the policy saw at row i",
+      "meta.json": "run facts, see meta_fields",
+      "READY": "text: success | fail"
+    },
+    "row_fields": {
+      "k": "control step index; a gap (k jumps by more than 1) means rows+frames were dropped together -> split the episode there",
+      "t": "seconds since the run started",
+      "segment": "policy | human",
+      "state": "7 floats, joint_names order, measured at this step",
+      "sent": "7 floats actually commanded (null in human segments)",
+      "plan": "7 floats, the model's plan value for this step before clamps (null in human segments or when starved)",
+      "grip": "follow | hold | release | starved | human",
+      "cam_age_ms": "age of the frame when used",
+      "obs_step": "k of the observation the current plan came from",
+      "frame": "index into wrist.mp4 (equals row index)"
+    },
+    "meta_fields": ["contract_version", "run_id", "source", "mock", "checkpoint", "params", "task", "joint_names", "camera", "fps",
+                    "video", "created", "steps", "elapsed_s", "stop_reason", "interventions", "intervened_at_s",
+                    "latency_ms_mean", "overruns", "frames", "dropped", "writer_error", "outcome", "case", "note", "labelled"]
+  },
+
+  "episode_rules": {
+    "action": "action[t] = state[t+1], exactly like the teaching data; the last row of each episode is dropped",
+    "reject_package_if": ["no READY", "mock == true", "contract_version != 1", "frames != number of rows", "writer_error is not null"],
+    "human_segments": "always eligible (success or fail): each contiguous run of segment == human with >= 30 rows becomes one episode",
+    "policy_segments": "eligible only when outcome == success AND interventions == 0: the whole run becomes one episode",
+    "never_use": "policy segments of failed runs or of runs that needed an intervention",
+    "min_rows": 30
+  },
+
+  "training": {
+    "framework": "lerobot==0.4.4, --policy.type act via --policy.path=<CURRENT policy dir>",
+    "dataset": "ALWAYS base dataset (idle starts trimmed) + all eligible rollout episodes. Never rollouts alone: lerobot-train with --policy.path recomputes normalization from the given dataset (lerobot_train.py:262-280).",
+    "fixed": {"chunk_size": 30, "image_key": "observation.images.wrist", "fps": 15, "vision_backbone": "resnet18"}
+  },
+
+  "publishing": {
+    "policy_dir": "policies/act_pick_place_pt<round>_<step:06d>/ (pretrained_model contents only, copied atomically)",
+    "candidate_file": "posttrain/mac/CANDIDATE.json",
+    "current_file": "policies/CURRENT.json  {\"name\", \"since\", \"reason\"}; the Dell portal preselects this checkpoint",
+    "promotion": "candidate becomes CURRENT only after >= 10 labelled trials of it in deploy/runs/results.csv with a success rate >= CURRENT's on its most recent 10 trials"
+  }
+}

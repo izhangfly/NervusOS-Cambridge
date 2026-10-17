@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+# Node
+node_modules/
+.next/
+.nuxt/
+.output/
+dist/
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+secrets.toml
+*.local.cmd
+# Data / databases / runtime
+*.db
+*.sqlite*
+*.sql
+*.dump
+data/
+*.log
+*.parquet
+# OS
+.DS_Store
+# Robot learning artifacts — data, checkpoints and logs stay local
+/outputs/
+/posttrain/
+/datasets/
+/policies/
+*.safetensors
+*.pth
+*.pt
+*.mp4
+*.jsonl
+*.pid
+*.status.json
+dell/analysis/*.jpg
