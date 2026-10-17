@@ -32,6 +32,8 @@ class Studio(
     private val log: Logger = Logger.getLogger("act-studio"),
     /** Live camera previews; tests turn them off (a preview redraws forever, so the UI is never idle). */
     val previews: Boolean = true,
+    /** How often status is fetched. */
+    private val pollMs: Long = 500,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -71,7 +73,11 @@ class Studio(
                     lastError = e.message
                 }
                 if (connected && System.currentTimeMillis() >= listsDue) refreshLists()
-                delay(500)
+                // Every status change redraws the window (in software, on the Dell), so poll fast only while
+                // something is moving: a take, a run, a move to the start pose.
+                val active = status["recorder"]["state"].str in setOf("recording", "saving") ||
+                    status["runner"]["state"].str in setOf("running", "moving", "loading")
+                delay(if (active) pollMs else maxOf(pollMs, 1_500))
             }
         }
         scope.launch {

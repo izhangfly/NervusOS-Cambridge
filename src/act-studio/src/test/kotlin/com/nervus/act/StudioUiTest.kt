@@ -42,7 +42,7 @@ class StudioUiTest {
     fun recordATakeAndQueueATrainingJob() {
         if (base.isEmpty()) return
         val engine = EngineClient(base)
-        val studio = Studio(engine, previews = false)
+        val studio = Studio(engine, previews = false, pollMs = 5_000)
         val name = "ui_${System.currentTimeMillis() % 100000}"
         studio.start()
         try {
