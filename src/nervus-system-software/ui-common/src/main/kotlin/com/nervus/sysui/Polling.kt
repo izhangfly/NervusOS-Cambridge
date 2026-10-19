@@ -58,18 +58,20 @@ fun <T> rememberPolled(
     val state = remember { mutableStateOf(Polled(initial, loading = true)) }
 
     LaunchedEffect(intervalMs, key) {
+        var first = true
         while (isActive) {
-            state.value = state.value.copy(loading = true)
-            try {
-                val fresh = withContext(Dispatchers.IO) { fetch() }
-                state.value = Polled(fresh, loading = false, error = null)
+            // Only the first fetch is shown as loading. Every state write redraws the window, which in hosted mode
+            // is rendered in software: flagging each background refresh made the desktop repaint (and flash its
+            // progress bar) every few seconds for nothing.
+            if (first) state.value = state.value.copy(loading = true)
+            val next = try {
+                Polled(withContext(Dispatchers.IO) { fetch() }, loading = false, error = null)
             } catch (e: Exception) {
                 // Keep the previous value: a failed refresh shouldn't make content that is already shown disappear
-                state.value = state.value.copy(
-                    loading = false,
-                    error = e.message ?: e::class.simpleName ?: "unknown error",
-                )
+                state.value.copy(loading = false, error = e.message ?: e::class.simpleName ?: "unknown error")
             }
+            if (next != state.value) state.value = next
+            first = false
             delay(intervalMs)
         }
     }

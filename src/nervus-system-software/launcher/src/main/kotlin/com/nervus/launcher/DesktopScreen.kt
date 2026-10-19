@@ -20,6 +20,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -203,22 +204,29 @@ private fun StatusBar(busy: Boolean, onPower: (PowerAction) -> Unit) {
                     }
                 }
             }
-            // The progress bar is 2dp and always keeps its place in the layout: busy is shown with visibility rather
-            // than by inserting and removing it, or the whole grid would jump 2 pixels on every refresh
-            LinearProgressIndicator(
-                modifier = Modifier.fillMaxWidth().height(2.dp),
-                color = if (busy) MaterialTheme.colorScheme.primary else Color.Transparent,
-                trackColor = Color.Transparent,
-            )
+            // The bar's 2 dp always keep their place, so the grid never jumps; but an indeterminate indicator animates
+            // forever even when transparent, and that repainted the whole desktop 60 times a second (half a core in
+            // software rendering). So it exists only while busy, with a spacer of the same height otherwise.
+            if (busy) {
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth().height(2.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = Color.Transparent,
+                )
+            } else {
+                Spacer(Modifier.fillMaxWidth().height(2.dp))
+            }
         }
     }
 }
 
 @Composable
 private fun Clock() {
-    // Ticks once a second. rememberPolled rather than a hand-written LaunchedEffect,
-    // which also gives "don't clear on a failed read" (not that reading the clock can fail)
-    val now by rememberPolled(initial = LocalTime.now(), intervalMs = 1000) { LocalTime.now() }
+    // Minutes, not seconds: every change repaints the window, and a seconds display cost a repaint a second.
+    // The poll still runs every second, but the value only changes (and only repaints) when the minute does.
+    val now by rememberPolled(initial = LocalTime.now().withSecond(0).withNano(0), intervalMs = 1000) {
+        LocalTime.now().withSecond(0).withNano(0)
+    }
     Text(
         now.value.format(TIME_FORMAT),
         style = MaterialTheme.typography.titleMedium,
@@ -226,7 +234,7 @@ private fun Clock() {
     )
 }
 
-private val TIME_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss")
+private val TIME_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
 @Composable
 private fun AppGrid(
