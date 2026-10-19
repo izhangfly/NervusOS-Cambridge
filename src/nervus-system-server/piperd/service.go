@@ -168,7 +168,7 @@ func mapDriverErr(err error) error {
 	switch {
 	case err == nil:
 		return nil
-	case errors.Is(err, errBusy), errors.Is(err, errNotEnabled):
+	case errors.Is(err, errBusy), errors.Is(err, errNotEnabled), errors.Is(err, errGuard):
 		return errPrecond
 	case errors.Is(err, errStale):
 		return errUnavailable
