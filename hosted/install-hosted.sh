@@ -31,6 +31,10 @@ id "$DESKTOP_USER" >/dev/null 2>&1 || die "no such user: $DESKTOP_USER"
 DESKTOP_UID="$(id -u "$DESKTOP_USER")"
 DESKTOP_HOME="$(getent passwd "$DESKTOP_USER" | cut -d: -f6)"
 [[ -f "$TARBALL" ]] || die "release not found: $TARBALL (run scripts/build.sh)"
+# Installing stops NervusOS. If it was open, it is opened again at the end, so a reinstall over SSH doesn't
+# leave the desktop closed.
+WAS_RUNNING=0
+systemctl is-active --quiet nervud.service && WAS_RUNNING=1
 
 # ------------------------------------------------------------------ packages
 step "Packages"
@@ -200,6 +204,13 @@ step "Check"
 [[ -x /usr/libexec/nervus/nervud ]] && ok "kernel: /usr/libexec/nervus/nervud"
 ls /usr/lib/nervus/system-packages | sed 's/^/    system package: /'
 systemctl is-active --quiet nervud.service && warn "nervud is running" || ok "nervud stopped (opens with NervusOS)"
+if (( WAS_RUNNING )); then
+	if sudo -u "$DESKTOP_USER" XDG_RUNTIME_DIR="/run/user/$DESKTOP_UID" /usr/local/bin/nervus-session start >/dev/null 2>&1; then
+		ok "NervusOS was open before the install: opened it again"
+	else
+		warn "NervusOS was open before the install and did not reopen; run: nervus-session start"
+	fi
+fi
 
 cat <<EOF
 
