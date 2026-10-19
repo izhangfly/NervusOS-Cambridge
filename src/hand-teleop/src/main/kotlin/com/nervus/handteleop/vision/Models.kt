@@ -3,6 +3,7 @@ package com.nervus.handteleop.vision
 import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
+import com.nervus.handteleop.math.Vec3
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
@@ -34,7 +35,22 @@ class BodyPose(val keypoints: List<Kp>, val score: Float) {
 }
 
 /** 21 MediaPipe hand landmarks in frame pixels (0 = wrist, 4 = thumb tip, 8 = index tip...). */
-class HandLandmarks(val points: List<Kp>, val presence: Float, val side: Side) {
+class HandLandmarks(
+    val points: List<Kp>,
+    val presence: Float,
+    /** Which of the operator's arms the crop was seeded from (the body pose knows left from right). */
+    val side: Side,
+    /**
+     * The same 21 landmarks in metres, centred on the hand, in the frame's axes (x right, y down, z away
+     * from the camera). Real 3-D lengths: what depth, pinch and wrist roll are measured from.
+     */
+    val world: List<Vec3>,
+    /**
+     * The model's own handedness score. MediaPipe defines it for a mirrored (selfie) image and these
+     * frames are not mirrored, so [side] is what decides which hand this is; kept for diagnostics.
+     */
+    val handedness: Float,
+) {
     enum class Side { LEFT, RIGHT }
 
     operator fun get(i: Int) = points[i]
@@ -105,7 +121,7 @@ class PoseEstimator(modelBytes: ByteArray, threads: Int) : AutoCloseable {
 /**
  * MediaPipe hand landmarks (the 2023 hand-landmark model, ONNX from OpenCV Zoo). Input: a 224x224
  * RGB crop, NHWC, 0..1, with the hand roughly upright. Outputs: 21 x (x, y, z) in crop pixels, a
- * hand presence score and a handedness score.
+ * hand presence score, a handedness score, and 21 x (x, y, z) world landmarks in metres.
  */
 class HandEstimator(modelBytes: ByteArray, threads: Int) : AutoCloseable {
     private val env = OrtEnvironment.getEnvironment()
@@ -113,29 +129,50 @@ class HandEstimator(modelBytes: ByteArray, threads: Int) : AutoCloseable {
     private val inputName = session.inputNames.first()
     private val input: FloatBuffer = direct(SIZE * SIZE * 3)
 
+    init {
+        // Outputs are read by name: a re-export can reorder them, and world landmarks read from the
+        // wrong tensor would still look like plausible numbers.
+        val missing = listOf(OUT_LANDMARKS, OUT_PRESENCE, OUT_HANDEDNESS, OUT_WORLD) - session.outputNames
+        require(missing.isEmpty()) { "the hand landmark model has no output ${missing.joinToString()}" }
+    }
+
     /** Runs on the crop described by [roi]; returns null when no hand is in it. */
     fun run(frame: RgbFrame, roi: HandRoi, side: HandLandmarks.Side, minPresence: Float = 0.5f): HandLandmarks? {
         val xf = Image.rotatedCropNhwc(frame, roi.cx, roi.cy, roi.side, roi.angle, SIZE, input)
         OnnxTensor.createTensor(env, input, longArrayOf(1, SIZE.toLong(), SIZE.toLong(), 3)).use { t ->
             session.run(mapOf(inputName to t)).use { res ->
-                @Suppress("UNCHECKED_CAST")
-                val lm = (res[0].value as Array<FloatArray>)[0]
-                @Suppress("UNCHECKED_CAST")
-                val presence = (res[1].value as Array<FloatArray>)[0][0]
+                val presence = res.floats(OUT_PRESENCE)[0]
                 if (presence < minPresence) return null
+                val lm = res.floats(OUT_LANDMARKS)
+                val world = res.floats(OUT_WORLD)
                 val pts = (0 until 21).map { i ->
                     val (x, y) = xf.toFrame(lm[3 * i], lm[3 * i + 1])
                     Kp(x, y, presence)
                 }
-                return HandLandmarks(pts, presence, side)
+                val wpts = (0 until 21).map { i -> xf.worldToFrame(world[3 * i], world[3 * i + 1], world[3 * i + 2]) }
+                return HandLandmarks(pts, presence, side, wpts, res.floats(OUT_HANDEDNESS)[0])
             }
         }
+    }
+
+    private fun OrtSession.Result.floats(name: String): FloatArray {
+        @Suppress("UNCHECKED_CAST")
+        return (get(name).orElseThrow().value as Array<FloatArray>)[0]
     }
 
     override fun close() = session.close()
 
     companion object {
         const val SIZE = 224
+
+        /** [1, 63]: x, y, z of each landmark in crop pixels. */
+        const val OUT_LANDMARKS = "Identity"
+        /** [1, 1]: hand presence, 0..1. */
+        const val OUT_PRESENCE = "Identity_1"
+        /** [1, 1]: handedness, 0..1. */
+        const val OUT_HANDEDNESS = "Identity_2"
+        /** [1, 63]: world landmarks, metres, centred on the hand, in the crop's axes. */
+        const val OUT_WORLD = "Identity_3"
     }
 }
 

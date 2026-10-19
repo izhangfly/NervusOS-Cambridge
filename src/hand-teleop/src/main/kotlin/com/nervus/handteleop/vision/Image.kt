@@ -1,5 +1,7 @@
 package com.nervus.handteleop.vision
 
+import com.nervus.handteleop.math.HandMath
+import com.nervus.handteleop.math.Vec3
 import java.io.ByteArrayInputStream
 import java.nio.FloatBuffer
 import javax.imageio.ImageIO
@@ -228,4 +230,8 @@ class CropTransform(
         val dy = (y - half) * k
         return (cx + dx * c - dy * s) to (cy + dx * s + dy * c)
     }
+
+    /** A world landmark (metres, crop axes) in frame axes: the same rotation, without the scale or shift. */
+    fun worldToFrame(x: Float, y: Float, z: Float): Vec3 =
+        HandMath.cropToFrame(Vec3(x.toDouble(), y.toDouble(), z.toDouble()), c.toDouble(), s.toDouble())
 }
