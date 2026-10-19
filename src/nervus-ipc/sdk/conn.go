@@ -150,6 +150,35 @@ func (co *conn) readEnvelope() (*ipcv1.Envelope, error) {
 // setReadDeadline sets the deadline for the next read. The zero value clears it.
 func (co *conn) setReadDeadline(t time.Time) error { return co.c.SetReadDeadline(t) }
 
+// keepAlive sends a Ping every half of the idle timeout nervud announced at the handshake, until the connection closes.
+//
+// nervud drops a connection that sends nothing for IdleTimeout (60 s by default), and only Ping/Pong keeps a quiet one
+// open. Answering the server's Pings isn't enough: nervud doesn't send any. Without this, a provider nobody calls (piperd
+// with no app open, camerad with no viewer) lost its connection every minute and was restarted by systemd, and a call that
+// arrived during the restart failed. The Kotlin SDK has done the same since the start (NervusClient.runPingLoop).
+func (co *conn) keepAlive(ids *requestIDGen) {
+	idle := time.Duration(co.limits.GetIdleTimeoutMs()) * time.Millisecond
+	if idle <= 0 {
+		return
+	}
+	t := time.NewTicker(idle / 2)
+	defer t.Stop()
+	for {
+		select {
+		case <-co.closed:
+			return
+		case <-t.C:
+		}
+		nonce, err := ids.nextID()
+		if err != nil {
+			return
+		}
+		if err := co.writeEnvelope(&ipcv1.Envelope{Body: &ipcv1.Envelope_Ping{Ping: &ipcv1.Ping{Nonce: nonce}}}); err != nil {
+			return
+		}
+	}
+}
+
 // close closes the underlying connection idempotently.
 func (co *conn) close() {
 	co.closeOnce.Do(func() {

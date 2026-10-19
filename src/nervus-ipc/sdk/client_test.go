@@ -457,3 +457,53 @@ func TestClient_UnexpectedBodyClosesConnection(t *testing.T) {
 		}
 	}
 }
+
+// A quiet connection must keep itself open: nervud drops one that sends nothing for IdleTimeout and never Pings first.
+func TestKeepAlive_PingsWithinTheIdleTimeout(t *testing.T) {
+	for _, role := range []string{"client", "servicehost"} {
+		t.Run(role, func(t *testing.T) { testKeepAlive(t, role) })
+	}
+}
+
+func testKeepAlive(t *testing.T, role string) {
+	f := startFakeNervud(t)
+	ack := helloAckOK()
+	ack.GetHelloAck().GetSuccess().Limits.IdleTimeoutMs = 200
+	pings := make(chan uint64, 16)
+	f.setHandler(func(_ net.Conn, env *ipcv1.Envelope) []*ipcv1.Envelope {
+		if env.GetHello() != nil {
+			return []*ipcv1.Envelope{ack}
+		}
+		if p := env.GetPing(); p != nil {
+			pings <- p.GetNonce()
+			return []*ipcv1.Envelope{{Body: &ipcv1.Envelope_Pong{Pong: &ipcv1.Pong{Nonce: p.GetNonce()}}}}
+		}
+		return nil
+	})
+	if role == "client" {
+		c, err := Connect(quietConfig(f.sockPath()))
+		if err != nil {
+			t.Fatalf("Connect: %v", err)
+		}
+		defer func() { _ = c.Close() }()
+	} else {
+		h, err := NewServiceHost(quietConfig(f.sockPath()))
+		if err != nil {
+			t.Fatalf("NewServiceHost: %v", err)
+		}
+		defer func() { _ = h.Close() }()
+	}
+	seen := map[uint64]bool{}
+	deadline := time.After(2 * time.Second)
+	for len(seen) < 3 {
+		select {
+		case n := <-pings:
+			if n == 0 || seen[n] {
+				t.Fatalf("nonce %d is zero or repeated", n)
+			}
+			seen[n] = true
+		case <-deadline:
+			t.Fatalf("got %d Pings in 2 s with a 200 ms idle timeout, want at least 3", len(seen))
+		}
+	}
+}
