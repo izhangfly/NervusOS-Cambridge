@@ -27,30 +27,32 @@ fun interface Caller {
  * Picks 640x480 at 30 fps, uncompressed YUYV when the camera offers it (no decode cost, no JPEG
  * quirks), MJPEG otherwise.
  */
-class CameraSource(private val caller: Caller, private val log: Logger) : AutoCloseable {
+class CameraSource(private val caller: Caller, private val log: Logger) : FrameSource {
     private val latest = AtomicReference<RgbFrame?>(null)
     private var consumer: TransferConsumer? = null
     private var streamId: Long = 0
     private var thread: Thread? = null
 
     @Volatile
-    var fps: Float = 0f
+    override var fps: Float = 0f
         private set
 
     @Volatile
-    var format: String = "-"
+    override var format: String = "-"
         private set
 
     @Volatile
-    var error: String? = null
+    override var error: String? = null
         private set
 
     @Volatile
     private var running = false
 
-    fun latest(): RgbFrame? = latest.get()
+    override fun latest(): RgbFrame? = latest.get()
 
-    fun start() {
+    override val waiting = "Opening the front camera through nervus.camerad…"
+
+    override fun start() {
         running = true
         thread = Thread({ loop() }, "camera").apply { isDaemon = true; start() }
     }

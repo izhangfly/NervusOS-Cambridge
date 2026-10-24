@@ -1,9 +1,17 @@
 package com.nervus.handteleop.app
 
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Window
+import androidx.compose.ui.window.application
+import androidx.compose.ui.window.rememberWindowState
+import com.nervus.handteleop.camera.CameraChoice
 import com.nervus.handteleop.camera.Caller
 import com.nervus.handteleop.camera.CameraSource
+import com.nervus.handteleop.camera.FrameSource
+import com.nervus.handteleop.camera.V4l2Source
+import com.nervus.handteleop.control.Arm
 import com.nervus.handteleop.control.ArmLink
+import com.nervus.handteleop.control.DriverArm
 import com.nervus.handteleop.control.Teleop
 import com.nervus.handteleop.control.TeleopSettings
 import com.nervus.handteleop.control.TeleopStatus
@@ -19,11 +27,72 @@ import com.nervus.sdk.ui.attachComposeDesktop
 import io.github.nervusos.ipc.v1.ControllerClass
 import java.util.concurrent.atomic.AtomicReference
 import java.util.logging.Logger
+import kotlin.system.exitProcess
 
-fun main() {
+fun main(args: Array<String>) {
+    if ("--standalone" in args) {
+        val opts = try {
+            StandaloneOptions.parse(args.toList())
+        } catch (e: IllegalArgumentException) {
+            System.err.println("hand-teleop: ${e.message}\n${StandaloneOptions.USAGE}")
+            exitProcess(2)
+        }
+        runStandalone(opts)
+        return
+    }
     val app = HandTeleopApp()
     Runtime.getRuntime().addShutdownHook(Thread { app.close() })
     app.start()
+}
+
+/**
+ * Standalone: an ordinary desktop window with no nervud, camerad or piperd in the path. Frames come
+ * straight from a V4L2 device through ffmpeg, and the arm is driven through the PiPER driver's HTTP
+ * API on loopback, as client "handteleop". The driver's one-client-at-a-time rule and its 0.4 s servo
+ * deadman stand in for NervusOS's control lease.
+ */
+private fun runStandalone(opts: StandaloneOptions) {
+    val log = Logger.getLogger("hand-teleop")
+    val pipeline = Pipeline(V4l2Source(opts.camera, log), DriverArm(opts.driver, log = log), log, standalone = true)
+    Runtime.getRuntime().addShutdownHook(Thread { pipeline.close() })
+    pipeline.start()
+    application {
+        Window(onCloseRequest = { pipeline.close(); exitApplication() }, title = "Hand Teleop",
+            state = rememberWindowState(width = 1600.dp, height = 900.dp)) {
+            TeleopScreen(pipeline)
+        }
+    }
+}
+
+/** Command line for `--standalone`. */
+data class StandaloneOptions(
+    val camera: CameraChoice = CameraChoice.Named(V4l2Source.DEFAULT_NAME),
+    val driver: String = DriverArm.DEFAULT_URL,
+) {
+    companion object {
+        const val USAGE = "usage: hand-teleop --standalone [--camera /dev/videoN | --camera-name NAME] [--driver http://127.0.0.1:8770]"
+
+        fun parse(args: List<String>): StandaloneOptions {
+            var o = StandaloneOptions()
+            var i = 0
+            fun value(flag: String): String = args.getOrNull(++i)?.takeIf { it.isNotBlank() }
+                ?: throw IllegalArgumentException("$flag needs a value")
+            while (i < args.size) {
+                when (val a = args[i]) {
+                    "--standalone" -> {}
+                    "--camera" -> o = o.copy(camera = CameraChoice.Path(value(a)))
+                    "--camera-name" -> o = o.copy(camera = CameraChoice.Named(value(a)))
+                    "--driver" -> o = o.copy(driver = value(a).trimEnd('/'))
+                    else -> throw IllegalArgumentException("unknown option $a")
+                }
+                i++
+            }
+            // The driver has no authentication and moves the arm: talk to it on this machine only.
+            val host = runCatching { java.net.URI(o.driver).host }.getOrNull()
+            require(host == "127.0.0.1" || host == "localhost" || host == "::1") { "--driver must be a loopback address" }
+            return o
+        }
+    }
 }
 
 /**
@@ -33,6 +102,8 @@ fun main() {
  *     YOLO pose + hand landmarks -> clutch mapping -> Manipulator@1 ServoToPose / SetGripper
  *     -> nervud (perm.manipulator.control, HUMAN ControlLease, deadman) -> nervus.piperd
  *     -> PiPER driver -> piper_sdk -> CAN -> arm
+ *
+ * With `--standalone` the same pipeline runs as a plain desktop app instead (see [runStandalone]).
  */
 class HandTeleopApp : NervusApp(
     config = ComponentConfig(componentId = "main", socketPath = "/run/nervus/nervud.sock"),
@@ -55,13 +126,10 @@ class HandTeleopApp : NervusApp(
         private set
 
     override fun onReady() {
-        pipeline = Pipeline(
-            caller = caller,
-            leaseFactory = {
-                acquireControl("nervus.resource.manipulator.arm", "arm.main", ControllerClass.CONTROLLER_CLASS_HUMAN)
-            },
-            log = logger,
-        )
+        val arm = ArmLink(caller) {
+            acquireControl("nervus.resource.manipulator.arm", "arm.main", ControllerClass.CONTROLLER_CLASS_HUMAN)
+        }
+        pipeline = Pipeline(CameraSource(caller, logger), arm, logger)
         pipeline.start()
         attachComposeDesktop(title = "Hand Teleop", width = 1600.dp, height = 900.dp) {
             TeleopScreen(pipeline)
@@ -75,13 +143,15 @@ class HandTeleopApp : NervusApp(
 
 /** Camera, vision and control, each on its own thread so a slow stage never stalls the others. */
 class Pipeline(
-    caller: Caller,
-    leaseFactory: () -> com.nervus.sdk.component.ControlLease,
+    val camera: FrameSource,
+    arm: Arm,
     private val log: Logger,
+    /** Running without NervusOS (for the UI's labels). */
+    val standalone: Boolean = false,
 ) : AutoCloseable {
     val settings = TeleopSettings()
-    val camera = CameraSource(caller, log)
-    val teleop = Teleop(ArmLink(caller), leaseFactory, settings, log)
+    val armLabel = arm.label
+    val teleop = Teleop(arm, settings, log)
     private val latest = AtomicReference<Observation?>(null)
 
     @Volatile var visionError: String? = null
@@ -181,7 +251,11 @@ class Pipeline(
         javaClass.classLoader.getResourceAsStream(path)?.use { it.readBytes() }
             ?: throw IllegalStateException("$path missing from the package")
 
+    // Called from both the window and a shutdown hook in standalone mode; the second call does nothing.
+    private val closed = java.util.concurrent.atomic.AtomicBoolean(false)
+
     override fun close() {
+        if (!closed.compareAndSet(false, true)) return
         running = false
         teleop.stopNow()
         camera.close()
