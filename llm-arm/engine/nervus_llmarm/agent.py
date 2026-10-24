@@ -1,62 +1,78 @@
-"""One request from the user, run as a job: the model proposes tool calls, the executor checks and runs them.
+"""One request from the user, run as a job: ground it, then decide skill by skill.
 
-The model never moves the arm itself. Every tool call is validated here (workspace box, table floor, step size,
-known objects) and motions run as straight lines at a capped speed, streamed to the driver at 10 Hz. Stopping is
-local only: there is no stop tool for the model, and STOP, E-STOP or a silent app end the job at once.
+The design follows github.com/RobotKitAI/piper-astra-jev (Apache-2.0), tailored to this arm and its driver:
+
+1. Ground. The model reads the request ("put the cube in the tray") and points at the object and the place
+   in the scene image. The scene-camera calibration turns those pixels into table positions. This is done
+   while the arm is out of the way, and remembered: once the gripper is close, the fingers hide the object.
+2. Decide. At every step the model sees the arm's state as plain flags (over_target, object_held, ...),
+   the camera images, the editable arm context and its own recent decisions, and picks ONE skill by name.
+3. Govern. A skill whose preconditions don't hold is refused (the model is asked again). The skill itself
+   is a bounded motion written here: straight lines inside the workspace box, above the table, at a capped
+   speed, streamed to the driver as client "llm". The model never sends a coordinate to the arm.
+4. Confirm by touch. Whether a grasp worked comes from the gripper (the fingers stopped part way), not the image.
+
+Stopping is local only: STOP, E-STOP, or the app going quiet end the job at once.
 """
 from __future__ import annotations
 
-import base64
-import json
 import math
 import threading
 import time
+from pathlib import Path
 
 from . import config as C
 from .driver import DriverError
 
-SYSTEM_PROMPT = """You control a 6-axis robot arm (AgileX PiPER) with a parallel gripper, over a table.
-Units: millimetres and degrees, in the arm's base frame: +x forward from the base, +y to the arm's left, +z up.
-You see two cameras: "scene" looks at the table from the side or above, "wrist" looks out of the gripper.
-The scene image has a pixel grid every 50 px with labelled lines. Objects of a clear colour are listed by
-get_scene; for anything else (white or plain objects), find it in the scene image and use pick_at_pixel /
-place_at_pixel with the pixel at the object's centre on the table.
-Workspace: x {x0}..{x1}, y {y0}..{y1}, z {z0}..{z1}. Objects are listed by get_scene with ids such as "red-1".
-Plan with the tools; one tool call per step is fine. Prefer pick and place_on/place_at over raw moves.
-If the request is unclear, an object isn't visible, or a step looks unsafe, ask instead of moving.
-Reply briefly in plain text when you are done."""
+SKILLS: dict[str, str] = {
+    "approach_target": "Move the open gripper above the target object. Only when over_target is false and "
+                       "object_placed is false.",
+    "descend_to_target": "Lower the open gripper onto the target, ready to grasp. Only when over_target is true, "
+                         "at_grasp_height is false, gripper_closed is false and object_placed is false.",
+    "close_gripper": "Close the gripper to grasp what is between the fingers. Only when over_target is true, "
+                     "at_grasp_height is true, gripper_closed is false and object_placed is false.",
+    "lift": "Raise the held object to the carry height. Only when object_held is true, at_carry_height is false "
+            "and over_place_target is false.",
+    "move_over_place": "Carry the held object above the place target. Only when object_held is true, "
+                       "at_carry_height is true and over_place_target is false.",
+    "lower_to_place": "Lower the held object onto or into the place target. Only when object_held is true, "
+                      "over_place_target is true and at_release_height is false.",
+    "open_gripper": "Open the gripper to let go. Only when object_held is true, over_place_target is true and "
+                    "at_release_height is true; or when gripper_closed is true and object_held is false, after "
+                    "a missed grasp.",
+    "retreat": "Raise the open gripper clear of the scene. Only when at_clear_height is false and object_held "
+               "is false.",
+    "done": "Stop. When task_complete is true, or when the task can't be done (say why in the note).",
+}
+MOTION = set(SKILLS) - {"done"}
 
-TOOLS = [
-    {"type": "function", "function": {"name": "get_scene", "description":
-        "The arm's pose and gripper, and the objects the cameras see (ids, colour, table position in mm).",
-        "parameters": {"type": "object", "properties": {}}}},
-    {"type": "function", "function": {"name": "pick", "description": "Open, go above an object, grasp it, lift it.",
-        "parameters": {"type": "object", "properties": {"object_id": {"type": "string"}}, "required": ["object_id"]}}},
-    {"type": "function", "function": {"name": "place_on", "description": "Put the held object on top of another object.",
-        "parameters": {"type": "object", "properties": {"object_id": {"type": "string"}}, "required": ["object_id"]}}},
-    {"type": "function", "function": {"name": "place_at", "description": "Put the held object on the table at x, y (mm).",
-        "parameters": {"type": "object", "properties": {"x_mm": {"type": "number"}, "y_mm": {"type": "number"}},
-                       "required": ["x_mm", "y_mm"]}}},
-    {"type": "function", "function": {"name": "pick_at_pixel", "description": "Like pick, for an object you located in the scene image: (u, v) is its centre in scene-camera pixels.",
-        "parameters": {"type": "object", "properties": {"u": {"type": "number"}, "v": {"type": "number"}}, "required": ["u", "v"]}}},
-    {"type": "function", "function": {"name": "place_at_pixel", "description": "Like place_at, for a spot you located in the scene image (scene-camera pixels). Set on_object true to put the held object on top of an object there.",
-        "parameters": {"type": "object", "properties": {"u": {"type": "number"}, "v": {"type": "number"},
-                                                         "on_object": {"type": "boolean"}}, "required": ["u", "v"]}}},
-    {"type": "function", "function": {"name": "move_to", "description": "Move the gripper in a straight line to x, y, z (mm), optionally turning it to yaw (deg).",
-        "parameters": {"type": "object", "properties": {"x_mm": {"type": "number"}, "y_mm": {"type": "number"},
-                                                         "z_mm": {"type": "number"}, "yaw_deg": {"type": "number"}},
-                       "required": ["x_mm", "y_mm", "z_mm"]}}},
-    {"type": "function", "function": {"name": "move_relative", "description": f"Nudge the gripper by dx, dy, dz mm (each at most {C.MAX_RELATIVE_MM:.0f}).",
-        "parameters": {"type": "object", "properties": {"dx_mm": {"type": "number"}, "dy_mm": {"type": "number"},
-                                                         "dz_mm": {"type": "number"}}}}},
-    {"type": "function", "function": {"name": "set_gripper", "description": "Open the gripper to a width in mm (0 closed, 95 fully open).",
-        "parameters": {"type": "object", "properties": {"width_mm": {"type": "number"}}, "required": ["width_mm"]}}},
-    {"type": "function", "function": {"name": "go_home", "description": "Move to the safe home position above the middle of the table.",
-        "parameters": {"type": "object", "properties": {}}}},
-]
-MOTION_TOOLS = {"pick", "place_on", "place_at", "pick_at_pixel", "place_at_pixel", "move_to", "move_relative",
-                "set_gripper", "go_home"}
-HOME_XY = (250.0, 0.0)
+GROUND_SCHEMA = {
+    "type": "object", "additionalProperties": False,
+    "properties": {
+        "found": {"type": "boolean", "description": "true if both the object and the place are visible"},
+        "target_label": {"type": "string"}, "target_u": {"type": "number"}, "target_v": {"type": "number"},
+        "place_label": {"type": "string"}, "place_u": {"type": "number"}, "place_v": {"type": "number"},
+        "place_kind": {"type": "string", "enum": ["table", "on_object", "in_container"]},
+        "note": {"type": "string"},
+    },
+    "required": ["found", "target_label", "target_u", "target_v", "place_label", "place_u", "place_v",
+                 "place_kind", "note"],
+}
+GROUND_PROMPT = """{context}
+
+First, find what the task is about in the scene camera image ({w}x{h} pixels, a labelled grid every 50 px).
+Give the pixel at the centre of the object to move, where it rests on the table, and the pixel of the place
+to put it: the centre of the spot on the table, of the object to stack it on, or of the container's inside.
+If either one is not visible, set found to false and say what is missing in the note."""
+
+
+def decision_schema() -> dict:
+    return {"type": "object", "additionalProperties": False,
+            "properties": {"skill": {"type": "string", "enum": list(SKILLS)}, "note": {"type": "string"}},
+            "required": ["skill", "note"]}
+
+
+DEFAULT_CONTEXT = (Path(__file__).with_name("context.md")).read_text()
 
 
 class Stopped(Exception):
@@ -72,7 +88,7 @@ class Job:
         self.id = f"{int(time.time() * 1000) % 10**9}"
         self.text, self.state = text, "running"         # running | waiting | done | stopped | failed
         self.log: list[dict] = []
-        self.pending: dict | None = None                # a motion waiting for Approve
+        self.pending: dict | None = None                # a step waiting for Approve
         self.decision = threading.Event()
         self.approved = False
         self.stop = threading.Event()
@@ -88,69 +104,143 @@ class Job:
                     "log": list(self.log)}
 
 
+class Task:
+    """Where the object and the place are, and what has happened to them."""
+
+    def __init__(self, target_xy, place_xy, place_kind, labels):
+        self.target_xy, self.place_xy, self.place_kind, self.labels = target_xy, place_xy, place_kind, labels
+        self.released = False
+        self.missed = 0
+
+
 class Agent:
-    def __init__(self, arm, frames, calib, settings, llm_factory, sim: bool = False):
+    def __init__(self, arm, frames, calib, settings, model_factory, context_path: Path | None = None,
+                 sim: bool = False):
         self.arm, self.frames, self.calib, self.settings = arm, frames, calib, settings
-        self.llm_factory = llm_factory            # () -> chat client, or raises with the key status message
+        self.model_factory = model_factory           # () -> model with .ask(), or raises with the key message
+        self.context_path = context_path
         self.sim = sim
-        self.history: list[dict] = []             # text-only conversation kept between requests
         self.job: Job | None = None
+        self.task: Task | None = None
+        self.grip_cmd = 95.0                         # last commanded opening, mm
         self.last_app_beat = 0.0
         self.lock = threading.Lock()
-        self._scene_objects: dict[str, dict] = {}
 
-    # ---- scene ----------------------------------------------------------------------------------------------
+    # ---- the editable context -------------------------------------------------------------------------------
+    def context(self) -> str:
+        if self.context_path and self.context_path.exists():
+            try:
+                return self.context_path.read_text()
+            except OSError:
+                pass
+        return DEFAULT_CONTEXT
+
+    def set_context(self, text: str | None):
+        if not self.context_path:
+            raise ValueError("no context file in this mode")
+        if text is None:
+            self.context_path.unlink(missing_ok=True)
+        else:
+            if "{task}" not in text:
+                raise ValueError("the context must keep the {task} placeholder")
+            self.context_path.parent.mkdir(parents=True, exist_ok=True)
+            self.context_path.write_text(text[:20000])
+
+    # ---- heights, relative to the calibrated table -----------------------------------------------------------
+    def heights(self) -> dict:
+        tz = self.calib.table_z_mm
+        oh = float(self.settings["object_height_mm"])
+        travel = float(self.settings["travel_height_mm"])
+        t = self.task
+        kind = t.place_kind if t else "table"
+        if kind == "on_object":
+            release = oh * 1.5 + 5.0
+        elif kind == "in_container":
+            release = float(self.settings["container_rim_mm"]) + 15.0
+        else:
+            release = oh * 0.5 + 5.0
+        carry = max(travel, release + oh)
+        return {"grasp": tz + oh * 0.5, "carry": tz + carry, "release": tz + release, "clear": tz + travel}
+
     def limits(self) -> dict:
         box = dict(C.WORKSPACE_MM)
-        if self.calib.ready:
-            floor = self.calib.table_z_mm + C.TABLE_CLEARANCE_MM
-        else:
-            floor = C.UNCALIBRATED_Z_FLOOR_MM
+        floor = (self.calib.table_z_mm + C.TABLE_CLEARANCE_MM) if self.calib.ready else C.UNCALIBRATED_Z_FLOOR_MM
         return {"x": box["x"], "y": box["y"], "z": (floor, box["z"][1])}
 
-    def scene(self) -> dict:
-        from .vision import decode, detect
-        objs, now = {}, time.time()
-        jpg, t, err = self.frames.get("scene")
-        if jpg is not None:
-            counts: dict[str, int] = {}
-            for o in detect(decode(jpg)):
-                counts[o["colour"]] = counts.get(o["colour"], 0) + 1
-                oid = f"{o['colour']}-{counts[o['colour']]}"
-                item = {"id": oid, "colour": o["colour"], "pixel": [round(o["u"]), round(o["v"])],
-                        "age_s": round(now - t, 1)}
-                if self.calib.ready:
-                    x, y = self.calib.to_table(o["u"], o["v"])
-                    item.update(x_mm=round(x), y_mm=round(y))
-                objs[oid] = item
-            self._scene_objects = {k: dict(v, seen=t) for k, v in objs.items()}
-        try:
-            arm = self.arm.state()
-        except DriverError as e:
-            arm = {"reachable": False, "error": str(e)}
-        return {"arm": {k: arm.get(k) for k in ("reachable", "enabled", "pose", "gripper_mm", "status", "owner", "error")
-                        if k in arm},
-                "objects": list(objs.values()), "calibrated": self.calib.ready,
-                "scene_camera": "ok" if jpg is not None else (err or "no frame"),
-                "workspace_mm": {k: [round(v[0]), round(v[1])] for k, v in self.limits().items()}}
+    # ---- what the model sees --------------------------------------------------------------------------------
+    def observe(self) -> dict:
+        s = self.arm.state()
+        pose = s.get("pose") or [0.0] * 6
+        t, h = self.task, self.heights()
+        z = pose[2]
+        closed = self.grip_cmd < 5.0
+        held = closed and (s.get("gripper_mm") or 0.0) > 3.0
+        tgt = None if (t is None or t.released) else t.target_xy
+        place = None if t is None else t.place_xy
+        clear = z > h["clear"] - 10.0
+        return {
+            "tool_xyz_mm": [round(v) for v in pose[:3]],
+            "target_xy_mm": None if tgt is None else [round(v) for v in tgt],
+            "place_target_xy_mm": None if place is None else [round(v) for v in place],
+            "over_target": bool(tgt is not None and math.dist(pose[:2], tgt) < 15.0),
+            "over_place_target": bool(place is not None and math.dist(pose[:2], place) < 20.0),
+            "at_grasp_height": bool(tgt is not None and abs(z - h["grasp"]) < 8.0),
+            "at_carry_height": bool(z > h["carry"] - 10.0),
+            "at_release_height": bool(z < h["release"] + 10.0),
+            "at_clear_height": bool(clear),
+            "gripper_closed": closed,
+            "gripper_opening_mm": round(s.get("gripper_mm") or 0.0, 1),
+            "object_held": bool(held),
+            "object_placed": bool(t is not None and t.released),
+            "task_complete": bool(t is not None and t.released and not held and clear),
+        }
 
-    def _object(self, oid: str) -> dict:
-        o = self._scene_objects.get(str(oid))
-        if not o:
-            raise ToolError(f"no object {oid!r} in the last scene; call get_scene")
-        if time.time() - o["seen"] > C.OBJECT_MAX_AGE_S:
-            raise ToolError(f"{oid} was last seen too long ago; call get_scene")
-        if "x_mm" not in o:
-            raise ToolError("the scene camera is not calibrated, so object positions are unknown")
-        return o
+    @staticmethod
+    def precondition(skill: str, s: dict) -> bool:
+        held, placed, closed = s["object_held"], s["object_placed"], s["gripper_closed"]
+        rules = {
+            "approach_target": s["target_xy_mm"] is not None and not held and not placed,
+            "descend_to_target": s["target_xy_mm"] is not None and s["over_target"] and not held and not closed
+                                 and not placed,
+            "close_gripper": s["over_target"] and s["at_grasp_height"] and not closed and not placed,
+            "lift": held,
+            "move_over_place": held and s["place_target_xy_mm"] is not None,
+            "lower_to_place": held and s["over_place_target"],
+            "open_gripper": closed,
+            "retreat": not held,
+            "done": True,
+        }
+        return rules.get(skill, False)
 
-    def _pixel(self, a: dict):
-        u, v = a.get("u"), a.get("v")
-        if not all(isinstance(t, (int, float)) and math.isfinite(t) for t in (u, v)):
-            raise ToolError("u and v must be numbers")
-        if not (0 <= u <= 4000 and 0 <= v <= 4000):
-            raise ToolError("that pixel is outside the image")
-        return self.calib.to_table(float(u), float(v))
+    def target(self, skill: str, pose: list) -> tuple:
+        """(x, y, z, gripper mm or None) for a skill; z None = stay."""
+        t, h = self.task, self.heights()
+        x, y, z = pose[:3]
+        if skill == "approach_target":
+            return (*t.target_xy, h["clear"], float(self.settings["open_width_mm"]))
+        if skill == "descend_to_target":
+            return (*t.target_xy, h["grasp"], None)
+        if skill == "close_gripper":
+            return (x, y, None, 0.0)
+        if skill == "lift":
+            return (x, y, h["carry"], None)
+        if skill == "move_over_place":
+            return (*t.place_xy, h["carry"], None)
+        if skill == "lower_to_place":
+            return (*t.place_xy, h["release"], None)
+        if skill == "open_gripper":
+            return (x, y, None, float(self.settings["open_width_mm"]))
+        if skill == "retreat":
+            return (x, y, max(h["clear"], z), None)
+        return (x, y, None, None)
+
+    def after(self, skill: str, before: dict):
+        t = self.task
+        if skill == "open_gripper":
+            if not before["object_held"]:
+                t.missed += 1           # nothing to let go: the grasp missed or the part slipped out
+            elif before["over_place_target"]:
+                t.released = True
 
     # ---- motion ---------------------------------------------------------------------------------------------
     def _check(self, job: Job):
@@ -176,28 +266,23 @@ class Agent:
             if not isinstance(v, (int, float)) or not math.isfinite(v):
                 raise ToolError(f"{name} must be a number")
             lo, hi = lim[name]
-            if not lo <= v <= hi:
+            if not lo - 0.5 <= v <= hi + 0.5:
                 raise ToolError(f"{name}={v:.0f} mm is outside {lo:.0f}..{hi:.0f}")
 
-    def move_line(self, job: Job, x, y, z, yaw=None):
+    def move_line(self, job: Job, x, y, z):
         self._validate(x, y, z)
         start = self._pose()
         goal = [float(x), float(y), float(z)]
         dist = math.dist(start[:3], goal)
-        speed = float(self.settings["speed_mm_s"])
-        yaw0 = start[5]
-        yaw1 = yaw0 if yaw is None else float(yaw)
-        dyaw = (yaw1 - yaw0 + 180.0) % 360.0 - 180.0
-        dur = max(dist / speed, abs(dyaw) / C.YAW_RATE_DEG_S, 0.1)
+        dur = max(dist / float(self.settings["speed_mm_s"]), 0.1)
         t0 = time.time()
         deadline = t0 + dur + 6.0
         while True:
             self._check(job)
             w = min(1.0, (time.time() - t0) / dur)
             p = [start[i] + (goal[i] - start[i]) * w for i in range(3)]
-            target = p + [start[3], start[4], yaw0 + dyaw * w]
             try:
-                self.arm.servo(target)
+                self.arm.servo(p + start[3:6])
             except DriverError as e:
                 raise ToolError(str(e))
             if w >= 1.0:
@@ -208,101 +293,41 @@ class Agent:
                     raise ToolError(f"the arm stopped {math.dist(now[:3], goal):.0f} mm short of the target")
             time.sleep(0.1)
 
-    def grip(self, job: Job, width):
+    def grip(self, job: Job, width: float):
         self._check(job)
-        if not isinstance(width, (int, float)) or not 0 <= width <= 95:
-            raise ToolError("width_mm must be 0..95")
         try:
             self.arm.gripper(width, int(self.settings["grip_effort"]))
         except DriverError as e:
             raise ToolError(str(e))
-        t_end = time.time() + (0.3 if self.sim else 1.2)      # let the jaws travel
+        self.grip_cmd = float(width)
+        t_end = time.time() + (0.3 if self.sim else 1.5)      # let the jaws travel
         while time.time() < t_end:
             self._check(job)
             time.sleep(0.05)
 
-    # ---- tools ----------------------------------------------------------------------------------------------
-    def run_tool(self, job: Job, name: str, a: dict):
-        tz = self.calib.table_z_mm if self.calib.ready else None
-        oh, travel = float(self.settings["object_height_mm"]), float(self.settings["travel_height_mm"])
-        if name == "get_scene":
-            return self.scene()
-        if name in ("pick", "place_on", "place_at", "pick_at_pixel", "place_at_pixel") and (tz is None or not self.calib.ready):
-            raise ToolError("calibrate the scene camera and table height first")
-        if name in ("pick", "pick_at_pixel"):
-            if name == "pick":
-                o = self._object(a.get("object_id"))
-                x, y, what = o["x_mm"], o["y_mm"], o["id"]
-            else:
-                x, y = self._pixel(a)
-                what = f"the object at pixel ({a.get('u'):.0f}, {a.get('v'):.0f})"
-            self.grip(job, self.settings["open_width_mm"])
-            self.move_line(job, x, y, tz + travel)
-            self.move_line(job, x, y, tz + oh * 0.5)
-            self.grip(job, 0)
-            self.move_line(job, x, y, tz + travel)
-            return {"ok": True, "picked": what, "at_mm": [round(x), round(y)]}
-        if name in ("place_on", "place_at", "place_at_pixel"):
-            if name == "place_on":
-                o = self._object(a.get("object_id"))
-                x, y, z = o["x_mm"], o["y_mm"], tz + oh * 1.5 + 5.0
-            elif name == "place_at_pixel":
-                x, y = self._pixel(a)
-                z = tz + oh * (1.5 if a.get("on_object") else 0.5) + 5.0
-            else:
-                x, y, z = a.get("x_mm"), a.get("y_mm"), tz + oh * 0.5 + 5.0
-            self.move_line(job, x, y, tz + travel)
+    def run_skill(self, job: Job, skill: str):
+        pose = self._pose()
+        x, y, z, g = self.target(skill, pose)
+        if g is not None and g > self.grip_cmd:
+            self.grip(job, g)                   # open before moving
+        if z is not None:
+            if skill in ("approach_target", "move_over_place") and pose[2] < z - 10:
+                self.move_line(job, pose[0], pose[1], z)        # up first, then across
             self.move_line(job, x, y, z)
-            self.grip(job, self.settings["open_width_mm"])
-            self.move_line(job, x, y, tz + travel)
-            return {"ok": True, "placed_at": [round(x), round(y)]}
-        if name == "move_to":
-            p = self.move_line(job, a.get("x_mm"), a.get("y_mm"), a.get("z_mm"), a.get("yaw_deg"))
-            return {"ok": True, "pose": [round(v, 1) for v in p]}
-        if name == "move_relative":
-            d = [float(a.get(k) or 0.0) for k in ("dx_mm", "dy_mm", "dz_mm")]
-            if any(abs(v) > C.MAX_RELATIVE_MM for v in d):
-                raise ToolError(f"each step must be at most {C.MAX_RELATIVE_MM:.0f} mm")
-            p = self._pose()
-            p = self.move_line(job, p[0] + d[0], p[1] + d[1], p[2] + d[2])
-            return {"ok": True, "pose": [round(v, 1) for v in p]}
-        if name == "set_gripper":
-            self.grip(job, a.get("width_mm"))
-            return {"ok": True}
-        if name == "go_home":
-            z = (tz + travel) if tz is not None else max(C.UNCALIBRATED_Z_FLOOR_MM, 300.0)
-            p = self.move_line(job, HOME_XY[0], HOME_XY[1], z)
-            return {"ok": True, "pose": [round(v, 1) for v in p]}
-        raise ToolError(f"unknown tool {name}")
-
-    def _approve(self, job: Job, name: str, args: dict) -> bool:
-        if not self.settings["confirm_moves"] or name not in MOTION_TOOLS:
-            return True
-        job.pending, job.approved = {"tool": name, "args": args}, False
-        job.decision.clear()
-        job.state = "waiting"
-        while not job.decision.wait(0.2):
-            if job.stop.is_set():
-                raise Stopped("stopped")
-        job.pending, job.state = None, "running"
-        self.last_app_beat = time.time()    # the user just answered: the app is alive
-        return job.approved
+        if g is not None and g <= self.grip_cmd and g != self.grip_cmd:
+            self.grip(job, g)
 
     # ---- the job --------------------------------------------------------------------------------------------
-    def _images(self) -> list:
+    def _images(self, grid: bool = False) -> dict:
+        from .vision import with_grid
+        out = {}
         if not self.settings["images"]:
-            return []
-        parts = []
+            return out
         for role in ("scene", "wrist"):
             jpg, _, _ = self.frames.get(role)
-            if jpg and role == "scene":
-                from .vision import with_grid
-                jpg = with_grid(jpg)
             if jpg:
-                url = "data:image/jpeg;base64," + base64.b64encode(jpg).decode()
-                parts += [{"type": "text", "text": f"{role} camera:"},
-                          {"type": "image_url", "image_url": {"url": url, "detail": "low"}}]
-        return parts
+                out[role] = with_grid(jpg) if (grid and role == "scene") else jpg
+        return out
 
     def start(self, text: str) -> Job:
         with self.lock:
@@ -313,56 +338,92 @@ class Agent:
         threading.Thread(target=self._run, args=(job,), daemon=True, name="job").start()
         return job
 
+    def _approve(self, job: Job, skill: str, note: str) -> bool:
+        if not self.settings["confirm_moves"] or skill not in MOTION:
+            return True
+        job.pending, job.approved = {"skill": skill, "note": note}, False
+        job.decision.clear()
+        job.state = "waiting"
+        while not job.decision.wait(0.2):
+            if job.stop.is_set():
+                raise Stopped("stopped")
+        job.pending, job.state = None, "running"
+        self.last_app_beat = time.time()
+        return job.approved
+
+    def ground(self, job: Job, model, context: str):
+        from .vision import decode
+        if not self.calib.ready:
+            raise ToolError("calibrate the scene camera and the table height first (Calibrate tab)")
+        jpg, _, _ = self.frames.get("scene")
+        if jpg is None:
+            raise ToolError("no scene camera picture: the scene camera is needed to find the object")
+        h, w = decode(jpg).shape[:2]
+        a = model.ask(GROUND_PROMPT.format(context=context, w=w, h=h), self._images(grid=True), GROUND_SCHEMA,
+                      "grounding")
+        job.add("ground", a.get("note") or "", a)
+        if not a.get("found"):
+            raise ToolError("the model could not find it: " + (a.get("note") or "no reason given"))
+        for k in ("target_u", "target_v", "place_u", "place_v"):
+            v = a.get(k)
+            if not isinstance(v, (int, float)) or not 0 <= v <= max(w, h):
+                raise ToolError(f"the model gave an impossible pixel ({k}={v})")
+        target = self.calib.to_table(a["target_u"], a["target_v"])
+        place = self.calib.to_table(a["place_u"], a["place_v"])
+        lim = self.limits()
+        for name, (x, y) in (("object", target), ("place", place)):
+            if not (lim["x"][0] <= x <= lim["x"][1] and lim["y"][0] <= y <= lim["y"][1]):
+                raise ToolError(f"the {name} is at x {x:.0f}, y {y:.0f} mm, outside the arm's workspace")
+        kind = a.get("place_kind") if a.get("place_kind") in ("table", "on_object", "in_container") else "table"
+        self.task = Task(target, place, kind, {"target": a.get("target_label"), "place": a.get("place_label"),
+                                               "target_px": [a["target_u"], a["target_v"]],
+                                               "place_px": [a["place_u"], a["place_v"]]})
+        job.add("info", f"{a.get('target_label')} at x {target[0]:.0f}, y {target[1]:.0f} mm; "
+                        f"{a.get('place_label')} ({kind}) at x {place[0]:.0f}, y {place[1]:.0f} mm")
+
     def _run(self, job: Job):
         job.add("user", job.text)
+        self.task, history = None, []
         try:
-            llm = self.llm_factory()
-        except Exception as e:
-            job.add("error", str(e))
-            job.state = "failed"
-            return
-        self.frames.now()
-        time.sleep(0.3)
-        lim = self.limits()
-        system = SYSTEM_PROMPT.format(x0=lim["x"][0], x1=lim["x"][1], y0=lim["y"][0], y1=lim["y"][1],
-                                      z0=round(lim["z"][0]), z1=lim["z"][1])
-        scene = self.scene()
-        user = {"role": "user", "content": [{"type": "text", "text": job.text + "\n\nCurrent scene (json): " +
-                                             json.dumps(scene)}] + self._images()}
-        msgs = [{"role": "system", "content": system}] + self.history[-20:] + [user]
-        calls = 0
-        try:
-            while True:
-                if job.stop.is_set():
-                    raise Stopped("stopped")
-                reply = llm.chat(msgs, TOOLS)
-                msgs.append(reply)
-                if reply.get("content"):
-                    job.add("assistant", reply["content"])
-                if not reply.get("tool_calls"):
+            model = self.model_factory()
+            self.frames.now()
+            time.sleep(0.4)
+            context = self.context().replace("{task}", job.text)
+            self.ground(job, model, context)
+            for _ in range(C.MAX_STEPS):
+                self._check(job)
+                state = self.observe()
+                text = (context + "\n\n## Skills\n" + "\n".join(f"- {k}: {v}" for k, v in SKILLS.items())
+                        + "\n\n## State\n" + "\n".join(f"- {k}: {v}" for k, v in state.items())
+                        + "\n\n## Recent decisions\n" + ("\n".join(history[-6:]) or "(none yet)")
+                        + "\n\nPick one skill.")
+                d = model.ask(text, self._images(), decision_schema(), "decision")
+                skill, note = str(d.get("skill")), str(d.get("note") or "")
+                history.append(f"{skill}: {note}")
+                job.add("decision", skill, {"note": note, "state": state})
+                if skill not in SKILLS:
+                    job.add("refused", f"{skill} is not a skill")
+                    continue
+                if skill == "done":
                     break
-                for tc in reply["tool_calls"]:
-                    calls += 1
-                    name = tc["function"]["name"]
-                    try:
-                        args = json.loads(tc["function"]["arguments"] or "{}")
-                    except ValueError:
-                        args = {}
-                    job.add("tool", name, args)
-                    if calls > C.MAX_TOOL_CALLS:
-                        result = {"error": f"tool call limit ({C.MAX_TOOL_CALLS}) reached; stop and report"}
-                    elif not self._approve(job, name, args):
-                        result = {"error": "the user rejected this step"}
-                    else:
-                        try:
-                            result = self.run_tool(job, name, args)
-                        except ToolError as e:
-                            result = {"error": str(e)}
-                    job.add("result", json.dumps(result)[:600], result)
-                    msgs.append({"role": "tool", "tool_call_id": tc["id"], "content": json.dumps(result)})
-                if calls > C.MAX_TOOL_CALLS + 2:
-                    job.add("error", "too many tool calls; the request was ended")
-                    break
+                if not self.precondition(skill, state):
+                    job.add("refused", f"the conditions for {skill} don't hold")
+                    history.append(f"(refused {skill}: its conditions don't hold)")
+                    continue
+                if not self._approve(job, skill, note):
+                    job.add("refused", f"you rejected {skill}")
+                    history.append(f"(the user rejected {skill})")
+                    continue
+                try:
+                    self.run_skill(job, skill)
+                    self.after(skill, state)
+                except ToolError as e:
+                    job.add("error", str(e))
+                    history.append(f"({skill} failed: {e})")
+                if self.task.missed >= 2:
+                    raise ToolError(f"the gripper held nothing after {self.task.missed} grasps")
+            else:
+                job.add("info", f"stopped after {C.MAX_STEPS} decisions")
             job.state = "done"
         except Stopped as e:
             job.add("info", str(e))
@@ -375,12 +436,6 @@ class Agent:
                 self.arm.release()
             except DriverError:
                 pass
-        # Keep the conversation as text only: images and scene dumps are stale by the next request.
-        self.history += [{"role": "user", "content": job.text}]
-        final = next((e["text"] for e in reversed(job.log) if e["kind"] == "assistant"), None)
-        if final:
-            self.history.append({"role": "assistant", "content": final})
-        self.history = self.history[-20:]
 
     def approve(self, ok: bool):
         j = self.job

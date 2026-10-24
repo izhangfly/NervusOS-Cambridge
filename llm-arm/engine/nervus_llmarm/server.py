@@ -2,8 +2,10 @@
 
     GET  /api/status                 arm, cameras, provider and key state, calibration, settings, the current job
     GET  /api/camera/<role>.jpg      latest frame (scene | wrist), with detections drawn on the scene frame
-    GET  /api/scene                  what get_scene would tell the model
+    GET  /api/state                  the state flags the model decides from
     GET  /api/job                    the current job's log and any step waiting for approval
+    GET  /api/context                the arm context the model is given (editable)
+    POST /api/context {text}         save an edited context; {"reset": true} brings back the default
     POST /api/chat {text}            start a request
     POST /api/approve {ok}           answer the waiting step
     POST /api/stop                   end the job and hold the arm (motors stay on)
@@ -30,10 +32,10 @@ from urllib.parse import urlparse
 import cv2
 
 from . import __version__, config as C
-from .agent import Agent
+from .agent import DEFAULT_CONTEXT, Agent
 from .driver import DriverClient, DriverError, SimArm
-from .llm import ChatClient, ScriptedLLM
-from .vision import ROLES, Calibration, Frames, SimCameras, act_engine_source, decode, detect
+from .llm import DeepSeekChat, OpenAIResponses, Scripted
+from .vision import ROLES, Calibration, Frames, SimCameras, act_engine_source, decode
 
 
 class Service:
@@ -55,7 +57,8 @@ class Service:
         self.keys = {}
         self.reload_keys()
         self._llm_override = llm
-        self.agent = Agent(self.arm, self.frames, self.calib, self.settings, self.make_llm, sim=sim)
+        self.agent = Agent(self.arm, self.frames, self.calib, self.settings, self.make_llm,
+                           context_path=self.config_dir / f"llm-arm-context{sfx}.md", sim=sim)
 
     def app_open(self) -> bool:
         """The app sent a heartbeat in the last 10 s, or a request is running."""
@@ -75,8 +78,10 @@ class Service:
         key, st = self.keys[p]
         if not key:
             raise RuntimeError(st["message"])
-        return ChatClient(p, key, self.settings[f"{p}_model"], self.settings[f"{p}_base_url"],
-                          self.settings["llm_timeout_s"])
+        model, base, timeout = self.settings[f"{p}_model"], self.settings[f"{p}_base_url"], self.settings["llm_timeout_s"]
+        if p == "openai":
+            return OpenAIResponses(key, model, base, self.settings["openai_effort"], timeout)
+        return DeepSeekChat(key, model, base, timeout)
 
     def status(self) -> dict:
         try:
@@ -93,17 +98,31 @@ class Service:
             "llm": "scripted" if self._llm_override is not None else self.keys[p][1]["state"],
             "settings": self.settings.describe(),
             "job": self.agent.job.view() if self.agent.job else None,
+            "task": self._task(),
         }
+
+    def _task(self):
+        t = self.agent.task
+        if t is None:
+            return None
+        return {"labels": t.labels, "target_xy_mm": [round(v) for v in t.target_xy],
+                "place_xy_mm": [round(v) for v in t.place_xy], "place_kind": t.place_kind,
+                "placed": t.released, "missed": t.missed}
 
     def frame(self, role: str):
         jpg, _, _ = self.frames.get(role)
         if jpg is None or role != "scene":
             return jpg
+        t = self.agent.task
+        if t is None:
+            return jpg
         img = decode(jpg)
-        for o in detect(img):
-            cv2.circle(img, (int(o["u"]), int(o["v"])), 12, (255, 255, 255), 2)
-            cv2.putText(img, o["colour"], (int(o["u"]) + 14, int(o["v"]) + 4), cv2.FONT_HERSHEY_SIMPLEX, 0.45,
-                        (255, 255, 255), 1, cv2.LINE_AA)
+        # Where the model said the object and the place are.
+        for key, colour in (("target", (80, 220, 255)), ("place", (120, 255, 120))):
+            u, v = (int(c) for c in t.labels[f"{key}_px"])
+            cv2.drawMarker(img, (u, v), colour, cv2.MARKER_CROSS, 24, 2)
+            cv2.putText(img, str(t.labels.get(key) or key), (u + 14, v - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+                        colour, 1, cv2.LINE_AA)
         ok, out = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 75])
         return out.tobytes() if ok else jpg
 
@@ -135,9 +154,9 @@ class Service:
         if path == "/api/calibrate":
             err = self.calib.set_points(d.get("points") or [], float(d.get("table_z_mm")))
             return {"ok": True, "message": f"Calibrated; worst point is off by {err} mm"}
-        if path == "/api/clear":
-            a.history = []
-            return {"ok": True, "message": "Conversation cleared"}
+        if path == "/api/context":
+            a.set_context(None if d.get("reset") else str(d.get("text") or ""))
+            return {"ok": True, "message": "Context reset to the default" if d.get("reset") else "Context saved"}
         return None
 
 
@@ -166,8 +185,10 @@ def make_handler(svc: Service):
             try:
                 if u.path == "/api/status":
                     return self._json(svc.status())
-                if u.path == "/api/scene":
-                    return self._json(svc.agent.scene())
+                if u.path == "/api/state":
+                    return self._json(svc.agent.observe())
+                if u.path == "/api/context":
+                    return self._json({"text": svc.agent.context(), "default": svc.agent.context() == DEFAULT_CONTEXT})
                 if u.path == "/api/job":
                     return self._json(svc.agent.job.view() if svc.agent.job else None)
                 if len(parts) == 3 and parts[:2] == ["api", "camera"] and parts[2][:-4] in ROLES:
@@ -195,6 +216,17 @@ def make_handler(svc: Service):
     return H
 
 
+def demo_script() -> list:
+    """The simulator's red block onto the blue one, as a model would answer."""
+    r, b = SimCameras.px(300.0, 120.0), SimCameras.px(300.0, -120.0)
+    steps = ["approach_target", "descend_to_target", "close_gripper", "lift", "move_over_place",
+             "lower_to_place", "open_gripper", "retreat", "done"]
+    return [{"found": True, "target_label": "red block", "target_u": r[0], "target_v": r[1],
+             "place_label": "blue block", "place_u": b[0], "place_v": b[1], "place_kind": "on_object",
+             "note": "Red block on the right, blue on the left."}] + \
+        [{"skill": s, "note": f"Next: {s}."} for s in steps]
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="NervusOS LLM Arm service")
     ap.add_argument("--bind", default="127.0.0.1")
@@ -209,8 +241,7 @@ def main(argv=None):
         raise SystemExit("refusing to listen on a non-loopback address: this API moves the arm and has no login")
     llm = None
     if args.demo:
-        llm = ScriptedLLM([[("get_scene", {})], [("pick", {"object_id": "red-1"})],
-                           [("place_on", {"object_id": "blue-1"})], [("go_home", {})], "Put the red block on the blue one."])
+        llm = Scripted(demo_script())
     svc = Service(Path(args.config), args.driver, args.act, args.sim, llm)
     srv = ThreadingHTTPServer((args.bind, args.port), make_handler(svc))
     srv.daemon_threads = True

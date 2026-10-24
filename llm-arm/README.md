@@ -1,8 +1,20 @@
 # LLM Arm
 
-Tell the PiPER arm what to do in plain language ("put the red block on the blue one"). A vision model
-(DeepSeek or OpenAI GPT, switchable in the app) looks at the two cameras and plans with a small set of tools;
-this service checks every step and moves the arm itself.
+Tell the PiPER arm what to do in plain language ("put the cube in the tray"). The design follows
+[piper-astra-jev](https://github.com/RobotKitAI/piper-astra-jev) (Apache-2.0), which AgileX published for
+GPT-6 Astra on the PiPER:
+
+1. **Ground**: the model finds the object and the place in the scene image; the calibration turns those
+   pixels into table positions, remembered once the fingers hide the object.
+2. **Decide**: every step, the model sees the arm's state flags (over_target, object_held, ...), both
+   cameras, the editable arm context and its recent decisions, and picks ONE skill: approach_target,
+   descend_to_target, close_gripper, lift, move_over_place, lower_to_place, open_gripper, retreat, done.
+3. **Govern**: a skill whose preconditions don't hold is refused; skills are bounded motions written here.
+4. **Touch**: whether a grasp worked comes from the gripper (fingers stopped part way), not the picture.
+
+GPT-6 Astra goes through OpenAI's Responses API with a strict JSON schema and a reasoning effort (setting
+`openai_effort`); DeepSeek through Chat Completions in JSON mode. The arm context is a Markdown file
+(`context.md`, overridden by `~/.config/nervus/llm-arm-context.md`), editable in the app.
 
 ```
 LLM Arm app (NervusOS) ──HTTP──> nervus-llm-arm 127.0.0.1:8796 ──> PiPER driver 127.0.0.1:8770 ──> CAN ──> arm
@@ -26,9 +38,9 @@ accept images and OpenAI-style tool calls.
 
 ## Safety
 
-- The model has no stop tool and never talks to the arm. Every tool call is validated here: workspace box
-  (x 80..460, y -300..300 mm), a floor above the calibrated table (200 mm until calibrated), nudges of at
-  most 50 mm, at most 12 tool calls per request.
+- The model only names a skill; it never sends a coordinate. Targets come from the grounding, checked
+  against the workspace box (x 80..460, y -300..300 mm) and kept above the calibrated table; at most 25
+  decisions per request; two missed grasps end the request.
 - Moves are straight lines at `speed_mm_s` (default 50, never above 100).
 - **Confirm moves** (on by default): each motion waits for Approve in the app.
 - STOP ends the request and holds the arm with the motors on. E-STOP is the driver's damped emergency stop.
@@ -50,7 +62,7 @@ curl -s 127.0.0.1:8796/api/calibrate -d '{"table_z_mm": 95,
 
 ```sh
 PYTHONPATH=llm-arm/engine python -m nervus_llmarm --sim --demo --port 8797   # scripted model
-PYTHONPATH=llm-arm/engine python -m unittest discover -s llm-arm/tests      # 7 tests
+PYTHONPATH=llm-arm/engine python -m unittest discover -s llm-arm/tests      # 9 tests
 ```
 
 `--sim` alone uses the real model with a simulated arm, blocks and cameras.
