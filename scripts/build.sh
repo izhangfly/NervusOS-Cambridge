@@ -82,6 +82,7 @@ build_apps() {
 	build_app "$SRC/robot-arm" "signing/developer.pem"
 	build_app "$SRC/hand-teleop" "signing/developer.pem"
 	build_app "$SRC/act-studio" "signing/developer.pem"
+	build_app "$SRC/llm-arm" "signing/developer.pem"
 	build_app "$SRC/nervus-app-example" "signing/private.pem"
 	cp "$REPO/store/catalog.ini" "$OUT/store/catalog.ini"
 	step "Store catalog"
