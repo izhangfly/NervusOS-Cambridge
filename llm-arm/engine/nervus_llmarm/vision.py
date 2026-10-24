@@ -96,6 +96,84 @@ def act_engine_source(base="http://127.0.0.1:8795"):
     return grab
 
 
+class DirectCameras:
+    """Opens the cameras itself when no ACT engine serves them: each role names a camera by part of its
+    /dev/v4l/by-id name (as the ACT engine does, e.g. "Dabai_DC1" or "046d_0825") or of its V4L2 name
+    ("Surface Camera"), or gives /dev/videoN. A camera is closed again after 15 s without requests."""
+
+    IDLE_S = 15.0
+
+    def __init__(self, spec: str):
+        self.roles = dict(p.split("=", 1) for p in spec.split(",") if "=" in p)
+        self.caps: dict[str, tuple] = {}            # role -> (VideoCapture, last use)
+        self.lock = threading.Lock()
+        threading.Thread(target=self._reaper, daemon=True).start()
+
+    @staticmethod
+    def find(match: str) -> str | None:
+        import glob
+        import os
+        if match.startswith("/dev/"):
+            return match if os.path.exists(match) else None
+        hits = sorted(glob.glob(f"/dev/v4l/by-id/*{match}*-video-index0"))
+        if hits:
+            return os.path.realpath(hits[0])
+        for name in sorted(glob.glob("/sys/class/video4linux/video*/name")):
+            try:
+                if match in open(name).read():
+                    return "/dev/" + name.split("/")[-2]
+            except OSError:
+                pass
+        return None
+
+    def __call__(self, role):
+        match = self.roles.get(role)
+        if not match:
+            return None
+        with self.lock:
+            cap, _ = self.caps.get(role, (None, 0.0))
+            if cap is None:
+                dev = self.find(match)
+                if dev is None:
+                    raise RuntimeError(f"{role} camera ({match}) is not plugged in")
+                # OpenCV's V4L2 backend opens by index, not by path.
+                cap = cv2.VideoCapture(int(dev.rsplit("video", 1)[1]), cv2.CAP_V4L2)
+                cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+            self.caps[role] = (cap, time.time())
+        for _ in range(3):              # drop buffered frames: the request wants the newest picture
+            cap.grab()
+        ok, img = cap.retrieve()
+        if not ok:
+            with self.lock:
+                cap.release()
+                self.caps.pop(role, None)
+            raise RuntimeError(f"{role} camera gave no frame")
+        ok, jpg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        return jpg.tobytes() if ok else None
+
+    def _reaper(self):
+        while True:
+            time.sleep(2.0)
+            with self.lock:
+                for role, (cap, t) in list(self.caps.items()):
+                    if time.time() - t > self.IDLE_S:
+                        cap.release()
+                        del self.caps[role]
+
+
+def auto_source(act_base: str, spec: str):
+    """The ACT engine's frames when it is running, else the cameras opened directly."""
+    act, direct = act_engine_source(act_base), DirectCameras(spec)
+
+    def grab(role):
+        try:
+            return act(role)
+        except OSError:                 # no ACT engine (connection refused / unreachable)
+            return direct(role)
+    return grab
+
+
 # ---------------------------------------------------------------------------------------------------------------
 def decode(jpg: bytes):
     return cv2.imdecode(np.frombuffer(jpg, np.uint8), cv2.IMREAD_COLOR)

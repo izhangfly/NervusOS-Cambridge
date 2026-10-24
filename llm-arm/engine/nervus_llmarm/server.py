@@ -35,11 +35,12 @@ from . import __version__, config as C
 from .agent import DEFAULT_CONTEXT, Agent
 from .driver import DriverClient, DriverError, SimArm
 from .llm import DeepSeekChat, OpenAIResponses, Scripted
-from .vision import ROLES, Calibration, Frames, SimCameras, act_engine_source, decode
+from .vision import ROLES, Calibration, Frames, SimCameras, auto_source, decode
 
 
 class Service:
-    def __init__(self, config_dir: Path, driver: str, act: str, sim: bool, llm=None):
+    def __init__(self, config_dir: Path, driver: str, act: str, sim: bool, llm=None,
+                 cameras: str = "scene=046d_0825,wrist=Dabai_DC1"):
         self.sim = sim
         self.config_dir = Path(config_dir)
         sfx = "-sim" if sim else ""
@@ -52,7 +53,7 @@ class Service:
         else:
             self.arm = DriverClient(driver)
             self.calib = Calibration(self.config_dir / "llm-arm-calib.json")
-            source = act_engine_source(act)
+            source = auto_source(act, cameras)
         self.frames = Frames(source, lambda: self.settings["frame_interval_s"], self.app_open)
         self.keys = {}
         self.reload_keys()
@@ -233,6 +234,8 @@ def main(argv=None):
     ap.add_argument("--port", type=int, default=8796)
     ap.add_argument("--driver", default="http://127.0.0.1:8770")
     ap.add_argument("--act", default="http://127.0.0.1:8795", help="ACT engine, which owns the cameras")
+    ap.add_argument("--cameras", default="scene=046d_0825,wrist=Dabai_DC1",
+                    help="cameras to open directly when no ACT engine runs: role=part of the by-id or V4L2 name")
     ap.add_argument("--config", default=str(C.DEFAULT_CONFIG_DIR))
     ap.add_argument("--sim", action="store_true", help="simulated arm, blocks and cameras")
     ap.add_argument("--demo", action="store_true", help="with --sim: a scripted model instead of a real one")
@@ -242,7 +245,7 @@ def main(argv=None):
     llm = None
     if args.demo:
         llm = Scripted(demo_script())
-    svc = Service(Path(args.config), args.driver, args.act, args.sim, llm)
+    svc = Service(Path(args.config), args.driver, args.act, args.sim, llm, args.cameras)
     srv = ThreadingHTTPServer((args.bind, args.port), make_handler(svc))
     srv.daemon_threads = True
     signal.signal(signal.SIGTERM, lambda *_: threading.Thread(target=srv.shutdown, daemon=True).start())
