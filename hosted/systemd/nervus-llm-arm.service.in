@@ -1,0 +1,29 @@
+[Unit]
+Description=NervusOS LLM Arm: tell the PiPER arm what to do in plain language (DeepSeek or GPT)
+Documentation=file:///opt/nervus/llm-arm/README.md
+# Starts with NervusOS and stops when it quits. The ACT engine owns the cameras and serves the frames.
+PartOf=nervud.service
+After=nervus-act.service nervus-piper.service
+Wants=nervus-act.service
+
+[Service]
+Type=simple
+# The desktop user: the API keys live in their ~/.config/nervus (mode 0600).
+User=@USER@
+Group=@USER@
+WorkingDirectory=/opt/nervus/llm-arm
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONPATH=/opt/nervus/llm-arm
+# Optional: DEEPSEEK_API_KEY=... / OPENAI_API_KEY=... (keep the file 0600; the service refuses it otherwise)
+EnvironmentFile=-@HOME@/.config/nervus/llm-arm.env
+Environment=NERVUS_LLMARM_ENV_FILE=@HOME@/.config/nervus/llm-arm.env
+# Loopback only: the API moves the arm and has no authentication (the service refuses anything else too).
+ExecStart=/opt/nervus/act/venv/bin/python -m nervus_llmarm --bind 127.0.0.1 --port 8796 --config @HOME@/.config/nervus
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=10s
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=@HOME@/.config/nervus
+PrivateTmp=yes
+SyslogIdentifier=nervus-llm-arm

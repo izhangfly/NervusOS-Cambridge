@@ -139,6 +139,21 @@ sed "s/@USER@/$DESKTOP_USER/g; s#@HOME@#$DESKTOP_HOME#g" "$HOSTED/systemd/nervus
 systemctl daemon-reload
 ok "nervus-act.service: runs with NervusOS, as $DESKTOP_USER, on 127.0.0.1:8795"
 
+# ------------------------------------------------------------------ LLM Arm
+step "LLM Arm service (plain-language arm control)"
+install -d -m 0755 /opt/nervus/llm-arm
+rm -rf /opt/nervus/llm-arm/nervus_llmarm
+cp -r "$REPO/llm-arm/engine/nervus_llmarm" /opt/nervus/llm-arm/nervus_llmarm
+find /opt/nervus/llm-arm -name __pycache__ -prune -exec rm -rf {} +
+install -m 0644 "$REPO/llm-arm/README.md" /opt/nervus/llm-arm/README.md 2>/dev/null || true
+install -d -o "$DESKTOP_USER" -g "$DESKTOP_USER" -m 0700 "$DESKTOP_HOME/.config/nervus"
+sed "s/@USER@/$DESKTOP_USER/g; s#@HOME@#$DESKTOP_HOME#g" "$HOSTED/systemd/nervus-llm-arm.service.in" >/etc/systemd/system/nervus-llm-arm.service
+systemctl daemon-reload
+ok "nervus-llm-arm.service: runs with NervusOS, as $DESKTOP_USER, on 127.0.0.1:8796"
+for k in deepseek openai; do
+	[[ -f "$DESKTOP_HOME/.config/nervus/$k.key" ]] || warn "no $k key yet: install -m 600 /dev/stdin ~/.config/nervus/$k.key"
+done
+
 # ------------------------------------------------------------------ store
 step "App Store catalog"
 if [[ -f "$STORE_SRC/catalog.ini" ]]; then
