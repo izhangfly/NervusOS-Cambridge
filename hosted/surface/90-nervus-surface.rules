@@ -1,5 +1,5 @@
 # libcamera's software ISP (the Surface's IPU6 cameras) allocates frame buffers here
 SUBSYSTEM=="dma_heap", GROUP="video", MODE="0660"
 KERNEL=="udmabuf", GROUP="video", MODE="0660"
-# The rear camera bridged into a v4l2loopback webcam (libexec/surface-camera)
+# The front camera bridged into a v4l2loopback webcam (libexec/surface-camera)
 SUBSYSTEM=="video4linux", ATTR{name}=="Surface Camera", GROUP="video", MODE="0660"

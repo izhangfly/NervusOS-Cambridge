@@ -41,6 +41,12 @@ tasks.test {
 compose.desktop {
     application {
         mainClass = "com.nervus.llmarm.app.LlmArmAppKt"
+        // createDistributable: a self-contained desktop app for hosted/bin/nervus-standalone (no NervusOS).
+        nativeDistributions {
+            packageName = "llm-arm"
+            packageVersion = project.version.toString()
+            includeAllModules = true
+        }
     }
 }
 

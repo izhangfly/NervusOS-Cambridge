@@ -1,18 +1,34 @@
 #!/usr/bin/env bash
-# Stream the Surface Pro 9's rear camera (OV13858 behind Intel IPU6) into a plain V4L2 webcam,
+# Stream the Surface Pro 9's front camera (OV5693 behind Intel IPU6) into a plain V4L2 webcam,
 # /dev/video60 "Surface Camera", so any app can open it like a USB camera.
 #
 # The IPU6 sensors have no webcam driver: libcamera (built by hosted/surface/build-libcamera.sh into
-# /usr/local) captures the raw Bayer frames and turns them into images in software. The front camera
-# (OV5693) has no Linux support on the Pro 9, so this uses the rear one.
-set -eu
+# /usr/local) captures the raw Bayer frames and turns them into images in software.
+#
+# The front sensor needs one register the kernel driver doesn't write yet: MIPI_CTRL00 (0x4800) = 0x2d.
+# With the power-on default 0x00 the IPU6's D-PHY never locks and no frame arrives ("stream stop time out").
+# This is linux-surface PR #2171 (from the Windows driver's init table); until that lands in the kernel,
+# set it over I2C once the sensor is powered for streaming. It resets whenever the sensor powers down,
+# so it is written on every start.
+set -u
 export LD_LIBRARY_PATH=/usr/local/lib/x86_64-linux-gnu
 export GST_PLUGIN_PATH=/usr/local/lib/x86_64-linux-gnu/gstreamer-1.0
 DEV="${SURFACE_CAMERA_DEVICE:-/dev/video60}"
-CAM="${SURFACE_CAMERA_ID:-\\_SB_.PC00.I2C2.CAMR}"
-W="${SURFACE_CAMERA_WIDTH:-1280}" H="${SURFACE_CAMERA_HEIGHT:-720}" FPS="${SURFACE_CAMERA_FPS:-30}"
+CAM="${SURFACE_CAMERA_ID:-\\_SB_.PC00.I2C3.CAMF}"
+I2C_BUS="${SURFACE_CAMERA_I2C_BUS:-3}" I2C_ADDR="${SURFACE_CAMERA_I2C_ADDR:-0x36}"
+modprobe i2c-dev 2>/dev/null || true
 [[ -e "$DEV" ]] || modprobe v4l2loopback video_nr=60 card_label="Surface Camera" exclusive_caps=1
-# gst-launch unescapes backslashes in quoted values, and the camera id starts with one.
-exec gst-launch-1.0 -q libcamerasrc camera-name="\\${CAM}" \
-	! "video/x-raw,width=$W,height=$H,framerate=$FPS/1" ! videoconvert ! video/x-raw,format=YUY2 \
-	! v4l2sink device="$DEV" sync=false
+
+# 1296x972 is the sensor's binned 4:3 mode; scaled to 960x720 for the apps.
+gst-launch-1.0 -q libcamerasrc camera-name="\\${CAM}" \
+	! "video/x-raw,width=1296,height=972" ! videoconvert ! videoscale ! video/x-raw,format=YUY2,width=960,height=720 \
+	! v4l2sink device="$DEV" sync=false &
+GST=$!
+trap 'kill $GST 2>/dev/null' TERM INT
+# The sensor powers up a moment after the pipeline starts; write the register until it reads back.
+for _ in $(seq 1 40); do
+	sleep 0.25
+	i2ctransfer -f -y "$I2C_BUS" w3@"$I2C_ADDR" 0x48 0x00 0x2d 2>/dev/null || continue
+	[[ "$(i2ctransfer -f -y "$I2C_BUS" w2@"$I2C_ADDR" 0x48 0x00 r1 2>/dev/null)" == 0x2d ]] && break
+done
+wait $GST

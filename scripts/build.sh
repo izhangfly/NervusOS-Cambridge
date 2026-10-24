@@ -76,6 +76,15 @@ build_app() {
 	done
 }
 
+# Desktop builds that run without NervusOS (hosted/bin/nervus-standalone): Compose createDistributable.
+build_standalone() {
+	for a in llm-arm hand-teleop; do
+		step "Standalone: $a"
+		(cd "$SRC/$a" && ./gradlew createDistributable --console=plain -q) || die "$a standalone build failed"
+		echo "    ok src/$a/build/compose/binaries/main/app/$a"
+	done
+}
+
 build_apps() {
 	rm -rf "$OUT/store"
 	mkdir -p "$OUT/store/packages"
@@ -93,7 +102,8 @@ build_apps() {
 }
 
 case "$WHAT" in
-	all) build_release; build_apps ;;
+	all) build_release; build_apps; build_standalone ;;
+	standalone) build_standalone ;;
 	release) build_release ;;
 	apps) build_apps ;;
 	*) die "unknown target '$WHAT' (all | release | apps)" ;;

@@ -5,7 +5,8 @@ polkit.addRule(function(action, subject) {
         subject.user == "@USER@") {
         var unit = action.lookup("unit");
         var verb = action.lookup("verb");
-        if ((unit == "nervud.service" || unit == "nervus-piper.service" || unit == "nervus-act.service" || unit == "nervus-llm-arm.service") &&
+        if ((unit == "nervud.service" || unit == "nervus-piper.service" || unit == "nervus-act.service" || unit == "nervus-llm-arm.service" ||
+             unit == "nervus-surface-camera.service") &&
             (verb == "start" || verb == "stop" || verb == "restart")) {
             return polkit.Result.YES;
         }

@@ -119,6 +119,25 @@ systemctl daemon-reload
 systemctl enable --now nervus-can.service >/dev/null 2>&1 || warn "nervus-can.service failed (is the CAN adapter plugged in?)"
 ip -br link show can0 2>/dev/null | sed 's/^/    /' || warn "can0 not present"
 
+# ------------------------------------------------------------------ Surface Pro 9 camera
+if [[ "$(cat /sys/class/dmi/id/product_name 2>/dev/null)" == *"Surface Pro 9"* ]]; then
+	step "Surface Pro 9 front camera (libcamera -> /dev/video60 \"Surface Camera\")"
+	if [[ ! -x /usr/local/bin/cam ]]; then
+		warn "libcamera is not built yet: run hosted/surface/build-libcamera.sh as $DESKTOP_USER, then re-run this"
+	fi
+	DEBIAN_FRONTEND=noninteractive apt-get install -y -qq v4l2loopback-dkms i2c-tools gstreamer1.0-tools \
+		gstreamer1.0-plugins-base gstreamer1.0-plugins-good >/dev/null
+	install -D -m 0644 "$HOSTED/surface/v4l2loopback.conf" /etc/modprobe.d/nervus-v4l2loopback.conf
+	printf 'v4l2loopback\ni2c-dev\n' >/etc/modules-load.d/nervus-surface-camera.conf
+	install -D -m 0644 "$HOSTED/surface/90-nervus-surface.rules" /etc/udev/rules.d/90-nervus-surface.rules
+	udevadm control --reload 2>/dev/null || true
+	install -D -m 0755 "$HOSTED/libexec/surface-camera" /usr/libexec/nervus/surface-camera
+	install -D -m 0644 "$HOSTED/systemd/nervus-surface-camera.service" /etc/systemd/system/nervus-surface-camera.service
+	usermod -aG video "$DESKTOP_USER"
+	systemctl daemon-reload
+	ok "nervus-surface-camera.service: started on demand by the apps"
+fi
+
 # ------------------------------------------------------------------ ACT engine
 step "ACT engine (record, run, post-train)"
 install -d -m 0755 /opt/nervus/act
@@ -175,6 +194,18 @@ install -D -m 0644 "$HOSTED/applications/nervusos-quit.desktop" /usr/share/appli
 # Apps that open straight from the Ubuntu desktop: nervus-open starts NervusOS if needed, then the app.
 APP_LAUNCHERS=(nervus-handteleop nervus-llmarm)
 install -D -m 0755 "$HOSTED/bin/nervus-open" /usr/local/bin/nervus-open
+install -D -m 0755 "$HOSTED/bin/nervus-standalone" /usr/local/bin/nervus-standalone
+# The standalone builds (scripts/build.sh standalone): self-contained Compose apps with their own runtime.
+for a in llm-arm hand-teleop; do
+	d="$REPO/src/$a/build/compose/binaries/main/app/$a"
+	if [[ -x "$d/bin/$a" ]]; then
+		rm -rf "/opt/nervus/apps/$a"
+		install -d -m 0755 /opt/nervus/apps
+		cp -r "$d" "/opt/nervus/apps/$a"
+	else
+		warn "$a has no standalone build yet (scripts/build.sh standalone)"
+	fi
+done
 for a in "${APP_LAUNCHERS[@]}"; do
 	install -D -m 0644 "$HOSTED/icons/$a.svg" "/usr/share/icons/hicolor/scalable/apps/$a.svg"
 	install -D -m 0644 "$HOSTED/applications/$a.desktop" "/usr/share/applications/$a.desktop"
