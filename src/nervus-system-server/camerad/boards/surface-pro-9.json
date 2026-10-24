@@ -2,7 +2,17 @@
   "schema": 1,
   "board": "surface-pro-9-hosted",
 
-  "cameras": [],
+  "cameras": [
+    {
+      "role": "cam.front",
+      "match": {"usb_path": "3-5.4"},
+      "labels": {
+        "nervus.camera.facing": "front",
+        "nervus.camera.kind": "color",
+        "nervus.camera.mount": "usb-hub"
+      }
+    }
+  ],
 
   "usb_pool": {
     "role_prefix": "cam.usb",
