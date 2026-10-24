@@ -47,11 +47,11 @@ class TeleopSettings {
     @Volatile var speed: Double = 0.6
     @Volatile var invertSide: Boolean = false
     /**
-     * Show the video mirrored, as a webcam usually is, so moving your hand left moves it left on screen.
+     * Show the video mirrored, like a selfie view. Off by default: the owner prefers the picture as the camera sees it.
      * Display only: tracking always works on the frame as the camera saw it, so the body pose keeps
      * your real left and right.
      */
-    @Volatile var mirrorImage: Boolean = true
+    @Volatile var mirrorImage: Boolean = false
     /**
      * The camera's focal length over the frame width (0.7 is a laptop webcam about 70 degrees wide). It
      * sets the scale of everything metric: the hand's distance, and how far a hand movement is.

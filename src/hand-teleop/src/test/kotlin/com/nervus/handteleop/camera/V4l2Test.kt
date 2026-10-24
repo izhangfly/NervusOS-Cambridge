@@ -53,7 +53,7 @@ class V4l2Test {
     @Test
     fun `ffmpeg is asked for the probed size and format, as raw RGB on stdout`() {
         assertEquals(
-            listOf("ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin", "-f", "v4l2", "-input_format", "yuyv422",
+            listOf("ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin", "-use_wallclock_as_timestamps", "1", "-f", "v4l2", "-input_format", "yuyv422",
                 "-video_size", "960x720", "-i", "/dev/video60", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"),
             V4l2.ffmpegCommand("/dev/video60", V4l2Format(960, 720, "YUYV")),
         )

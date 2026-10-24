@@ -211,7 +211,8 @@ class DriverArm(
     private fun readiness(st: JsonObject): ArmReadiness = when {
         !st.bool("feedback_fresh") -> ArmReadiness.ARM_READINESS_NOT_READY
         st.bool("estopped") || (st.str("arm_status") != "NORMAL" && !st.bool("soft_fault")) -> ArmReadiness.ARM_READINESS_FAULT
-        st.bool("teaching") || !st.bool("enabled") -> ArmReadiness.ARM_READINESS_NOT_READY
+        // Motors that are off aren't "not ready": engaging turns them on (ensureEnabled), holding the pose.
+        st.bool("teaching") -> ArmReadiness.ARM_READINESS_NOT_READY
         ownerElse(st) != null -> ArmReadiness.ARM_READINESS_NOT_READY
         else -> ArmReadiness.ARM_READINESS_READY
     }

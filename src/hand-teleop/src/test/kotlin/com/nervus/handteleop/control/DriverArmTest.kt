@@ -71,7 +71,7 @@ class DriverArmTest {
     @Test
     fun `state reads the pose in metres and the readiness`() {
         val st = arm.state()
-        assertEquals(ArmReadiness.ARM_READINESS_NOT_READY, st.readiness, "motors off")
+        assertEquals(ArmReadiness.ARM_READINESS_READY, st.readiness, "motors off: engaging turns them on")
         assertEquals(0.25, st.tcpPose.x, 1e-12)
         assertEquals(-0.04, st.tcpPose.y, 1e-12)
         assertEquals("base_link", st.tcpPose.frame)

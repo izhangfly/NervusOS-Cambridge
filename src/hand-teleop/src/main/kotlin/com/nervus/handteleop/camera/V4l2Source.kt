@@ -72,7 +72,10 @@ object V4l2 {
 
     /** ffmpeg reading [device] and writing raw RGB24 frames to stdout. */
     fun ffmpegCommand(device: String, f: V4l2Format): List<String> = buildList {
-        addAll(listOf("ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin", "-f", "v4l2"))
+        // Wall-clock timestamps: a v4l2loopback camera (the Surface bridge) hands out garbage ones, and ffmpeg
+        // then holds frames back (one frame in 5 s instead of 30 fps).
+        addAll(listOf("ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin",
+            "-use_wallclock_as_timestamps", "1", "-f", "v4l2"))
         f.ffmpegInput?.let { addAll(listOf("-input_format", it)) }
         addAll(listOf("-video_size", "${f.width}x${f.height}", "-i", device, "-f", "rawvideo", "-pix_fmt", "rgb24", "-"))
     }
