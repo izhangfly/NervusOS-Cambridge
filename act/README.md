@@ -8,7 +8,7 @@ It is the successor to `legacy/piper-act`, the Windows-era project where all of 
 arm. The rules that project learned are built in here, and listed below.
 
 ```text
- Dell (Ubuntu, at the arm)                                     Mac (Apple silicon)
+ Robot host (Ubuntu, at the arm)                               Mac (Apple silicon)
  ┌──────────────────────────────┐                              ┌───────────────────────────────┐
  │ ACT Studio (NervusOS app)    │                              │ worker.py (launchd agent)     │
  │        │ HTTP, loopback      │      ~/Shared/NervusACT      │  build the training set       │
@@ -21,7 +21,7 @@ arm. The rules that project learned are built in here, and listed below.
 
 | Part | Where | What it does |
 |---|---|---|
-| `engine/nervus_act/` | Dell, `nervus-act.service`, `127.0.0.1:8795` | Records drag-taught demonstrations into LeRobot datasets, keeps trims and exclusions as a sidecar, queues jobs, runs policies on the arm, records runs and corrections for post-training. |
+| `engine/nervus_act/` | Robot host, `nervus-act.service`, `127.0.0.1:8795` | Records drag-taught demonstrations into LeRobot datasets, keeps trims and exclusions as a sidecar, queues jobs, runs policies on the arm, records runs and corrections for post-training. |
 | `mac/worker.py` | Mac, launchd `com.nervus.act-worker` | Builds each job's dataset (edits applied, h264 at CRF 18), trains under `train_supervisor.py`, mirrors progress, publishes checkpoints, runs post-training rounds with an offline gate, promotes on real results. |
 | `src/act-studio` | NervusOS app `com.nervus.act` | The screen for all of it: Record, Data, Train, Policies, Run, Post-train, System. |
 | `tests/` | anywhere with LeRobot 0.4.4 | `e2e_sim.py` runs the whole loop against a simulated arm; `test_units.py` covers the pure logic. |
@@ -34,16 +34,16 @@ machines never edit the same file:
 
 | Path | Writer | Contents |
 |---|---|---|
-| `datasets/<name>/` | Dell | LeRobot v3 dataset, `nervus_dataset.json`, `thumbs/`, `traces/` |
-| `datasets/<name>/nervus_edits.json` | Dell | trims and exclusions (the video is never rewritten) |
-| `jobs/<id>/job.json`, `CANCEL` | Dell | a training request; a request to stop it |
+| `datasets/<name>/` | Robot host | LeRobot v3 dataset, `nervus_dataset.json`, `thumbs/`, `traces/` |
+| `datasets/<name>/nervus_edits.json` | Robot host | trims and exclusions (the video is never rewritten) |
+| `jobs/<id>/job.json`, `CANCEL` | Robot host | a training request; a request to stop it |
 | `jobs/<id>/status.json`, `metrics.jsonl` | Mac | progress, loss per logged step, published checkpoints |
 | `policies/<name>/` | Mac | the model plus `nervus_policy.json` (envelope, step sizes, start pose, cameras) |
 | `policies/CURRENT.json` | Mac | the policy in use and the evidence for it |
-| `rollouts/<run>/` | Dell | a run: `episode.jsonl`, one mp4 per camera, `meta.json`, and `READY` once labelled |
-| `trials/results.csv` | Dell | one row per labelled run |
+| `rollouts/<run>/` | Robot host | a run: `episode.jsonl`, one mp4 per camera, `meta.json`, and `READY` once labelled |
+| `trials/results.csv` | Robot host | one row per labelled run |
 | `posttrain/STATUS.json` | Mac | rounds, gate numbers, candidates, what was accepted |
-| `posttrain/REQUEST`, `PROMOTE` | Dell | "post-train now", "make this CURRENT" |
+| `posttrain/REQUEST`, `PROMOTE` | Robot host | "post-train now", "make this CURRENT" |
 | `workers/mac.json` | Mac | heartbeat |
 
 ## Rules learned on the real arm
@@ -74,7 +74,7 @@ machines never edit the same file:
 
 **Running**
 - Inference runs in its own process (sharing the GIL doubled its time) and plans asynchronously: one inference takes
-  350-700 ms on the Dell's CPU.
+  350-700 ms on the robot host's CPU.
 - The step limit applies to the command, not the measurement (the gripper's 0.5-0.8 s dead time pinned it half open).
 - Joints are averaged over the newest two plans; the gripper never is (the mean of open and closed dropped the cube).
 - A grasp latch holds the gripper at "measured minus a little squeeze" once the fingers stop on an object, and lets
@@ -96,7 +96,7 @@ machines never edit the same file:
 
 ## Setting it up
 
-On the Dell, `sudo hosted/install-hosted.sh` installs the engine (CPU torch, LeRobot 0.4.4) as `nervus-act.service`,
+On the robot host, `sudo hosted/install-hosted.sh` installs the engine (CPU torch, LeRobot 0.4.4) as `nervus-act.service`,
 which starts and stops with NervusOS. Install ACT Studio from the App Store. The cameras it expects are set on the
 service's command line: `wrist=Dabai_DC1,scene=046d_0825` (by-id substrings).
 
@@ -124,7 +124,7 @@ hardware.
 
 | Symptom | Cause and fix |
 |---|---|
-| A camera shows 0 fps and says it is on the Thunderbolt controller | The Dell's USB-C/Thunderbolt USB keeps resetting the C270. Plug it into a USB-A port. |
+| A camera shows 0 fps and says it is on the Thunderbolt controller | The robot host's USB-C/Thunderbolt USB keeps resetting the C270. Plug it into a USB-A port. |
 | The Mac shows OFFLINE | `launchctl print gui/$UID/com.nervus.act-worker`; the log is `~/NervusACT-work/worker.log`. Queued jobs wait. |
 | A job says "waiting for dataset(s)" | Syncthing has not finished carrying the recording to the Mac; the System tab shows how much is left. |
 | A job warns it is many times slower | The Mac is short of memory. Close large apps (a local LLM is enough to do it). |

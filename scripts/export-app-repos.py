@@ -84,7 +84,7 @@ REPOS = {
     },
 }
 IGNORE = shutil.ignore_patterns("build", ".gradle", ".kotlin", "__pycache__", "*.pyc", ".pytest_cache",
-                                "signing", "*.pem", ".venv", "venv", ".DS_Store", "local.properties")
+                                "*.pem", ".venv", "venv", ".DS_Store", "local.properties")
 
 
 def run(*cmd, cwd=None, check=True, capture=False):
@@ -104,7 +104,8 @@ def assemble(name: str, spec: dict, dest: Path):
             shutil.copytree(s, d, ignore=IGNORE, dirs_exist_ok=True)
         else:
             shutil.copy2(s, d)
-    shutil.copytree(ROOT / "export" / name, dest, ignore=IGNORE, dirs_exist_ok=True)
+    if (ROOT / "export" / name).exists():
+        shutil.copytree(ROOT / "export" / name, dest, ignore=IGNORE, dirs_exist_ok=True)
 
 
 def main():
@@ -114,8 +115,9 @@ def main():
     STAGE.mkdir(exist_ok=True)
     for name in names:
         spec = REPOS[name]
-        if not (ROOT / "export" / name / "README.md").exists():
-            print(f"== {name}: no export/{name}/README.md yet, skipped")
+        missing = [s for s, _ in spec["paths"] if not (ROOT / s).exists()]
+        if missing:
+            print(f"== {name}: skipped, not in this checkout yet: {', '.join(missing)}")
             continue
         dest = STAGE / name
         exists = run("gh", "repo", "view", f"{OWNER}/{name}", check=False, capture=True).returncode == 0
