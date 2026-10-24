@@ -51,11 +51,19 @@ class Service:
             self.arm = DriverClient(driver)
             self.calib = Calibration(self.config_dir / "llm-arm-calib.json")
             source = act_engine_source(act)
-        self.frames = Frames(source, lambda: self.settings["frame_interval_s"])
+        self.frames = Frames(source, lambda: self.settings["frame_interval_s"], self.app_open)
         self.keys = {}
         self.reload_keys()
         self._llm_override = llm
         self.agent = Agent(self.arm, self.frames, self.calib, self.settings, self.make_llm, sim=sim)
+
+    def app_open(self) -> bool:
+        """The app sent a heartbeat in the last 10 s, or a request is running."""
+        a = getattr(self, "agent", None)
+        if a is None:
+            return False
+        busy = a.job is not None and a.job.state in ("running", "waiting")
+        return busy or time.time() - a.last_app_beat < 10.0
 
     def reload_keys(self):
         self.keys = {p: C.load_key(self.config_dir, p) for p in C.PROVIDERS}

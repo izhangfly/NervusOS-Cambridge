@@ -34,9 +34,12 @@ MIN_AREA_PX = 150
 class Frames:
     """Grabs one JPEG per role every `interval` seconds and keeps the latest of each."""
 
-    def __init__(self, source, interval_s):
+    def __init__(self, source, interval_s, wanted=lambda: True):
         self.source = source            # callable(role) -> jpeg bytes or None
         self.interval_s = interval_s    # callable() -> seconds
+        # Only grab while someone looks: every grab keeps the ACT engine's cameras switched on, and a camera
+        # the engine holds can't be opened by another app (Hand Teleop uses the same Logitech).
+        self.wanted = wanted
         self.lock = threading.Lock()
         self.latest = {r: (None, 0.0, None) for r in ROLES}   # role -> (jpeg, time, error)
         self._wake = threading.Event()
@@ -45,6 +48,10 @@ class Frames:
 
     def _run(self):
         while not self._stop.is_set():
+            if not self.wanted():
+                self._wake.wait(0.5)
+                self._wake.clear()
+                continue
             for r in ROLES:
                 try:
                     jpg, err = self.source(r), None
@@ -202,3 +209,19 @@ class SimCameras:
                 cv2.rectangle(img, (int(u - h), int(v - h)), (int(u + h), int(v + h)), self.BGR[k], -1)
         ok, jpg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 80])
         return jpg.tobytes() if ok else None
+
+
+def with_grid(jpg: bytes, step: int = 50) -> bytes:
+    """The scene frame with a labelled pixel grid, so the model can point at things in pixels."""
+    img = decode(jpg)
+    h, w = img.shape[:2]
+    for x in range(0, w, step):
+        cv2.line(img, (x, 0), (x, h), (0, 255, 255) if x % 100 == 0 else (0, 140, 140), 1)
+        if x % 100 == 0:
+            cv2.putText(img, str(x), (x + 2, 12), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 255, 255), 1, cv2.LINE_AA)
+    for y in range(0, h, step):
+        cv2.line(img, (0, y), (w, y), (0, 255, 255) if y % 100 == 0 else (0, 140, 140), 1)
+        if y % 100 == 0:
+            cv2.putText(img, str(y), (2, y - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 255, 255), 1, cv2.LINE_AA)
+    ok, out = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 80])
+    return out.tobytes() if ok else jpg

@@ -90,6 +90,21 @@ class SimTest(unittest.TestCase):
         self.assertAlmostEqual(svc.arm.heights["red"], 30.0)
         self.assertEqual(v["log"][-1]["text"], "Done: red is on blue.")
 
+    def test_pick_and_place_by_pixel(self):
+        from nervus_llmarm.vision import SimCameras
+        u, v = SimCameras.px(380.0, 0.0)        # the green block
+        u2, v2 = SimCameras.px(300.0, -120.0)   # the blue block
+        svc = self.service([[("pick_at_pixel", {"u": u, "v": v})],
+                            [("place_at_pixel", {"u": u2, "v": v2, "on_object": True})], "ok"])
+        stop = threading.Event()
+        self.addCleanup(stop.set)
+        self.beat(svc, stop)
+        job = svc.agent.start("put the green block on the blue one")
+        self.assertTrue(wait(lambda: job.state not in ("running", "waiting"), 60), job.view())
+        self.assertEqual(job.state, "done", job.view()["log"])
+        self.assertLess(math.dist(svc.arm.blocks["green"], svc.arm.blocks["blue"]), 15)
+        self.assertAlmostEqual(svc.arm.heights["green"], 30.0)
+
     def test_rejects_moves_outside_the_box(self):
         svc = self.service([[("move_to", {"x_mm": 900, "y_mm": 0, "z_mm": 200})], "ok"])
         stop = threading.Event()
@@ -143,7 +158,11 @@ class SimTest(unittest.TestCase):
         self.assertTrue(st["sim"])
         self.assertIn("openai", st["providers"])
         self.assertNotIn("key\": \"sk", json.dumps(st))
-        self.assertTrue(wait(lambda: urllib.request.urlopen(base + "/api/camera/scene.jpg").status == 200, 5))
+        # No frames are grabbed until the app says it is open.
+        self.assertIsNone(svc.frames.get("scene")[0])
+        urllib.request.urlopen(urllib.request.Request(base + "/api/heartbeat", b"{}", method="POST")).read()
+        self.assertTrue(wait(lambda: svc.frames.get("scene")[0] is not None, 5))
+        self.assertEqual(urllib.request.urlopen(base + "/api/camera/scene.jpg").status, 200)
 
 
 if __name__ == "__main__":

@@ -18,6 +18,9 @@ from .driver import DriverError
 SYSTEM_PROMPT = """You control a 6-axis robot arm (AgileX PiPER) with a parallel gripper, over a table.
 Units: millimetres and degrees, in the arm's base frame: +x forward from the base, +y to the arm's left, +z up.
 You see two cameras: "scene" looks at the table from the side or above, "wrist" looks out of the gripper.
+The scene image has a pixel grid every 50 px with labelled lines. Objects of a clear colour are listed by
+get_scene; for anything else (white or plain objects), find it in the scene image and use pick_at_pixel /
+place_at_pixel with the pixel at the object's centre on the table.
 Workspace: x {x0}..{x1}, y {y0}..{y1}, z {z0}..{z1}. Objects are listed by get_scene with ids such as "red-1".
 Plan with the tools; one tool call per step is fine. Prefer pick and place_on/place_at over raw moves.
 If the request is unclear, an object isn't visible, or a step looks unsafe, ask instead of moving.
@@ -34,6 +37,11 @@ TOOLS = [
     {"type": "function", "function": {"name": "place_at", "description": "Put the held object on the table at x, y (mm).",
         "parameters": {"type": "object", "properties": {"x_mm": {"type": "number"}, "y_mm": {"type": "number"}},
                        "required": ["x_mm", "y_mm"]}}},
+    {"type": "function", "function": {"name": "pick_at_pixel", "description": "Like pick, for an object you located in the scene image: (u, v) is its centre in scene-camera pixels.",
+        "parameters": {"type": "object", "properties": {"u": {"type": "number"}, "v": {"type": "number"}}, "required": ["u", "v"]}}},
+    {"type": "function", "function": {"name": "place_at_pixel", "description": "Like place_at, for a spot you located in the scene image (scene-camera pixels). Set on_object true to put the held object on top of an object there.",
+        "parameters": {"type": "object", "properties": {"u": {"type": "number"}, "v": {"type": "number"},
+                                                         "on_object": {"type": "boolean"}}, "required": ["u", "v"]}}},
     {"type": "function", "function": {"name": "move_to", "description": "Move the gripper in a straight line to x, y, z (mm), optionally turning it to yaw (deg).",
         "parameters": {"type": "object", "properties": {"x_mm": {"type": "number"}, "y_mm": {"type": "number"},
                                                          "z_mm": {"type": "number"}, "yaw_deg": {"type": "number"}},
@@ -46,7 +54,8 @@ TOOLS = [
     {"type": "function", "function": {"name": "go_home", "description": "Move to the safe home position above the middle of the table.",
         "parameters": {"type": "object", "properties": {}}}},
 ]
-MOTION_TOOLS = {"pick", "place_on", "place_at", "move_to", "move_relative", "set_gripper", "go_home"}
+MOTION_TOOLS = {"pick", "place_on", "place_at", "pick_at_pixel", "place_at_pixel", "move_to", "move_relative",
+                "set_gripper", "go_home"}
 HOME_XY = (250.0, 0.0)
 
 
@@ -86,7 +95,7 @@ class Agent:
         self.sim = sim
         self.history: list[dict] = []             # text-only conversation kept between requests
         self.job: Job | None = None
-        self.last_app_beat = time.time()
+        self.last_app_beat = 0.0
         self.lock = threading.Lock()
         self._scene_objects: dict[str, dict] = {}
 
@@ -134,6 +143,14 @@ class Agent:
         if "x_mm" not in o:
             raise ToolError("the scene camera is not calibrated, so object positions are unknown")
         return o
+
+    def _pixel(self, a: dict):
+        u, v = a.get("u"), a.get("v")
+        if not all(isinstance(t, (int, float)) and math.isfinite(t) for t in (u, v)):
+            raise ToolError("u and v must be numbers")
+        if not (0 <= u <= 4000 and 0 <= v <= 4000):
+            raise ToolError("that pixel is outside the image")
+        return self.calib.to_table(float(u), float(v))
 
     # ---- motion ---------------------------------------------------------------------------------------------
     def _check(self, job: Job):
@@ -210,20 +227,28 @@ class Agent:
         oh, travel = float(self.settings["object_height_mm"]), float(self.settings["travel_height_mm"])
         if name == "get_scene":
             return self.scene()
-        if name in ("pick", "place_on", "place_at") and tz is None:
+        if name in ("pick", "place_on", "place_at", "pick_at_pixel", "place_at_pixel") and (tz is None or not self.calib.ready):
             raise ToolError("calibrate the scene camera and table height first")
-        if name == "pick":
-            o = self._object(a.get("object_id"))
+        if name in ("pick", "pick_at_pixel"):
+            if name == "pick":
+                o = self._object(a.get("object_id"))
+                x, y, what = o["x_mm"], o["y_mm"], o["id"]
+            else:
+                x, y = self._pixel(a)
+                what = f"the object at pixel ({a.get('u'):.0f}, {a.get('v'):.0f})"
             self.grip(job, self.settings["open_width_mm"])
-            self.move_line(job, o["x_mm"], o["y_mm"], tz + travel)
-            self.move_line(job, o["x_mm"], o["y_mm"], tz + oh * 0.5)
+            self.move_line(job, x, y, tz + travel)
+            self.move_line(job, x, y, tz + oh * 0.5)
             self.grip(job, 0)
-            self.move_line(job, o["x_mm"], o["y_mm"], tz + travel)
-            return {"ok": True, "picked": o["id"]}
-        if name in ("place_on", "place_at"):
+            self.move_line(job, x, y, tz + travel)
+            return {"ok": True, "picked": what, "at_mm": [round(x), round(y)]}
+        if name in ("place_on", "place_at", "place_at_pixel"):
             if name == "place_on":
                 o = self._object(a.get("object_id"))
                 x, y, z = o["x_mm"], o["y_mm"], tz + oh * 1.5 + 5.0
+            elif name == "place_at_pixel":
+                x, y = self._pixel(a)
+                z = tz + oh * (1.5 if a.get("on_object") else 0.5) + 5.0
             else:
                 x, y, z = a.get("x_mm"), a.get("y_mm"), tz + oh * 0.5 + 5.0
             self.move_line(job, x, y, tz + travel)
@@ -270,6 +295,9 @@ class Agent:
         parts = []
         for role in ("scene", "wrist"):
             jpg, _, _ = self.frames.get(role)
+            if jpg and role == "scene":
+                from .vision import with_grid
+                jpg = with_grid(jpg)
             if jpg:
                 url = "data:image/jpeg;base64," + base64.b64encode(jpg).decode()
                 parts += [{"type": "text", "text": f"{role} camera:"},
