@@ -6,7 +6,8 @@
 #   scripts/push.sh                           commit with a subject naming the changed files
 set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TRAILER="${NERVUS_COMMIT_TRAILER:-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>}"
+# Commits are credited to the owner only (their rule): no co-author trailer unless one is asked for.
+TRAILER="${NERVUS_COMMIT_TRAILER:-}"
 cd "$REPO" || exit 1
 
 lock="$REPO/.git/nervus-push.lock"
@@ -48,8 +49,8 @@ if [ -z "$subject" ]; then
 	[ "$n" -gt 3 ] && subject="$subject and $((n - 3)) more"
 fi
 if [ -n "${2:-}" ]; then
-	git commit -q -m "$subject" -m "$2" -m "$TRAILER" || exit 1
+	git commit -q -m "$subject" -m "$2" ${TRAILER:+-m "$TRAILER"} || exit 1
 else
-	git commit -q -m "$subject" -m "$TRAILER" || exit 1
+	git commit -q -m "$subject" ${TRAILER:+-m "$TRAILER"} || exit 1
 fi
 push && echo "push: $(git rev-parse --short HEAD) $subject"
