@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/nervus-os/nervud/internal/adminwire"
@@ -104,6 +105,7 @@ func startServer(t *testing.T, adminUID uint32) (*adminwire.Client, *fakePkgServ
 		Packages:    pkgs,
 		Registry:    reg,
 		Permissions: perms,
+		Launcher:    testLauncher,
 		Auditor:     audit.New(discardLog()),
 		Log:         discardLog(),
 	})
@@ -117,6 +119,36 @@ func startServer(t *testing.T, adminUID uint32) (*adminwire.Client, *fakePkgServ
 		_ = srv.Stop(context.Background())
 	})
 	return adminwire.NewClient(sock), pkgs, reg, perms, stagingRoot
+}
+
+// fakeLauncher records launches; testLauncher is the one startServer wires in.
+type fakeLauncher struct {
+	mu      sync.Mutex
+	started []string
+}
+
+func (f *fakeLauncher) EnsureStarted(_ context.Context, pkg, comp string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.started = append(f.started, pkg+"/"+comp)
+	return nil
+}
+
+var testLauncher = &fakeLauncher{}
+
+func TestLaunchStartsTheComponent(t *testing.T) {
+	client, _, _, _, _ := startServer(t, uint32(os.Getuid()))
+	if resp, _ := client.Do(adminwire.Request{Cmd: adminwire.CmdLaunch, PackageID: "com.nervus.handteleop"}); resp.OK {
+		t.Fatalf("launch without a component should be refused: %+v", resp)
+	}
+	if resp, _ := client.Do(adminwire.Request{Cmd: adminwire.CmdLaunch, PackageID: "com.nervus.handteleop", ComponentID: "main"}); !resp.OK {
+		t.Fatalf("launch: %+v", resp)
+	}
+	testLauncher.mu.Lock()
+	defer testLauncher.mu.Unlock()
+	if n := len(testLauncher.started); n == 0 || testLauncher.started[n-1] != "com.nervus.handteleop/main" {
+		t.Fatalf("launch not forwarded: %v", testLauncher.started)
+	}
 }
 
 func TestBeginStagingCreatesChildDir(t *testing.T) {

@@ -27,6 +27,9 @@ var errNotEnabled = errors.New("piperd: motors are not enabled")
 // errStale means the arm's feedback stopped flowing (unpowered, unplugged, or in standby).
 var errStale = errors.New("piperd: arm feedback is stale")
 
+// errGuard means the driver's IK flip guard just held the arm and refuses goals for a moment.
+var errGuard = errors.New("piperd: the driver's IK guard is holding the arm")
+
 // driverState is the subset of GET /api/state piperd reads.
 type driverState struct {
 	Current       []float64            `json:"current"`      // joint angles, deg
@@ -122,8 +125,12 @@ func (d *driver) post(ctx context.Context, path string, body map[string]any, out
 	if resp.StatusCode == http.StatusConflict {
 		var e struct {
 			Error string `json:"error"`
+			Guard bool   `json:"guard"`
 		}
 		_ = json.Unmarshal(data, &e)
+		if e.Guard {
+			return fmt.Errorf("%w: %s", errGuard, e.Error)
+		}
 		switch e.Error {
 		case "busy":
 			return errBusy

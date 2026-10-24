@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Hand Teleop
+Comment=Drive the PiPER arm with your hand in front of the camera (opens in NervusOS)
+Exec=/usr/local/bin/nervus-open com.nervus.handteleop main
+Icon=nervus-handteleop
+Terminal=false
+Categories=Development;Robotics;
+Keywords=nervus;robot;piper;hand;teleop;
+StartupNotify=false

@@ -22,6 +22,8 @@ rm -f /etc/systemd/system/nervus-piper.service /etc/systemd/system/nervus-can.se
 	/etc/polkit-1/rules.d/50-nervus-hosted.rules /etc/nervus/hosted /etc/nervus/openbox/rc.xml \
 	/usr/libexec/nervus/hosted-power /usr/libexec/nervus/can-up /usr/local/bin/nervus-session \
 	/usr/share/applications/nervusos.desktop /usr/share/applications/nervusos-quit.desktop \
+	/usr/local/bin/nervus-open /etc/sudoers.d/50-nervus-open \
+	/usr/share/applications/nervus-handteleop.desktop /usr/share/applications/nervus-llmarm.desktop \
 	/usr/share/icons/hicolor/scalable/apps/nervusos.svg
 rm -rf /usr/share/nervus/store /opt/nervus/piper /run/nervus-x11
 id nervus-piper >/dev/null 2>&1 && userdel nervus-piper 2>/dev/null || true

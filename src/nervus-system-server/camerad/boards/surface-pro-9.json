@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "board": "surface-pro-9-hosted",
+
+  "cameras": [
+    {
+      "role": "cam.front",
+      "match": {"usb_id": "046d:0825"},
+      "labels": {
+        "nervus.camera.facing": "front",
+        "nervus.camera.kind": "color",
+        "nervus.camera.mount": "usb"
+      }
+    }
+  ],
+
+  "usb_pool": {
+    "role_prefix": "cam.usb",
+    "max_slots": 3
+  }
+}

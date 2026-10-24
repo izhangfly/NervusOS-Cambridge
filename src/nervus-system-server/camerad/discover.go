@@ -42,6 +42,8 @@ type Device struct {
 	Node string
 	// USBPath is the USB topology path, such as "1-1.2". Empty for non-USB devices.
 	USBPath string
+	// USBID is "vendor:product" in lower-case hex, such as "046d:0825". Empty for non-USB devices.
+	USBID string
 	// PathLink is the link name under /dev/v4l/by-path/. Empty if there isn't one.
 	PathLink string
 	// Name is the device name the driver reports, for logs only.
@@ -73,6 +75,8 @@ func Bind(profile *boardprofile.Profile, list deviceLister) ([]Binding, error) {
 	}
 
 	byUSB := profile.FixedByUSBPath()
+	byID := profile.FixedByUSBID()
+	byName := profile.FixedByName()
 	byLink := profile.FixedByDeviceLink()
 
 	var bindings []Binding
@@ -80,7 +84,10 @@ func Bind(profile *boardprofile.Profile, list deviceLister) ([]Binding, error) {
 	seenRole := make(map[string]string)            // role -> node, for spotting duplicate matches
 
 	for _, dev := range devices {
-		role, ok := matchFixed(dev, byUSB, byLink)
+		role, ok := matchFixed(dev, byUSB, byID, byLink)
+		if !ok && dev.Name != "" {
+			role, ok = byName[dev.Name]
+		}
 		if !ok {
 			continue
 		}
@@ -101,9 +108,14 @@ func Bind(profile *boardprofile.Profile, list deviceLister) ([]Binding, error) {
 	return bindings, nil
 }
 
-func matchFixed(dev Device, byUSB, byLink map[string]string) (string, bool) {
+func matchFixed(dev Device, byUSB, byID, byLink map[string]string) (string, bool) {
 	if dev.USBPath != "" {
 		if role, ok := byUSB[dev.USBPath]; ok {
+			return role, true
+		}
+	}
+	if dev.USBID != "" {
+		if role, ok := byID[dev.USBID]; ok {
 			return role, true
 		}
 	}
@@ -224,6 +236,7 @@ func listSysfsDevices() ([]Device, error) {
 		devices = append(devices, Device{
 			Node:     node,
 			USBPath:  usbPathOf(filepath.Join(sysV4L2Root, name)),
+			USBID:    usbIDOf(filepath.Join(sysV4L2Root, name)),
 			PathLink: links[node],
 			Name:     readSysAttr(filepath.Join(sysV4L2Root, name, "name")),
 		})
@@ -253,6 +266,21 @@ func usbPathOf(sysEntry string) string {
 		return ""
 	}
 	return base
+}
+
+// usbIDOf reads "vendor:product" from the USB device a V4L2 node belongs to: its "device" link points at a USB
+// interface, whose parent directory is the USB device with idVendor and idProduct. "" for non-USB devices.
+func usbIDOf(sysEntry string) string {
+	target, err := filepath.EvalSymlinks(filepath.Join(sysEntry, "device"))
+	if err != nil {
+		return ""
+	}
+	dev := filepath.Dir(target)
+	v, p := readSysAttr(filepath.Join(dev, "idVendor")), readSysAttr(filepath.Join(dev, "idProduct"))
+	if v == "" || p == "" {
+		return ""
+	}
+	return strings.ToLower(v + ":" + p)
 }
 
 // deviceLinkIndex builds a reverse index from /dev/videoN to its by-path link name.

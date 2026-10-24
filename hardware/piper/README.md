@@ -42,6 +42,12 @@ still has a single owner.
   clears a latched collision fault without a power cycle (the arm goes limp for a
   moment, so support it).
 - Joint targets are clamped to the limits in the AgileX manual, on the server.
+- IK flip guard: in the Cartesian modes (panel jog and `/api/servo`) the driver
+  also watches the joints. If one swings more than 45 deg in 0.5 s while the TCP
+  motion doesn't explain it (the arm's own IK flipping the wrist near J5 = 0), it
+  holds the arm with the motors on, drops the controller and refuses servo goals
+  and jogs for 2 s. `/api/state` reports the last trip under `guard`; the panel
+  shows it. `--ik-guard-deg 0` turns it off.
 - The API has no authentication, so it listens on loopback only. Don't change
   `--bind` to `0.0.0.0`.
 
@@ -51,7 +57,13 @@ still has a single owner.
 `/api/joint {joint, deg}`, `/api/gripper {mm}`, `/api/speed {speed}`,
 `/api/mode {mode: joint|cartesian}`, `/api/jog {axis, dir, on}` (leashed Cartesian
 jog), `/api/jointjog {joint, dir, on}`, `/api/jogstop`, `/api/home`,
-`/api/recover`, `/api/estop`.
+`/api/recover`, `/api/estop`, `/api/stop`, `/api/release`, `/api/servo {pose, speed?}`
+(piperd, Hand Teleop), `/api/stream {joints, gripper_mm?}` (ACT engine). Moving
+calls take a `client` name; one client controls the arm at a time (HTTP 409 for
+the others), and stop and E-stop are accepted from anyone.
+
+Tests (no arm needed; a fake `piper_sdk` stands in):
+`python3 -m unittest discover -s hardware/piper -p "test_*.py"`.
 
 ## Useful commands
 

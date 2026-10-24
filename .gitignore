@@ -24,3 +24,6 @@ venv/
 .DS_Store
 *.swp
 *~
+
+# Agent worktrees (Claude Code)
+/.claude/worktrees/

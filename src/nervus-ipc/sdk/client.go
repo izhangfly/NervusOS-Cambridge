@@ -112,6 +112,7 @@ func Connect(cfg Config) (*Client, error) {
 	}
 	c.subs = newSubscriber(c, cfg.Log)
 	go c.readLoop()
+	go co.keepAlive(c.ids)
 	return c, nil
 }
 
@@ -191,8 +192,7 @@ func (c *Client) readLoop() {
 			}
 
 		case *ipcv1.Envelope_Pong:
-			// This SDK doesn't send Pings itself yet, so receiving a Pong is unexpected. Accept and ignore it rather than closing
-			// the connection as a violation: it carries no request and needs no reply, so it's harmless.
+			// The answer to keepAlive's Ping. It only needs to arrive: any frame resets nervud's idle timer.
 
 		case *ipcv1.Envelope_EndpointDied, *ipcv1.Envelope_EndpointRevoked:
 			// A binding invalidation notice pushed by the server. The caller's next Call gets NOT_FOUND

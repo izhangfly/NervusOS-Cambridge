@@ -40,6 +40,8 @@ func (s *Server) dispatch(ctx context.Context, req adminwire.Request) adminwire.
 		return s.handleSetEnabled(ctx, req)
 	case adminwire.CmdSetPermission:
 		return s.handleSetPermission(req)
+	case adminwire.CmdLaunch:
+		return s.handleLaunch(ctx, req)
 	default:
 		return badRequest("unknown command %q", req.Cmd)
 	}
@@ -216,6 +218,22 @@ func (s *Server) handleSetEnabled(ctx context.Context, req adminwire.Request) ad
 	}
 	s.audit("admin.SetComponentEnabled", req.PackageID, false, nil,
 		fmt.Sprintf("%s enabled=%v", req.ComponentID, req.Enabled))
+	return adminwire.Response{OK: true, Code: adminwire.CodeOK}
+}
+
+// handleLaunch starts a component through the same service manager the launcher's LaunchComponent uses.
+func (s *Server) handleLaunch(ctx context.Context, req adminwire.Request) adminwire.Response {
+	if req.PackageID == "" || req.ComponentID == "" {
+		return badRequest("launch requires package_id and component_id")
+	}
+	if s.launcher == nil {
+		return adminwire.Response{OK: false, Code: adminwire.CodeFailed, Message: "no service manager"}
+	}
+	if err := s.launcher.EnsureStarted(ctx, req.PackageID, req.ComponentID); err != nil {
+		s.audit("admin.Launch", req.PackageID, true, err, req.ComponentID)
+		return classifyPkgErr(err)
+	}
+	s.audit("admin.Launch", req.PackageID, false, nil, req.ComponentID)
 	return adminwire.Response{OK: true, Code: adminwire.CodeOK}
 }
 
