@@ -93,6 +93,16 @@ POSE_CLAMP_MM = 900.0
 POSE_CLAMP_DEG = 185.0
 JOINT_JOG_STEP = 0.6        # deg per tick while a wrist key is held (~12 deg/s)
 
+# IK flip guard for the Cartesian modes. The arm solves IK itself, and near the
+# wrist singularity (J5 near 0) a small TCP step can make it swing J4 and J6 half a
+# turn in opposite directions while the TCP barely moves. The leash can't see
+# that: it only limits the TCP. So the loop watches the joints too, over a short
+# window, and holds when one joint swings far more than the TCP motion explains.
+IK_GUARD_DEG = 45.0         # joint swing in the window that can trip (0 = off)
+IK_GUARD_WINDOW = 0.5       # s
+IK_GUARD_RATIO = 3.0        # trip if swing > ratio x (TCP turn deg + TCP travel mm / 2)
+IK_GUARD_LATCH = 2.0        # s that servo goals are refused after a trip
+
 CTRL_MODES = {0x00: "STANDBY", 0x01: "CAN_CTRL", 0x02: "TEACHING_MODE",
               0x03: "ETHERNET_CTRL", 0x04: "WIFI_CTRL", 0x05: "REMOTE_CTRL",
               0x06: "LINKAGE_TEACHING_INPUT", 0x07: "OFFLINE_TRAJECTORY"}
@@ -127,6 +137,7 @@ STATE = {
     "last_heartbeat": 0.0,
     "speed": 15,
     "owner": None,            # {"client", "kind", "last"}
+    "guard": None,            # last IK guard trip: {"time", "reason", "client"}
     "log": [],
 }
 
@@ -147,6 +158,56 @@ def log_call(fn, params):
 def clamp(j, deg):
     lo, hi = JOINT_LIMITS[j]
     return max(lo, min(hi, deg))
+
+
+def rot_zyx(rx, ry, rz):
+    """Rotation matrix of a PiPER end pose's RX, RY, RZ (deg): R = Rz Ry Rx."""
+    a, b, c = (math.radians(v) for v in (rx, ry, rz))
+    ca, sa, cb, sb, cc, sc = math.cos(a), math.sin(a), math.cos(b), math.sin(b), math.cos(c), math.sin(c)
+    return [[cc * cb, cc * sb * sa - sc * ca, cc * sb * ca + sc * sa],
+            [sc * cb, sc * sb * sa + cc * ca, sc * sb * ca - cc * sa],
+            [-sb, cb * sa, cb * ca]]
+
+
+def turn_deg(p, q):
+    """Angle (deg) of the rotation between two end poses, whatever the Euler wrap."""
+    r, s = rot_zyx(*p[3:6]), rot_zyx(*q[3:6])
+    tr = sum(r[i][k] * s[i][k] for i in range(3) for k in range(3))   # trace(R^T S)
+    return math.degrees(math.acos(max(-1.0, min(1.0, (tr - 1.0) / 2.0))))
+
+
+class FlipGuard:
+    """Spots the arm's IK swinging joints that the TCP motion doesn't explain.
+
+    Feed it (time, joints, pose) every control tick while a Cartesian mode streams;
+    reset() it whenever streaming stops or the mode changes, so a joint move in
+    between is never blamed on IK."""
+
+    def __init__(self, limit_deg=IK_GUARD_DEG, window=IK_GUARD_WINDOW, ratio=IK_GUARD_RATIO):
+        self.limit, self.window, self.ratio = limit_deg, window, ratio
+        self.samples = []
+
+    def reset(self):
+        self.samples = []
+
+    def update(self, t, joints, pose):
+        """Returns why it tripped, or None."""
+        if self.limit <= 0:
+            return None
+        self.samples.append((t, list(joints), list(pose)))
+        while self.samples and t - self.samples[0][0] > self.window:
+            self.samples.pop(0)
+        t0, j0, p0 = self.samples[0]
+        swing = [abs(joints[i] - j0[i]) for i in range(6)]
+        worst = max(range(6), key=lambda i: swing[i])
+        if swing[worst] < self.limit:
+            return None
+        travel = math.dist(pose[:3], p0[:3])
+        turn = turn_deg(p0, pose)
+        if swing[worst] <= self.ratio * (turn + travel / 2.0):
+            return None
+        return (f"J{worst + 1} swung {swing[worst]:.0f} deg in {t - t0:.2f} s while the TCP moved "
+                f"{travel:.0f} mm and turned {turn:.0f} deg (IK flip near a singularity?)")
 
 
 # The deadman a client's gripper commands ride on: the same as its motion source.
@@ -193,6 +254,8 @@ class Arm:
         self.move_mode = 0x01      # last MotionCtrl_2 move mode sent (0x00 P, 0x01 J)
         self.firmware = None
         self._last_grip = (None, None, 0.0)
+        self.guard = FlipGuard()
+        self._guard_mode = None    # the mode the guard's samples belong to
         self._stop = threading.Event()
         threading.Thread(target=self._loop, daemon=True, name="control").start()
 
@@ -417,6 +480,17 @@ class Arm:
             out.append(v)
         return out
 
+    def _trip(self, why, owner):
+        """The IK guard fired: hold where the arm is (motors stay on) and drop the
+        controller, whose goals are refused for IK_GUARD_LATCH seconds."""
+        with state_lock:
+            STATE["guard"] = {"time": time.time(), "reason": why,
+                              "client": owner["client"] if owner else None}
+            STATE["owner"] = None
+        self.guard.reset()
+        self.hold()
+        log_call("(ik guard)", {"reason": why, "action": "held"})
+
     def _loop(self):
         period = 1.0 / STREAM_HZ
         streaming = False
@@ -442,9 +516,17 @@ class Arm:
                 live = enabled and hb_fresh
             if live and self.feedback_age() >= FEEDBACK_STALE:
                 live = False      # never steer from a pose we can't see
+            if not live or mode not in ("cartesian", "servo") or mode != self._guard_mode:
+                self.guard.reset()
+            self._guard_mode = mode if live else None
             if live:
                 if mode in ("cartesian", "servo"):
                     actual = self.end_pose()
+                    why = self.guard.update(now, self.joints(), actual)
+                    if why:
+                        self._trip(why, owner)
+                        streaming = False
+                        continue
                     if mode == "cartesian":
                         target = self._leash(actual, [actual[i] + jog[i] for i in range(6)],
                                              JOG_LEAD_MM, JOG_LEAD_DEG)
@@ -501,6 +583,15 @@ def finite(v):
     return None if v is None or (isinstance(v, float) and not math.isfinite(v)) else v
 
 
+def guard_latched():
+    """The IK guard's reason while its latch is on, else None."""
+    with state_lock:
+        g = STATE["guard"]
+    if g and time.time() - g["time"] < IK_GUARD_LATCH:
+        return g["reason"]
+    return None
+
+
 def state_json(lite=False):
     now = time.time()
     age = ARM.feedback_age()
@@ -535,6 +626,7 @@ def state_json(lite=False):
             "owner": ({"client": o["client"], "kind": o["kind"],
                        "age_ms": round((now - o["last"]) * 1000.0)} if o else None),
             "servo_goal": STATE["servo_goal"],
+            "guard": STATE["guard"], "ik_guard_deg": ARM.guard.limit,
             "ready_pose": READY_POSE, "workspace_mm": WORKSPACE_MM,
             "firmware": ARM.firmware,
         }
@@ -631,6 +723,9 @@ class Handler(BaseHTTPRequestHandler):
             pose = [float(v) for v in data.get("pose", [])]
             if len(pose) != 6 or not all(math.isfinite(v) for v in pose):
                 raise ValueError("pose must be 6 finite numbers: x,y,z mm, rx,ry,rz deg")
+            why = guard_latched()
+            if why:
+                return self._json(409, {"error": f"ik guard: {why}", "guard": True})
             claim(client, "servo")
             with state_lock:
                 enabled = STATE["enabled"]
@@ -712,6 +807,8 @@ class Handler(BaseHTTPRequestHandler):
             on = bool(data.get("on", False))
             if not 0 <= axis <= 5:
                 raise ValueError("bad axis")
+            if on and guard_latched():
+                return self._json(409, {"error": f"ik guard: {guard_latched()}", "guard": True})
             if on:
                 claim(client, "panel")
             if STATE["mode"] != "cartesian":
@@ -771,6 +868,9 @@ def main():
     ap.add_argument("--port", type=int, default=8770)
     ap.add_argument("--iface", default="can0")
     ap.add_argument("--speed", type=int, default=15)
+    ap.add_argument("--ik-guard-deg", type=float, default=IK_GUARD_DEG,
+                    help="joint swing (deg in %.1f s) the TCP motion must explain in the Cartesian "
+                         "modes, else the arm holds (0 = off)" % IK_GUARD_WINDOW)
     ap.add_argument("--bind", default="127.0.0.1",
                     help="address to listen on (default loopback). 'auto' = the direct-link "
                          "IP if that Ethernet cable is up, else loopback.")
@@ -786,6 +886,7 @@ def main():
     with state_lock:
         STATE["speed"] = args.speed
     ARM = Arm(args.iface, args.speed)
+    ARM.guard.limit = max(0.0, args.ik_guard_deg)
     try:
         ARM.firmware = ARM.piper.GetPiperFirmwareVersion()
     except Exception:

@@ -333,6 +333,7 @@ async function poll(){
     if(s.pose_current){const p=s.pose_current;
       let st=s.arm_status||'';
       let warn=/EXCEEDS_LIMIT|COLLISION|ERR|ABNORMAL/i.test(st)?'  ⚠ '+st+' — jog to a normal pose in JOINT mode first':(st?'  ['+st+']':'');
+      if(s.guard&&s.time-s.guard.time<10) warn+='  ⚠ IK guard held the arm: '+s.guard.reason;
       $('posenow').textContent='TCP  X '+p[0].toFixed(0)+'  Y '+p[1].toFixed(0)+'  Z '+p[2].toFixed(0)+' mm'+warn;}
     const st=$('status');
     st.textContent=s.estopped?'E-STOPPED':(s.enabled?'ENABLED':'DISABLED');

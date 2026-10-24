@@ -164,6 +164,7 @@ func NewServiceHost(cfg Config) (*ServiceHost, error) {
 	// and the call order is always "report in first, then Serve". If the read loop were in Serve, there'd be
 	// no reader during report-in, and RegisterEndpoint would never get its result: a deadlock.
 	go h.serve()
+	go co.keepAlive(h.ids)
 	return h, nil
 }
 

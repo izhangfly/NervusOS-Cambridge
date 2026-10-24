@@ -31,6 +31,10 @@ id "$DESKTOP_USER" >/dev/null 2>&1 || die "no such user: $DESKTOP_USER"
 DESKTOP_UID="$(id -u "$DESKTOP_USER")"
 DESKTOP_HOME="$(getent passwd "$DESKTOP_USER" | cut -d: -f6)"
 [[ -f "$TARBALL" ]] || die "release not found: $TARBALL (run scripts/build.sh)"
+# Installing stops NervusOS. If it was open, it is opened again at the end, so a reinstall over SSH doesn't
+# leave the desktop closed.
+WAS_RUNNING=0
+systemctl is-active --quiet nervud.service && WAS_RUNNING=1
 
 # ------------------------------------------------------------------ packages
 step "Packages"
@@ -135,6 +139,21 @@ sed "s/@USER@/$DESKTOP_USER/g; s#@HOME@#$DESKTOP_HOME#g" "$HOSTED/systemd/nervus
 systemctl daemon-reload
 ok "nervus-act.service: runs with NervusOS, as $DESKTOP_USER, on 127.0.0.1:8795"
 
+# ------------------------------------------------------------------ LLM Arm
+step "LLM Arm service (plain-language arm control)"
+install -d -m 0755 /opt/nervus/llm-arm
+rm -rf /opt/nervus/llm-arm/nervus_llmarm
+cp -r "$REPO/llm-arm/engine/nervus_llmarm" /opt/nervus/llm-arm/nervus_llmarm
+find /opt/nervus/llm-arm -name __pycache__ -prune -exec rm -rf {} +
+install -m 0644 "$REPO/llm-arm/README.md" /opt/nervus/llm-arm/README.md 2>/dev/null || true
+install -d -o "$DESKTOP_USER" -g "$DESKTOP_USER" -m 0700 "$DESKTOP_HOME/.config/nervus"
+sed "s/@USER@/$DESKTOP_USER/g; s#@HOME@#$DESKTOP_HOME#g" "$HOSTED/systemd/nervus-llm-arm.service.in" >/etc/systemd/system/nervus-llm-arm.service
+systemctl daemon-reload
+ok "nervus-llm-arm.service: runs with NervusOS, as $DESKTOP_USER, on 127.0.0.1:8796"
+for k in deepseek openai; do
+	[[ -f "$DESKTOP_HOME/.config/nervus/$k.key" ]] || warn "no $k key yet: install -m 600 /dev/stdin ~/.config/nervus/$k.key"
+done
+
 # ------------------------------------------------------------------ store
 step "App Store catalog"
 if [[ -f "$STORE_SRC/catalog.ini" ]]; then
@@ -153,6 +172,18 @@ install -D -m 0644 "$HOSTED/icons/nervusos.svg" /usr/share/icons/hicolor/scalabl
 gtk-update-icon-cache -q /usr/share/icons/hicolor 2>/dev/null || true
 install -D -m 0644 "$HOSTED/applications/nervusos.desktop" /usr/share/applications/nervusos.desktop
 install -D -m 0644 "$HOSTED/applications/nervusos-quit.desktop" /usr/share/applications/nervusos-quit.desktop
+# Apps that open straight from the Ubuntu desktop: nervus-open starts NervusOS if needed, then the app.
+APP_LAUNCHERS=(nervus-handteleop nervus-llmarm)
+install -D -m 0755 "$HOSTED/bin/nervus-open" /usr/local/bin/nervus-open
+for a in "${APP_LAUNCHERS[@]}"; do
+	install -D -m 0644 "$HOSTED/icons/$a.svg" "/usr/share/icons/hicolor/scalable/apps/$a.svg"
+	install -D -m 0644 "$HOSTED/applications/$a.desktop" "/usr/share/applications/$a.desktop"
+done
+gtk-update-icon-cache -q /usr/share/icons/hicolor 2>/dev/null || true
+# nervus-open needs nervud's admin socket (root only) for one thing: starting an installed app.
+printf '%s ALL=(root) NOPASSWD: /usr/bin/nervusctl launch *\n' "$DESKTOP_USER" >/etc/sudoers.d/50-nervus-open
+chmod 0440 /etc/sudoers.d/50-nervus-open
+visudo -cq -f /etc/sudoers.d/50-nervus-open || { rm -f /etc/sudoers.d/50-nervus-open; warn "sudoers rule for nervus-open rejected"; }
 update-desktop-database -q /usr/share/applications 2>/dev/null || true
 ok "NervusOS and Quit NervusOS in the app grid"
 
@@ -191,6 +222,10 @@ desk="$(as_user xdg-user-dir DESKTOP 2>/dev/null || echo "$DESKTOP_HOME/Desktop"
 if [[ -d "$desk" ]]; then
 	install -o "$DESKTOP_USER" -g "$DESKTOP_USER" -m 0755 "$HOSTED/applications/nervusos.desktop" "$desk/nervusos.desktop"
 	as_user gio set "$desk/nervusos.desktop" metadata::trusted true 2>/dev/null || true
+	for a in "${APP_LAUNCHERS[@]}"; do
+		install -o "$DESKTOP_USER" -g "$DESKTOP_USER" -m 0755 "$HOSTED/applications/$a.desktop" "$desk/$a.desktop"
+		as_user gio set "$desk/$a.desktop" metadata::trusted true 2>/dev/null || true
+	done
 	ok "launcher on the desktop ($desk)"
 fi
 
@@ -200,6 +235,13 @@ step "Check"
 [[ -x /usr/libexec/nervus/nervud ]] && ok "kernel: /usr/libexec/nervus/nervud"
 ls /usr/lib/nervus/system-packages | sed 's/^/    system package: /'
 systemctl is-active --quiet nervud.service && warn "nervud is running" || ok "nervud stopped (opens with NervusOS)"
+if (( WAS_RUNNING )); then
+	if sudo -u "$DESKTOP_USER" XDG_RUNTIME_DIR="/run/user/$DESKTOP_UID" /usr/local/bin/nervus-session start >/dev/null 2>&1; then
+		ok "NervusOS was open before the install: opened it again"
+	else
+		warn "NervusOS was open before the install and did not reopen; run: nervus-session start"
+	fi
+fi
 
 cat <<EOF
 

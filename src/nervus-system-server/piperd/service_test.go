@@ -25,6 +25,7 @@ type fakeDriver struct {
 	calls    []string
 	bodies   []map[string]any
 	servoErr string // when set, /api/servo answers 409 with this error
+	guard    bool   // with servoErr: the refusal comes from the IK guard
 }
 
 func (f *fakeDriver) handler() http.Handler {
@@ -47,7 +48,7 @@ func (f *fakeDriver) handler() http.Handler {
 		case "/api/servo":
 			if f.servoErr != "" {
 				w.WriteHeader(http.StatusConflict)
-				_ = json.NewEncoder(w).Encode(map[string]string{"error": f.servoErr})
+				_ = json.NewEncoder(w).Encode(map[string]any{"error": f.servoErr, "guard": f.guard})
 				return
 			}
 			if !f.state.Enabled {
@@ -242,6 +243,15 @@ func TestServoBusyMapsToPrecondition(t *testing.T) {
 	req := &manipulatorv1.ServoToPoseRequest{Target: toProtoPose([]float64{200, 0, 300, 180, 60, 180})}
 	if _, err := s.ServoToPose(callCtx(1, 1), req); !isCode(err, ipcv1.StatusCode_STATUS_CODE_FAILED_PRECONDITION) {
 		t.Fatalf("err = %v, want FAILED_PRECONDITION when another client holds the arm", err)
+	}
+}
+
+func TestServoGuardMapsToPrecondition(t *testing.T) {
+	s, fd := newTestService(t, healthy())
+	fd.servoErr, fd.guard = "ik guard: J4 swung 90 deg", true
+	req := &manipulatorv1.ServoToPoseRequest{Target: toProtoPose([]float64{200, 0, 300, 180, 60, 180})}
+	if _, err := s.ServoToPose(callCtx(1, 1), req); !isCode(err, ipcv1.StatusCode_STATUS_CODE_FAILED_PRECONDITION) {
+		t.Fatalf("err = %v, want FAILED_PRECONDITION while the IK guard holds the arm", err)
 	}
 }
 

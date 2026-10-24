@@ -36,6 +36,7 @@ Commands:
                                     the operator consents to on the user's behalf
   uninstall <package_id>            Uninstall a Package
   list                              List installed Packages
+  launch <package_id> <component>   Start a Component (as the launcher would)
   enable <package_id> <component>   Enable a Component
   disable <package_id> <component>  Disable a Component
   grant <package_id> <permission>   Grant a runtime (dangerous) permission
@@ -73,6 +74,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		err = cmdUninstall(client, cmdArgs, stdout)
 	case "list":
 		err = cmdList(client, cmdArgs, stdout)
+	case "launch":
+		err = cmdLaunch(client, cmdArgs, stdout)
 	case "enable":
 		err = cmdSetEnabled(client, cmdArgs, stdout, true)
 	case "disable":

@@ -103,8 +103,15 @@ type Config struct {
 	Packages    PackageService
 	Registry    PackageLister
 	Permissions PermissionSetter
-	Auditor     audit.Recorder
-	Log         *slog.Logger
+	// Launcher starts components for CmdLaunch (the service manager). Nil disables the command.
+	Launcher Launcher
+	Auditor  audit.Recorder
+	Log      *slog.Logger
+}
+
+// Launcher is the narrow dependency on the service manager: start a component if it isn't running.
+type Launcher interface {
+	EnsureStarted(ctx context.Context, pkgID, componentID string) error
 }
 
 // Server owns the admin channel UDS. Lifecycle contract as ipc.Server: Start returns quickly, and the background accept
@@ -127,11 +134,12 @@ type Server struct {
 	// Then only root uses this channel, and nothing needs handing over.
 	admittedUID uint32
 
-	pkgs  PackageService
-	reg   PackageLister
-	perms PermissionSetter
-	aud   audit.Recorder
-	log   *slog.Logger
+	pkgs     PackageService
+	launcher Launcher
+	reg      PackageLister
+	perms    PermissionSetter
+	aud      audit.Recorder
+	log      *slog.Logger
 
 	ln *net.UnixListener
 
@@ -182,6 +190,7 @@ func New(cfg Config) (*Server, error) {
 		adminUID:    cfg.AdminUID,
 		allowedUIDs: allowed,
 		pkgs:        cfg.Packages,
+		launcher:    cfg.Launcher,
 		reg:         cfg.Registry,
 		perms:       cfg.Permissions,
 		aud:         cfg.Auditor,
