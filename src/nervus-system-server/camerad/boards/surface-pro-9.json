@@ -5,11 +5,11 @@
   "cameras": [
     {
       "role": "cam.front",
-      "match": {"usb_path": "3-5.4"},
+      "match": {"usb_id": "046d:0825"},
       "labels": {
         "nervus.camera.facing": "front",
         "nervus.camera.kind": "color",
-        "nervus.camera.mount": "usb-hub"
+        "nervus.camera.mount": "usb"
       }
     }
   ],

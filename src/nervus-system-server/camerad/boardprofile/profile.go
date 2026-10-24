@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -105,6 +106,11 @@ type Match struct {
 	// [Not a serial number either]: replace a camera with one of the same model to repair the machine and the serial changes, losing the role.
 	// A board config describes positions, not a specific module.
 	USBPath string `json:"usb_path,omitempty"`
+
+	// USBID is "vendor:product" in hex, such as "046d:0825" (a Logitech C270), for a USB camera that moves
+	// between ports: on a hosted laptop the cameras hang off a hub and get replugged. It names a model, so it
+	// must be the only camera of that model on the machine.
+	USBID string `json:"usb_id,omitempty"`
 
 	// DevicePathLink is the name of a stable symlink under /dev/v4l/by-path/, for MIPI/CSI
 	// and other cameras that don't use USB.
@@ -213,15 +219,22 @@ func (c *Camera) validate() error {
 	if c.Role == "" {
 		return fmt.Errorf("boardprofile: a camera has no role")
 	}
-	hasUSB := c.Match.USBPath != ""
-	hasLink := c.Match.DevicePathLink != ""
+	n := 0
+	for _, s := range []string{c.Match.USBPath, c.Match.USBID, c.Match.DevicePathLink} {
+		if s != "" {
+			n++
+		}
+	}
 	switch {
-	case hasUSB && hasLink:
-		return fmt.Errorf("boardprofile: %q gives both usb_path and device_path_link; pick only one",
+	case n > 1:
+		return fmt.Errorf("boardprofile: %q gives more than one of usb_path, usb_id and device_path_link; pick only one",
 			c.Role)
-	case !hasUSB && !hasLink:
-		return fmt.Errorf("boardprofile: %q doesn't say where the device is (usb_path or device_path_link)",
+	case n == 0:
+		return fmt.Errorf("boardprofile: %q doesn't say where the device is (usb_path, usb_id or device_path_link)",
 			c.Role)
+	}
+	if c.Match.USBID != "" && !usbIDRe.MatchString(c.Match.USBID) {
+		return fmt.Errorf("boardprofile: %q usb_id %q must look like 046d:0825", c.Role, c.Match.USBID)
 	}
 	return validateLabels(c.Role, c.Labels)
 }
@@ -350,6 +363,18 @@ func (p *Profile) FixedByUSBPath() map[string]string {
 	}
 	return out
 }
+
+func (p *Profile) FixedByUSBID() map[string]string {
+	out := make(map[string]string)
+	for _, cam := range p.Cameras {
+		if cam.Match.USBID != "" {
+			out[strings.ToLower(cam.Match.USBID)] = cam.Role
+		}
+	}
+	return out
+}
+
+var usbIDRe = regexp.MustCompile(`^[0-9A-Fa-f]{4}:[0-9A-Fa-f]{4}$`)
 
 func (p *Profile) FixedByDeviceLink() map[string]string {
 	out := make(map[string]string)
