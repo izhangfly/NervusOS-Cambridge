@@ -16,7 +16,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "engine"))
 
 from nervus_llmarm import config as C  # noqa: E402
-from nervus_llmarm.agent import Agent  # noqa: E402
 from nervus_llmarm.llm import ScriptedLLM  # noqa: E402
 from nervus_llmarm.server import Service, make_handler  # noqa: E402
 
@@ -102,7 +101,8 @@ class SimTest(unittest.TestCase):
         self.assertIn("outside", res["data"]["error"])
 
     def test_stop_mid_motion_and_silent_app(self):
-        svc = self.service([[("move_to", {"x_mm": 420, "y_mm": 200, "z_mm": 300})]])
+        far = [("move_to", {"x_mm": 420, "y_mm": 200, "z_mm": 300})]
+        svc = self.service([far, far])
         svc.settings.update({"speed_mm_s": 10.0})
         stop = threading.Event()
         self.beat(svc, stop)
