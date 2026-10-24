@@ -24,8 +24,9 @@ rm -f /etc/systemd/system/nervus-piper.service /etc/systemd/system/nervus-can.se
 	/usr/share/applications/nervusos.desktop /usr/share/applications/nervusos-quit.desktop \
 	/usr/local/bin/nervus-open /etc/sudoers.d/50-nervus-open \
 	/usr/share/applications/nervus-handteleop.desktop /usr/share/applications/nervus-llmarm.desktop \
+	/usr/share/applications/nervus-act.desktop /usr/local/bin/nervus-standalone \
 	/usr/share/icons/hicolor/scalable/apps/nervusos.svg
-rm -rf /usr/share/nervus/store /opt/nervus/piper /run/nervus-x11
+rm -rf /usr/share/nervus/store /opt/nervus/piper /opt/nervus/apps /run/nervus-x11
 id nervus-piper >/dev/null 2>&1 && userdel nervus-piper 2>/dev/null || true
 systemctl daemon-reload
 udevadm control --reload 2>/dev/null || true

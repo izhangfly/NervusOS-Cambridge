@@ -78,7 +78,7 @@ build_app() {
 
 # Desktop builds that run without NervusOS (hosted/bin/nervus-standalone): Compose createDistributable.
 build_standalone() {
-	for a in llm-arm hand-teleop; do
+	for a in llm-arm hand-teleop act-studio; do
 		step "Standalone: $a"
 		(cd "$SRC/$a" && ./gradlew createDistributable --console=plain -q) || die "$a standalone build failed"
 		echo "    ok src/$a/build/compose/binaries/main/app/$a"

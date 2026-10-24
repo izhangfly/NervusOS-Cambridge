@@ -192,11 +192,11 @@ gtk-update-icon-cache -q /usr/share/icons/hicolor 2>/dev/null || true
 install -D -m 0644 "$HOSTED/applications/nervusos.desktop" /usr/share/applications/nervusos.desktop
 install -D -m 0644 "$HOSTED/applications/nervusos-quit.desktop" /usr/share/applications/nervusos-quit.desktop
 # Apps that open straight from the Ubuntu desktop: nervus-open starts NervusOS if needed, then the app.
-APP_LAUNCHERS=(nervus-handteleop nervus-llmarm)
+APP_LAUNCHERS=(nervus-handteleop nervus-llmarm nervus-act)
 install -D -m 0755 "$HOSTED/bin/nervus-open" /usr/local/bin/nervus-open
 install -D -m 0755 "$HOSTED/bin/nervus-standalone" /usr/local/bin/nervus-standalone
 # The standalone builds (scripts/build.sh standalone): self-contained Compose apps with their own runtime.
-for a in llm-arm hand-teleop; do
+for a in llm-arm hand-teleop act-studio; do
 	d="$REPO/src/$a/build/compose/binaries/main/app/$a"
 	if [[ -x "$d/bin/$a" ]]; then
 		rm -rf "/opt/nervus/apps/$a"

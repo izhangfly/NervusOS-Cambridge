@@ -4,8 +4,9 @@
 #
 #   nervus-standalone llmarm       LLM Arm: PiPER driver, ACT engine (cameras), LLM Arm service
 #   nervus-standalone handteleop   Hand Teleop: PiPER driver, the Surface front camera bridge
+#   nervus-standalone act          ACT Studio: PiPER driver, ACT engine (record, train on the Mac, run)
 set -u
-APP="${1:?usage: nervus-standalone llmarm|handteleop}"
+APP="${1:?usage: nervus-standalone llmarm|handteleop|act}"
 APPS=/opt/nervus/apps
 say() { notify-send -a NervusOS "${TITLE:-NervusOS}" "$1" 2>/dev/null || echo "$1" >&2; }
 start() { for u in "$@"; do systemctl start "$u" || say "Could not start $u (journalctl -u $u)"; done; }
@@ -26,6 +27,11 @@ handteleop)
 	# The camera bridge runs the image pipeline in software: don't leave it running.
 	[[ " ${units[*]} " == *" nervus-surface-camera.service "* ]] && systemctl stop nervus-surface-camera.service
 	exit $rc
+	;;
+act)
+	TITLE="ACT Studio"
+	start nervus-piper.service nervus-act.service
+	exec "$APPS/act-studio/bin/act-studio" --standalone
 	;;
 *) echo "unknown app: $APP" >&2; exit 2 ;;
 esac

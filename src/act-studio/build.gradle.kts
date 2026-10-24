@@ -54,6 +54,12 @@ tasks.test {
 compose.desktop {
     application {
         mainClass = "com.nervus.act.app.ActStudioAppKt"
+        // createDistributable: a self-contained desktop app for hosted/bin/nervus-standalone (no NervusOS).
+        nativeDistributions {
+            packageName = "act-studio"
+            packageVersion = project.version.toString()
+            includeAllModules = true
+        }
     }
 }
 
