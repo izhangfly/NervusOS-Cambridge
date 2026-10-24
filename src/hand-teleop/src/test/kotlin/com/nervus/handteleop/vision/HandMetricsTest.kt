@@ -35,7 +35,7 @@ class HandMetricsTest {
         assertEquals(a.pinchIndex, b.pinchIndex, 1e-5f)
         assertEquals(a.pinchFour, b.pinchFour, 1e-5f)
         assertTrue(kotlin.math.abs(pinch2d(flat) - pinch2d(tilted)) > 0.1, "the 2-D ratio is fooled by the tilt")
-        assertEquals(0.45, assertNotNull(a.depth(f)), 1e-9)
+        assertEquals(0.45, assertNotNull(a.depth(f)), 1e-6, "pixels are stored as floats")
         assertEquals(0.45, assertNotNull(b.depth(f)), 0.45 * 0.03)
     }
 }
