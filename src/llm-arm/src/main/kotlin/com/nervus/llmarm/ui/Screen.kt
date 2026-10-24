@@ -21,6 +21,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -32,6 +35,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -67,22 +73,25 @@ fun LlmArmScreen(m: LlmArm) {
         }
         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(Modifier.weight(0.56f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                var tab by remember { mutableStateOf("ARM") }
+                var pick by remember { mutableStateOf<Pair<Float, Float>?>(null) }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    CameraTile(m, "scene", "SCENE CAMERA", Modifier.weight(1f))
+                    CameraTile(m, "scene", if (tab == "CALIBRATE") "SCENE CAMERA · CLICK THE GRIPPER TIP" else "SCENE CAMERA",
+                        Modifier.weight(1f), onPick = if (tab == "CALIBRATE") { u, v -> pick = u to v } else null,
+                        mark = if (tab == "CALIBRATE") pick else null)
                     CameraTile(m, "wrist", "WRIST CAMERA", Modifier.weight(1f))
                 }
-                Panel("ARM", Modifier.fillMaxWidth()) {
-                    val arm = s["arm"]
-                    val pose = arm["pose"].arr.mapNotNull { it.dbl }
-                    Facts(
-                        "Driver" to if (arm["reachable"].bool) (arm["status"].str ?: "ok") else (arm["error"].str ?: "unreachable"),
-                        "Motors" to if (arm["enabled"].bool) "enabled" else "off",
-                        "Gripper" to (pose.takeIf { it.size >= 3 }?.let { "x %.0f  y %.0f  z %.0f mm".format(it[0], it[1], it[2]) } ?: "-"),
-                        "Controlled by" to (arm["owner"].str ?: "nobody"),
-                        "Calibration" to if (s["calibration"]["ready"].bool) "scene camera calibrated" else "not calibrated (pick and place are off)",
-                    )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    for (t in listOf("ARM", "SETTINGS", "CONTEXT", "CALIBRATE")) {
+                        SciButton(t, { tab = t }, if (tab == t) Kind.Primary else Kind.Quiet)
+                    }
                 }
-                SettingsPanel(m)
+                when (tab) {
+                    "SETTINGS" -> SettingsPanel(m)
+                    "CONTEXT" -> ContextPanel(m, Modifier.weight(1f))
+                    "CALIBRATE" -> CalibratePanel(m, pick) { pick = null }
+                    else -> ArmPanel(m)
+                }
             }
             ChatPanel(m, Modifier.weight(0.44f).fillMaxHeight())
         }
@@ -122,7 +131,10 @@ private fun TopBar(m: LlmArm) {
 }
 
 @Composable
-private fun CameraTile(m: LlmArm, role: String, title: String, modifier: Modifier) {
+private fun CameraTile(
+    m: LlmArm, role: String, title: String, modifier: Modifier,
+    onPick: ((Float, Float) -> Unit)? = null, mark: Pair<Float, Float>? = null,
+) {
     var image by remember(role) { mutableStateOf<ImageBitmap?>(null) }
     // Frames change every couple of seconds; fetching once a second keeps the tile current without redrawing much.
     LaunchedEffect(role) {
@@ -138,18 +150,56 @@ private fun CameraTile(m: LlmArm, role: String, title: String, modifier: Modifie
         Box(Modifier.fillMaxWidth().aspectRatio(4f / 3f).clip(RoundedCornerShape(8.dp)).background(Color.Black)) {
             val img = image
             if (img != null && cam["fresh"].bool) {
-                Canvas(Modifier.fillMaxSize()) {
+                // Clicks map back to the camera's own pixels, which is what the calibration pairs with arm positions.
+                val tap = if (onPick == null) Modifier else Modifier.pointerInput(img) {
+                    detectTapGestures { o ->
+                        val k = minOf(size.width.toFloat() / img.width, size.height.toFloat() / img.height)
+                        val u = (o.x - (size.width - img.width * k) / 2) / k
+                        val v = (o.y - (size.height - img.height * k) / 2) / k
+                        if (u in 0f..img.width.toFloat() && v in 0f..img.height.toFloat()) onPick(u, v)
+                    }
+                }
+                Canvas(Modifier.fillMaxSize().then(tap)) {
                     val k = minOf(size.width / img.width, size.height / img.height)
                     val w = img.width * k
                     val h = img.height * k
+                    val ox = (size.width - w) / 2
+                    val oy = (size.height - h) / 2
                     drawImage(img, IntOffset.Zero, IntSize(img.width, img.height),
-                        IntOffset(((size.width - w) / 2).toInt(), ((size.height - h) / 2).toInt()), IntSize(w.toInt(), h.toInt()))
+                        IntOffset(ox.toInt(), oy.toInt()), IntSize(w.toInt(), h.toInt()))
+                    mark?.let { (u, v) ->
+                        val c = Offset(ox + u * k, oy + v * k)
+                        drawLine(Sci.warn, c - Offset(14f, 0f), c + Offset(14f, 0f), 2f)
+                        drawLine(Sci.warn, c - Offset(0f, 14f), c + Offset(0f, 14f), 2f)
+                    }
                 }
             } else {
                 Text(cam["error"].str ?: "waiting for frames…", style = Sci.small,
                     modifier = Modifier.align(Alignment.Center).padding(16.dp))
             }
         }
+    }
+}
+
+@Composable
+private fun ArmPanel(m: LlmArm) {
+    val s = m.status
+    Panel("ARM", Modifier.fillMaxWidth()) {
+        val arm = s["arm"]
+        val pose = arm["pose"].arr.mapNotNull { it.dbl }
+        Facts(
+            "Driver" to if (arm["reachable"].bool) (arm["status"].str ?: "ok") else (arm["error"].str ?: "unreachable"),
+            "Motors" to if (arm["enabled"].bool) "enabled" else "off",
+            "Gripper" to (pose.takeIf { it.size >= 3 }?.let { "x %.0f  y %.0f  z %.0f mm".format(it[0], it[1], it[2]) } ?: "-"),
+            "Controlled by" to (arm["owner"].str ?: "nobody"),
+            "Calibration" to if (s["calibration"]["ready"].bool) "scene camera calibrated" else "not calibrated (pick and place are off)",
+        )
+    }
+    s["task"].takeIf { it.obj.isNotEmpty() }?.let { task ->
+        Facts(
+            "Object" to "${task["labels"]["target"].str} at ${task["target_xy_mm"].arr.joinToString { it.toString() }} mm",
+            "Place" to "${task["labels"]["place"].str} (${task["place_kind"].str}) at ${task["place_xy_mm"].arr.joinToString { it.toString() }} mm",
+        )
     }
 }
 
@@ -168,6 +218,15 @@ private fun SettingsPanel(m: LlmArm) {
         var speed by remember(saved) { mutableStateOf(saved) }
         LabeledSlider("Top speed", speed, 5f..100f, { speed = it }, { "%.0f mm/s".format(it) },
             onDone = { m.settings("speed_mm_s" to speed.toDouble()) })
+        if (m.status["provider"].str == "openai") {
+            val effort = set["openai_effort"]["value"].str
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("GPT reasoning effort", style = Sci.body, modifier = Modifier.weight(1f))
+                for (e in listOf("none", "low", "medium", "high")) {
+                    SciButton(e, { m.settings("openai_effort" to e) }, if (effort == e) Kind.Primary else Kind.Quiet)
+                }
+            }
+        }
         val p = m.status["provider"].str
         val key = m.status["providers"][p ?: ""]["key"]
         if (key["state"].str != "ready") Text(key["message"].str ?: "", style = Sci.small.copy(color = Sci.warn))
@@ -197,17 +256,18 @@ private fun ChatPanel(m: LlmArm, modifier: Modifier) {
                 val kind = e["kind"].str
                 val (who, color) = when (kind) {
                     "user" -> "YOU" to Sci.accent
-                    "assistant" -> "MODEL" to Sci.ok
-                    "tool" -> "STEP" to Sci.violet
-                    "result" -> "RESULT" to Sci.dim
+                    "ground" -> "SEES" to Sci.ok
+                    "decision" -> "SKILL" to Sci.violet
+                    "refused" -> "REFUSED" to Sci.warn
                     "error" -> "ERROR" to Sci.bad
-                    else -> "INFO" to Sci.warn
+                    else -> "INFO" to Sci.dim
                 }
-                val body = if (kind == "tool") "${e["text"].str}(${e["data"].obj.entries.joinToString { "${it.key}=${it.value}" }})"
-                else e["text"].str ?: ""
                 Row {
-                    Text(who, style = Sci.small.copy(color = color), modifier = Modifier.width(64.dp))
-                    Text(body, style = if (kind == "result") Sci.small else Sci.body)
+                    Text(who, style = Sci.small.copy(color = color), modifier = Modifier.width(72.dp))
+                    Column {
+                        Text(e["text"].str ?: "", style = if (kind == "decision") Sci.num.copy(color = Sci.violet) else Sci.body)
+                        e["data"]["note"].str?.takeIf { kind == "decision" && it.isNotBlank() }?.let { Text(it, style = Sci.small) }
+                    }
                 }
             }
         }
@@ -215,8 +275,8 @@ private fun ChatPanel(m: LlmArm, modifier: Modifier) {
             Spacer(Modifier.height(8.dp))
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(Sci.panelHi)
                 .border(1.dp, Sci.warn, RoundedCornerShape(8.dp)).padding(12.dp)) {
-                Text("The model wants to: ${p["tool"].str}  ${p["args"].obj.entries.joinToString { "${it.key}=${it.value}" }}",
-                    style = Sci.body)
+                Text("Next skill: ${p["skill"].str}", style = Sci.num.copy(color = Sci.warn))
+                p["note"].str?.let { Text(it, style = Sci.small) }
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     SciButton("Approve", { m.approve(true) }, Kind.Primary)
@@ -239,4 +299,60 @@ private fun stateColor(s: String) = when (s) {
     "waiting" -> Sci.warn
     "done" -> Sci.ok
     else -> Sci.bad
+}
+
+@Composable
+private fun ContextPanel(m: LlmArm, modifier: Modifier) {
+    // What the model is told about the arm before every decision; {task} becomes the request.
+    var text by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) { m.load({ get("/api/context")["text"].str ?: "" }) { text = it } }
+    Panel("ARM CONTEXT", modifier.fillMaxWidth(), trailing = {
+        SciButton("Reset", { m.act("Reset", "/api/context", mapOf("reset" to true)); text = null
+            m.load({ get("/api/context")["text"].str ?: "" }) { text = it } }, Kind.Quiet)
+        SciButton("Save", { text?.let { m.act("Save", "/api/context", mapOf("text" to it)) } }, Kind.Primary)
+    }) {
+        Text("Markdown. Keep {task}: it becomes what you type.", style = Sci.small)
+        Spacer(Modifier.height(6.dp))
+        val t = text
+        if (t == null) Text("loading…", style = Sci.small)
+        else BasicTextField(
+            t, { text = it }, Modifier.fillMaxSize().clip(RoundedCornerShape(6.dp)).background(Sci.panelHi)
+                .padding(10.dp).onFocusChanged { Typing.active = it.isFocused },
+            textStyle = Sci.body.copy(fontFamily = Sci.mono), cursorBrush = SolidColor(Sci.accent),
+        )
+    }
+}
+
+@Composable
+private fun CalibratePanel(m: LlmArm, pick: Pair<Float, Float>?, clearPick: () -> Unit) {
+    // Four or more pairs of (pixel in the scene image, arm x/y at that spot), plus the table height.
+    var points by remember { mutableStateOf(listOf<List<Double>>()) }
+    var lowest by remember { mutableStateOf<Double?>(null) }
+    val pose = m.status["arm"]["pose"].arr.mapNotNull { it.dbl }
+    Panel("CALIBRATE THE SCENE CAMERA", Modifier.fillMaxWidth()) {
+        Text("1. Jog the gripper tip down onto a spot on the table (Robot Arm app). 2. Click that tip in the scene " +
+            "image. 3. Add point. Repeat at 4 or more spots spread over the table, then Save.", style = Sci.small)
+        Spacer(Modifier.height(8.dp))
+        Facts(
+            "Clicked pixel" to (pick?.let { "u %.0f  v %.0f".format(it.first, it.second) } ?: "click the scene image"),
+            "Arm tip now" to (pose.takeIf { it.size >= 3 }?.let { "x %.0f  y %.0f  z %.0f mm".format(it[0], it[1], it[2]) } ?: "-"),
+            "Points" to "${points.size}",
+            "Table height (lowest tip z)" to (lowest?.let { "%.0f mm".format(it) } ?: "-"),
+            "Now" to if (m.status["calibration"]["ready"].bool) "calibrated" else "not calibrated",
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            SciButton("Add point", {
+                if (pick != null && pose.size >= 3) {
+                    points = points + listOf(listOf(pick.first.toDouble(), pick.second.toDouble(), pose[0], pose[1]))
+                    lowest = minOf(lowest ?: pose[2], pose[2])
+                    clearPick()
+                }
+            }, enabled = pick != null && pose.size >= 3)
+            SciButton("Clear", { points = emptyList(); lowest = null }, Kind.Quiet)
+            SciButton("Save", {
+                m.act("Calibrate", "/api/calibrate", mapOf("points" to points, "table_z_mm" to lowest))
+            }, Kind.Primary, enabled = points.size >= 4 && lowest != null)
+        }
+    }
 }

@@ -48,10 +48,10 @@ accept images and OpenAI-style tool calls.
 
 ## Calibration
 
-Objects are found by colour (red, yellow, green, blue) on the scene camera. To turn pixels into table
-positions, jog the gripper tip to four spots on the table, note the pixel where each one is in the scene
-image and the arm's x, y there, and send them with the table height (the TCP z when the closed fingertips
-touch the table):
+Grounding needs a fixed scene camera that sees the table, and a calibration from its pixels to the table.
+In the app's **Calibrate** tab: jog the gripper tip down onto a spot on the table, click the tip in the
+scene image, press **Add point**; do that at four or more spots spread over the table, then **Save**. The
+lowest tip height becomes the table height. The same works over HTTP:
 
 ```sh
 curl -s 127.0.0.1:8796/api/calibrate -d '{"table_z_mm": 95,

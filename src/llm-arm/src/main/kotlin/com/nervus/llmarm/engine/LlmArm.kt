@@ -99,6 +99,17 @@ class LlmArm(val api: EngineClient = EngineClient(System.getenv("LLM_ARM") ?: "h
         }
     }
 
+    /** Fetch something for one panel, off the UI thread. */
+    fun <T> load(block: EngineClient.() -> T, done: (T) -> Unit) {
+        scope.launch {
+            try {
+                done(api.block())
+            } catch (e: EngineException) {
+                notice = (e.message ?: "request failed") to true
+            }
+        }
+    }
+
     fun send(text: String) = act("Send", "/api/chat", mapOf("text" to text))
     fun approve(ok: Boolean) = act(if (ok) "Approve" else "Reject", "/api/approve", mapOf("ok" to ok))
     fun settings(vararg kv: Pair<String, Any?>) = act("Settings", "/api/settings", mapOf(*kv))
