@@ -1,5 +1,6 @@
 # Runs on every push to main and on pull requests: the Go test suites (on Linux, where the kernel's
-# privileged and shared-memory code builds), the ACT unit tests, and the secret scan over the whole tree.
+# privileged and shared-memory code builds), the ACT unit tests, the ACT Studio UI test against a simulated
+# engine, and the secret scan over the whole tree.
 name: ci
 on:
   push:
@@ -33,6 +34,49 @@ jobs:
           python-version: "3.12"
       - run: pip install numpy
       - run: python act/tests/test_units.py
+
+  act-studio-ui:
+    name: ACT Studio UI test (simulated arm)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: act/engine/requirements.txt
+      # Skiko's native library links libGL, X11 and fontconfig even when it renders off screen; no display is needed.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgl1 libx11-6 libfontconfig1 fonts-dejavu-core
+      # Recording a take writes a real LeRobot dataset, so the engine needs LeRobot; the CPU wheels of torch keep
+      # this to a few hundred MB instead of the CUDA build's gigabytes.
+      - run: |
+          pip install --index-url https://download.pytorch.org/whl/cpu torch==2.10.0 torchvision==0.25.0
+          pip install -r act/engine/requirements.txt
+      - name: Start a simulated engine on loopback
+        run: |
+          mkdir -p "$RUNNER_TEMP/act"
+          PYTHONPATH=act/engine nohup python -m nervus_act --sim --shared "$RUNNER_TEMP/act/NervusACT" \
+            --cameras wrist=SIM,scene=SIM --bind 127.0.0.1 --port 8899 > "$RUNNER_TEMP/act/engine.log" 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://127.0.0.1:8899/api/status > /dev/null && exit 0; sleep 1; done
+          cat "$RUNNER_TEMP/act/engine.log"; exit 1
+      - run: ./gradlew test --console=plain
+        working-directory: src/act-studio
+        env:
+          ACT_ENGINE_TEST: http://127.0.0.1:8899
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: act-studio-ui-failure
+          path: |
+            src/act-studio/build/reports/
+            ${{ runner.temp }}/act/engine.log
+          if-no-files-found: ignore
 
   scan:
     name: secret scan

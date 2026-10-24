@@ -4,12 +4,15 @@ import androidx.compose.ui.graphics.toAwtImage
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsNodeInteractionsProvider
 import androidx.compose.ui.test.SkikoComposeUiTest
+import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.runSkikoComposeUiTest
 import com.nervus.act.engine.EngineClient
@@ -117,7 +120,9 @@ class StudioUiTest {
 
                     // Data: the dataset and its take are listed.
                     onNodeWithText("DATA").performClick()
-                    await("the dataset in the list", 10_000) { seen(name) }
+                    // The list is lazy: on an engine with many datasets this one may be below the fold.
+                    await("the dataset list", 10_000) { onAllNodes(hasScrollToIndexAction()).fetchSemanticsNodes().isNotEmpty() }
+                    onAllNodes(hasScrollToIndexAction())[0].performScrollToNode(hasText(name))
                     onNodeWithText(name).performClick()
                     await("the takes table", 20_000) { seen("Takes in $name") }
 
@@ -126,8 +131,8 @@ class StudioUiTest {
                     await("the new job form", 5_000) { seen("New training job") }
                     onAllNodes(hasSetTextAction())[0].performTextInput("$name-job")
                     // The dataset's checkbox row ("<name>  ·  1 takes  ·  scene+wrist"), not the job name field.
-                    onNode(hasText("$name  ·", substring = true)).performClick()
-                    onNodeWithText("Send to the Mac").performClick()
+                    onNode(hasText("$name  ·", substring = true)).performScrollTo().performClick()
+                    onNodeWithText("Send to the Mac").performScrollTo().performClick()
                     await("the job in the engine's list", 15_000) { studio.jobs.any { it["job"]["name"].str == "$name-job" } }
                     val job = studio.jobs.first { it["job"]["name"].str == "$name-job" }
                     assertEquals(listOf(name), job["job"]["datasets"].arr.map { it.str })
