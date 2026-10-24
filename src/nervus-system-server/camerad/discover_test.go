@@ -217,3 +217,20 @@ func TestBind_USBIDFollowsTheCameraAcrossPorts(t *testing.T) {
 		t.Fatal("usb_id together with usb_path should be refused")
 	}
 }
+
+// A virtual camera (v4l2loopback fed by libcamera) has no USB path: it is matched by its device name.
+func TestBind_NameMatchesAVirtualCamera(t *testing.T) {
+	p := profileOf(t, `{
+  "schema": 1, "board": "b",
+  "cameras": [{"role": "cam.front", "match": {"name": "Surface Front Camera"},
+               "labels": {"nervus.camera.facing": "front"}}],
+  "usb_pool": {"role_prefix": "cam.usb", "max_slots": 2}
+}`)
+	got := bindMap(t, p, fixedDevices(
+		Device{Node: "/dev/video32", USBPath: "3-5.1.2", USBID: "2bc5:0557", Name: "Dabai DC1: Dabai DC1"},
+		Device{Node: "/dev/video50", Name: "Surface Front Camera"},
+	))
+	if got["cam.front"] != "/dev/video50" || got["cam.usb.0"] != "/dev/video32" {
+		t.Fatalf("bindings %v", got)
+	}
+}

@@ -112,6 +112,10 @@ type Match struct {
 	// must be the only camera of that model on the machine.
 	USBID string `json:"usb_id,omitempty"`
 
+	// Name is the exact V4L2 device name (sysfs "name"), for a virtual camera that has no USB or platform path:
+	// a v4l2loopback device fed by libcamera, as the Surface's IPU6 cameras are.
+	Name string `json:"name,omitempty"`
+
 	// DevicePathLink is the name of a stable symlink under /dev/v4l/by-path/, for MIPI/CSI
 	// and other cameras that don't use USB.
 	DevicePathLink string `json:"device_path_link,omitempty"`
@@ -220,17 +224,17 @@ func (c *Camera) validate() error {
 		return fmt.Errorf("boardprofile: a camera has no role")
 	}
 	n := 0
-	for _, s := range []string{c.Match.USBPath, c.Match.USBID, c.Match.DevicePathLink} {
+	for _, s := range []string{c.Match.USBPath, c.Match.USBID, c.Match.Name, c.Match.DevicePathLink} {
 		if s != "" {
 			n++
 		}
 	}
 	switch {
 	case n > 1:
-		return fmt.Errorf("boardprofile: %q gives more than one of usb_path, usb_id and device_path_link; pick only one",
+		return fmt.Errorf("boardprofile: %q gives more than one of usb_path, usb_id, name and device_path_link; pick only one",
 			c.Role)
 	case n == 0:
-		return fmt.Errorf("boardprofile: %q doesn't say where the device is (usb_path, usb_id or device_path_link)",
+		return fmt.Errorf("boardprofile: %q doesn't say where the device is (usb_path, usb_id, name or device_path_link)",
 			c.Role)
 	}
 	if c.Match.USBID != "" && !usbIDRe.MatchString(c.Match.USBID) {
@@ -369,6 +373,16 @@ func (p *Profile) FixedByUSBID() map[string]string {
 	for _, cam := range p.Cameras {
 		if cam.Match.USBID != "" {
 			out[strings.ToLower(cam.Match.USBID)] = cam.Role
+		}
+	}
+	return out
+}
+
+func (p *Profile) FixedByName() map[string]string {
+	out := make(map[string]string)
+	for _, cam := range p.Cameras {
+		if cam.Match.Name != "" {
+			out[cam.Match.Name] = cam.Role
 		}
 	}
 	return out

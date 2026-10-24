@@ -76,6 +76,7 @@ func Bind(profile *boardprofile.Profile, list deviceLister) ([]Binding, error) {
 
 	byUSB := profile.FixedByUSBPath()
 	byID := profile.FixedByUSBID()
+	byName := profile.FixedByName()
 	byLink := profile.FixedByDeviceLink()
 
 	var bindings []Binding
@@ -84,6 +85,9 @@ func Bind(profile *boardprofile.Profile, list deviceLister) ([]Binding, error) {
 
 	for _, dev := range devices {
 		role, ok := matchFixed(dev, byUSB, byID, byLink)
+		if !ok && dev.Name != "" {
+			role, ok = byName[dev.Name]
+		}
 		if !ok {
 			continue
 		}

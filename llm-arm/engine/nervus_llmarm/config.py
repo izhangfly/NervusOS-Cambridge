@@ -49,7 +49,7 @@ TABLE_CLEARANCE_MM = 5.0         # the TCP stays this far above "fingertips touc
 MAX_RELATIVE_MM = 50.0           # per axis, per move_relative call
 HARD_MAX_SPEED_MM_S = 100.0      # the speed setting can never exceed this
 YAW_RATE_DEG_S = 30.0
-MAX_TOOL_CALLS = 12              # per user request
+MAX_STEPS = 25                   # decisions per request (piper-astra-jev runs 25)
 STALE_FRAME_S = 5.0
 HEARTBEAT_TIMEOUT_S = 2.0        # the app's dead-man while the arm moves
 OBJECT_MAX_AGE_S = 30.0          # pick/place refuse objects not seen for longer than this
@@ -65,11 +65,13 @@ SETTINGS: dict[str, tuple] = {
     "deepseek_base_url": (PROVIDERS["deepseek"]["base_url"], None, None, str, "DeepSeek API base URL"),
     "openai_model": (PROVIDERS["openai"]["model"], None, None, str, "OpenAI model (it must accept images)"),
     "openai_base_url": (PROVIDERS["openai"]["base_url"], None, None, str, "OpenAI API base URL"),
-    "llm_timeout_s": (60.0, 5.0, 180.0, float, "How long to wait for one model reply"),
+    "openai_effort": ("medium", None, None, str, "GPT reasoning effort: none, low, medium or high (high is slow)"),
+    "llm_timeout_s": (120.0, 5.0, 600.0, float, "How long to wait for one model reply"),
     "grip_effort": (500, 100, 3000, int, "Gripper force, 0.001 N*m (1000 crushed a printed cube)"),
     "object_height_mm": (30.0, 5.0, 120.0, float, "Height of the objects on the table"),
     "open_width_mm": (70.0, 20.0, 95.0, float, "Gripper opening before a grasp and when letting go"),
     "travel_height_mm": (120.0, 40.0, 300.0, float, "Height above the table for moves between objects"),
+    "container_rim_mm": (100.0, 10.0, 250.0, float, "Rim height of a tray or box things are put into"),
 }
 MODEL_RE = re.compile(r"^[A-Za-z0-9._:-]{1,64}$")
 
@@ -82,6 +84,8 @@ def _coerce(name: str, value):
         return bool(value)
     if typ is str:
         v = str(value).strip()
+        if name == "openai_effort" and v not in ("none", "low", "medium", "high"):
+            raise ValueError("openai_effort must be none, low, medium or high")
         if name == "provider" and v not in PROVIDERS:
             raise ValueError("provider must be one of " + ", ".join(PROVIDERS))
         if name.endswith("_model") and not MODEL_RE.match(v):
