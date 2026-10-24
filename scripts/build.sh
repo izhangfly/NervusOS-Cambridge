@@ -41,13 +41,21 @@ chmod 700 "$KEYS"
 
 genkey() { [[ -f "$1" ]] || { openssl genpkey -algorithm ed25519 -out "$1" 2>/dev/null; chmod 600 "$1"; echo "    generated $(basename "$1")"; }; }
 
+# The camera board profile (src/nervus-system-server/camerad/boards) for this machine.
+default_board() {
+	case "$(cat /sys/class/dmi/id/product_name 2>/dev/null)" in
+	*"Surface Pro 9"*) echo surface-pro-9 ;;
+	*) echo dell-latitude ;;
+	esac
+}
+
 build_release() {
 	step "System release ($ABI)"
 	NERVUD_DIR="$SRC/nervud" SERVER_DIR="$SRC/nervus-system-server" \
 	SOFTWARE_DIR="$SRC/nervus-system-software" APP_SDK_DIR="$SRC/nervus-app-sdk" \
 	PACKAGING_DIR="$SRC/nervus-packaging" IPC_DIR="$SRC/nervus-ipc" \
 	TARGET_ABI="$ABI" JRE_SOURCE="${JRE_SOURCE:-auto}" JRE_VERSION=21 KEY_DIR="$KEYS" \
-	NERVUS_BOARD="${NERVUS_BOARD:-dell-latitude}" \
+	NERVUS_BOARD="${NERVUS_BOARD:-$(default_board)}" \
 	REQUIRE_OEM_COUNTERSIGN=false TARBALL="$OUT/nervus-os-$ABI.tar.gz" \
 		bash "$SRC/nervus-deploy/build-release.sh" --non-interactive
 }

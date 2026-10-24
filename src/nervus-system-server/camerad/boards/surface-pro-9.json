@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "board": "surface-pro-9-hosted",
+
+  "cameras": [],
+
+  "usb_pool": {
+    "role_prefix": "cam.usb",
+    "max_slots": 3
+  }
+}
