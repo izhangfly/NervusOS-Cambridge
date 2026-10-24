@@ -1,6 +1,5 @@
 package com.nervus.handteleop.control
 
-import com.nervus.handteleop.camera.Caller
 import com.nervus.handteleop.math.Box
 import com.nervus.handteleop.math.HandMath
 import com.nervus.handteleop.math.Mat3
@@ -14,41 +13,9 @@ import com.nervus.handteleop.vision.HandMetrics
 import com.nervus.handteleop.vision.Observation
 import com.nervus.handteleop.vision.OneEuro
 import com.nervus.handteleop.vision.OneEuro3
-import com.nervus.sdk.component.ControlLease
-import com.nervus.sdk.ipc.ControlLeaseException
-import com.nervus.sdk.ipc.NervusCallException
 import io.github.nervusos.iface.manipulator.v1.ArmState
-import io.github.nervusos.iface.manipulator.v1.GetArmStateRequest
-import io.github.nervusos.iface.manipulator.v1.ManipulatorMethod
 import io.github.nervusos.iface.manipulator.v1.Pose
-import io.github.nervusos.iface.manipulator.v1.ServoToPoseRequest
-import io.github.nervusos.iface.manipulator.v1.SetGripperRequest
-import io.github.nervusos.iface.manipulator.v1.StopRequest
 import java.util.logging.Logger
-
-/** Manipulator@1 through nervud. Every motion call is checked against this connection's lease. */
-class ArmLink(private val caller: Caller) {
-    fun state(): ArmState =
-        ArmState.parseFrom(caller.call(ARM, ManipulatorMethod.MANIPULATOR_METHOD_GET_ARM_STATE_VALUE, GetArmStateRequest.getDefaultInstance().toByteArray(), 3))
-
-    fun servo(target: Pose, velScale: Double) {
-        caller.call(ARM, ManipulatorMethod.MANIPULATOR_METHOD_SERVO_TO_POSE_VALUE,
-            ServoToPoseRequest.newBuilder().setTarget(target).setMaxVelScale(velScale).build().toByteArray(), 2)
-    }
-
-    fun gripper(opening: Double, effortNm: Double) {
-        caller.call(ARM, ManipulatorMethod.MANIPULATOR_METHOD_SET_GRIPPER_VALUE,
-            SetGripperRequest.newBuilder().setOpening(opening).setMaxEffort(effortNm).build().toByteArray(), 2)
-    }
-
-    fun stop() {
-        caller.call(ARM, ManipulatorMethod.MANIPULATOR_METHOD_STOP_VALUE, StopRequest.getDefaultInstance().toByteArray(), 2)
-    }
-
-    companion object {
-        const val ARM = "nervus.interface.manipulator.arm"
-    }
-}
 
 enum class PinchMode(val label: String) {
     THUMB_INDEX("Thumb + index"),
@@ -79,6 +46,12 @@ class TeleopSettings {
     @Volatile var gainReach: Double = 1.0
     @Volatile var speed: Double = 0.6
     @Volatile var invertSide: Boolean = false
+    /**
+     * Show the video mirrored, as a webcam usually is, so moving your hand left moves it left on screen.
+     * Display only: tracking always works on the frame as the camera saw it, so the body pose keeps
+     * your real left and right.
+     */
+    @Volatile var mirrorImage: Boolean = true
     /**
      * The camera's focal length over the frame width (0.7 is a laptop webcam about 70 degrees wide). It
      * sets the scale of everything metric: the hand's distance, and how far a hand movement is.
@@ -138,8 +111,7 @@ data class TeleopStatus(
  * Frames where tracking jumps are dropped; three in a row count as a lost hand.
  */
 class Teleop(
-    private val arm: ArmLink,
-    private val leaseFactory: () -> ControlLease,
+    private val arm: Arm,
     private val settings: TeleopSettings,
     private val log: Logger,
 ) {
@@ -151,7 +123,7 @@ class Teleop(
     private var engageRequested = false
     @Volatile
     private var disengageRequested = false
-    private var lease: ControlLease? = null
+    private var lease: ArmControl? = null
     private var anchor: Anchor? = null
     private var meas: Measurement? = null
     private var lastObsAt = 0L
@@ -222,9 +194,10 @@ class Teleop(
                 return
             }
             try {
-                lease = leaseFactory()
+                val c = arm.acquire()
+                lease = c
                 lastRenew = nowNanos
-                log.info("control lease ${lease!!.leaseId} on ${lease!!.resourceHandle}, epoch ${lease!!.motionEpoch}")
+                log.info("${c.description}, epoch ${c.epoch}")
             } catch (e: Exception) {
                 status = status.copy(phase = TeleopStatus.Phase.ERROR, message = leaseText(e), lastError = e.message)
                 return
@@ -261,7 +234,7 @@ class Teleop(
             try {
                 if (!l.renew()) {
                     // A new epoch: the arm may have stopped short of the last target, so start again from where it is.
-                    log.info("lease replaced (new epoch ${l.motionEpoch}); re-anchoring")
+                    log.info("control replaced (new epoch ${l.epoch}); re-anchoring")
                     anchor = null
                 }
                 lastRenew = nowNanos
@@ -340,9 +313,10 @@ class Teleop(
         try {
             arm.servo(target, settings.speed)
             servoCount++
-        } catch (e: NervusCallException) {
-            err = "servo refused: ${e.code.name.removePrefix("STATUS_CODE_").lowercase()}"
-            // The lease may have lapsed (deadman, pre-empted): renew next tick, then re-anchor.
+        } catch (e: ArmRefusedException) {
+            // The lease may have lapsed (deadman, pre-empted), or the driver is holding the arm (busy, IK
+            // guard): show why, renew next tick, then re-anchor on wherever the arm really is.
+            err = "servo refused: ${e.message}"
             lastRenew = 0
             anchor = null
         } catch (e: Exception) {
@@ -371,7 +345,7 @@ class Teleop(
             target = target,
             gripper = opening,
             pinch = m.pinch,
-            leaseEpoch = l.motionEpoch,
+            leaseEpoch = l.epoch,
             lastError = err ?: status.lastError,
             handDistance = m.pos.z,
             handRollDeg = handRoll?.let { Math.toDegrees(it) },
@@ -463,9 +437,9 @@ class Teleop(
         status = status.copy(phase = TeleopStatus.Phase.IDLE, message = message, target = null, handRollDeg = null, toolRollDeg = 0.0)
     }
 
-    private fun leaseText(e: Throwable): String = when (val c = e.cause ?: e) {
-        is ControlLeaseException -> "Arm not available: ${c.message}"
-        else -> "Could not take control of the arm: ${c.message}"
+    private fun leaseText(e: Throwable): String = when (e) {
+        is ArmRefusedException -> "Arm not available: ${e.message}"
+        else -> "Could not take control of the arm: ${(e.cause ?: e).message}"
     }
 
     fun shutdown() = release("Closed")

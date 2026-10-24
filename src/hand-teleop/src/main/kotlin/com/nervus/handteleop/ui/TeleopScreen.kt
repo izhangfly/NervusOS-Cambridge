@@ -80,6 +80,10 @@ fun TeleopScreen(p: Pipeline) {
                 lastSeq = f.sequence
                 image = f.toImageBitmap()
                 obs = o?.takeIf { it.frame.sequence == f.sequence } ?: o
+            } else if (f == null && p.camera.error != null) {
+                // The camera went away: say so rather than freeze on its last frame.
+                image = null
+                obs = null
             }
             status = p.teleop.status
             camFps = p.camera.fps
@@ -123,9 +127,10 @@ fun TeleopScreen(p: Pipeline) {
                             if (img == null) {
                                 return@Canvas
                             }
-                            val fit = fitRect(img.width.toFloat(), img.height.toFloat(), size)
-                            // Mirror: the operator sees themselves like in a mirror.
-                            withTransform({ scale(-1f, 1f, pivot = Offset(fit.left + fit.width / 2, fit.top + fit.height / 2)) }) {
+                            val fit = fitRect(img.width.toFloat(), img.height.toFloat(), size, p.settings.mirrorImage)
+                            // Mirrored, the operator sees themselves as in a mirror. Only the picture flips:
+                            // tracking always works on the frame as the camera saw it.
+                            withTransform({ if (fit.mirror) scale(-1f, 1f, pivot = Offset(fit.left + fit.width / 2, fit.top + fit.height / 2)) }) {
                                 drawImage(img, srcOffset = IntOffset.Zero, srcSize = IntSize(img.width, img.height),
                                     dstOffset = IntOffset(fit.left.toInt(), fit.top.toInt()), dstSize = IntSize(fit.width.toInt(), fit.height.toInt()))
                             }
@@ -136,7 +141,7 @@ fun TeleopScreen(p: Pipeline) {
                             Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text("NO SIGNAL", style = Hud.title.copy(color = Hud.dim, fontSize = 28.sp))
                                 Spacer(Modifier.height(8.dp))
-                                Text(camError ?: "Opening the front camera through nervus.camerad…", style = Hud.value.copy(color = Hud.dim))
+                                Text(camError ?: p.camera.waiting, style = Hud.value.copy(color = Hud.dim))
                             }
                         }
                         // corner telemetry
@@ -153,6 +158,7 @@ fun TeleopScreen(p: Pipeline) {
                             val o = obs
                             Text("YOLO26N-POSE ${o?.let { "%.1f".format(it.poseMs) } ?: "-"} MS · HAND LANDMARKS ${o?.let { "%.1f".format(it.handMs) } ?: "-"} MS", style = Hud.label)
                             visionError?.let { Text(it, style = Hud.label.copy(color = Hud.red)) }
+                            camError?.let { Text(it, style = Hud.label.copy(color = Hud.red)) }
                         }
                         Text(
                             when (status.phase) {
@@ -175,7 +181,7 @@ fun TeleopScreen(p: Pipeline) {
             ) {
                 Column {
                     Text("HAND TELEOP", style = Hud.title)
-                    Text("NervusOS · Manipulator@1 · AgileX PiPER", style = Hud.label)
+                    Text("${if (p.standalone) "Standalone" else "NervusOS"} · ${p.armLabel} · AgileX PiPER", style = Hud.label)
                 }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     StatusChip("cam", "%.0f fps".format(camFps), camFps > 10f)
@@ -240,6 +246,9 @@ fun TeleopScreen(p: Pipeline) {
                     var inv by remember { mutableStateOf(p.settings.invertSide) }
                     Segmented(listOf(false to "MIRROR ME", true to "FACE ME"), inv) { inv = it; p.settings.invertSide = it }
                     Spacer(Modifier.height(8.dp))
+                    var mirror by remember { mutableStateOf(p.settings.mirrorImage) }
+                    Segmented(listOf(true to "MIRROR IMAGE", false to "IMAGE AS SEEN"), mirror) { mirror = it; p.settings.mirrorImage = it }
+                    Spacer(Modifier.height(8.dp))
                     // Focal length over frame width; the camera's horizontal field of view is shown so it can be matched to the spec.
                     HudSlider("camera lens", lens, 0.4f..1.4f, { "%.2f · %.0f° wide".format(it, Math.toDegrees(2 * kotlin.math.atan(0.5 / it))) }) {
                         lens = it; p.settings.focalFraction = it.toDouble()
@@ -281,18 +290,18 @@ fun TeleopScreen(p: Pipeline) {
     }
 }
 
-private data class Fit(val left: Float, val top: Float, val width: Float, val height: Float)
+private data class Fit(val left: Float, val top: Float, val width: Float, val height: Float, val mirror: Boolean)
 
-private fun fitRect(w: Float, h: Float, area: Size): Fit {
+private fun fitRect(w: Float, h: Float, area: Size, mirror: Boolean): Fit {
     val s = minOf(area.width / w, area.height / h)
     val fw = w * s
     val fh = h * s
-    return Fit((area.width - fw) / 2, (area.height - fh) / 2, fw, fh)
+    return Fit((area.width - fw) / 2, (area.height - fh) / 2, fw, fh, mirror)
 }
 
-/** Frame pixel -> screen, mirrored. */
+/** Frame pixel -> screen, mirrored like the picture when [Fit.mirror]. */
 private fun Fit.map(x: Float, y: Float, fw: Int, fh: Int) =
-    Offset(left + width * (1f - x / fw), top + height * (y / fh))
+    Offset(left + width * (if (mirror) 1f - x / fw else x / fw), top + height * (y / fh))
 
 private fun DrawScope.drawSkeleton(o: Observation, fit: Fit, settings: TeleopSettings) {
     val mode = settings.pinchMode

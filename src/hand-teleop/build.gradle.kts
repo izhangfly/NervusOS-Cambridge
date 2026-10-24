@@ -36,6 +36,8 @@ dependencies {
     // declared here because the SDK only uses it internally.
     implementation("com.google.protobuf:protobuf-java:4.29.3")
     implementation(libs.kotlinx.coroutines.core)
+    // Standalone mode talks JSON to the PiPER driver (parsed as JSON trees: no compiler plugin needed).
+    implementation(libs.kotlinx.serialization.json)
     implementation(compose.desktop.currentOs)
     implementation(compose.material3)
     implementation(
@@ -66,6 +68,17 @@ tasks.test {
 compose.desktop {
     application {
         mainClass = "com.nervus.handteleop.app.HandTeleopAppKt"
+        // `./gradlew createDistributable`: a self-contained desktop app with its own trimmed Java runtime,
+        // for running Hand Teleop with --standalone from a desktop icon (no NervusOS needed). The models
+        // ship inside the app jar as resources.
+        nativeDistributions {
+            packageName = "hand-teleop"
+            packageVersion = project.version.toString()
+            description = "Drive the PiPER arm with your hand"
+            // Beyond Compose's defaults (from suggestRuntimeModules): the driver's HTTP client, and what
+            // coroutines, protobuf and ONNX Runtime reach for.
+            modules("java.instrument", "java.net.http", "jdk.unsupported", "java.management")
+        }
     }
 }
 
