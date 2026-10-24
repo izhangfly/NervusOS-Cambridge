@@ -583,6 +583,44 @@ def finite(v):
     return None if v is None or (isinstance(v, float) and not math.isfinite(v)) else v
 
 
+def bus_has_traffic(iface, timeout=1.0):
+    """True if any frame shows up on the CAN interface within `timeout` (a raw socket of our own)."""
+    import socket
+    try:
+        s = socket.socket(socket.AF_CAN, socket.SOCK_RAW, socket.CAN_RAW)
+        s.settimeout(timeout)
+        s.bind((iface,))
+        s.recv(16)
+        return True
+    except OSError:
+        return False
+    finally:
+        try:
+            s.close()
+        except Exception:
+            pass
+
+
+def stall_watchdog(iface, stale_s=5.0):
+    """Exit if the SDK has stopped receiving while the arm still talks on the bus.
+
+    Seen on the Surface after the arm was power-cycled or switched out of teach mode: the SDK's reader went
+    quiet (feedback stale, 0 frames/s) while candump showed the arm's status frames, and only a restart
+    brought it back. Exiting lets systemd restart the driver (Restart=on-failure); the motors are never
+    disabled on the way out, so the arm keeps holding."""
+    since = None
+    while True:
+        time.sleep(1.0)
+        if ARM.feedback_age() < FEEDBACK_STALE:
+            since = None
+            continue
+        since = since or time.time()
+        if time.time() - since >= stale_s and bus_has_traffic(iface):
+            print(f"feedback stale for {time.time() - since:.0f} s while {iface} has traffic: "
+                  "restarting the driver", flush=True)
+            os._exit(3)
+
+
 def guard_latched():
     """The IK guard's reason while its latch is on, else None."""
     with state_lock:
@@ -887,6 +925,7 @@ def main():
         STATE["speed"] = args.speed
     ARM = Arm(args.iface, args.speed)
     ARM.guard.limit = max(0.0, args.ik_guard_deg)
+    threading.Thread(target=stall_watchdog, args=(args.iface,), daemon=True, name="stall-watchdog").start()
     try:
         ARM.firmware = ARM.piper.GetPiperFirmwareVersion()
     except Exception:
