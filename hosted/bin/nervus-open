@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Open one NervusOS app from the Ubuntu desktop: start NervusOS if it isn't running, then launch the app
+# inside it, the same way the NervusOS launcher does.
+#
+#   nervus-open <package_id> [component]      e.g. nervus-open com.nervus.handteleop
+set -u
+PKG="${1:?usage: nervus-open <package_id> [component]}"
+COMP="${2:-main}"
+ADMIN_SOCK=/run/nervus/nervud-admin.sock
+say() { notify-send -a NervusOS "NervusOS" "$1" 2>/dev/null || echo "$1" >&2; }
+
+if ! systemctl is-active --quiet nervud.service; then
+	/usr/local/bin/nervus-session start || { say "NervusOS did not start"; exit 1; }
+fi
+for _ in $(seq 1 60); do
+	[[ -S "$ADMIN_SOCK" ]] && break
+	sleep 0.5
+done
+# The app may have only just been registered; give the launch a few tries.
+for _ in 1 2 3 4 5; do
+	if out="$(sudo -n /usr/bin/nervusctl launch "$PKG" "$COMP" 2>&1)"; then
+		exit 0
+	fi
+	sleep 1
+done
+say "Could not open $PKG: $out"
+exit 1

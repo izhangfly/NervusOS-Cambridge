@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=LLM Arm
+Comment=Tell the PiPER arm what to do in plain language; it looks through the cameras (opens in NervusOS)
+Exec=/usr/local/bin/nervus-open com.nervus.llmarm main
+Icon=nervus-llmarm
+Terminal=false
+Categories=Development;Robotics;
+Keywords=nervus;robot;piper;llm;deepseek;
+StartupNotify=false

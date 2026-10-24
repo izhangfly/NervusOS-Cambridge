@@ -171,3 +171,19 @@ func cmdSetPermission(c *adminwire.Client, args []string, out io.Writer, state s
 	outf(out, "%s %s %s\n", past, args[0], args[1])
 	return nil
 }
+
+// cmdLaunch: start an installed component, e.g. from an icon on the host desktop.
+func cmdLaunch(c *adminwire.Client, args []string, out io.Writer) error {
+	if len(args) != 2 {
+		return badUsage("launch requires <package_id> <component_id>")
+	}
+	resp, err := c.Do(adminwire.Request{Cmd: adminwire.CmdLaunch, PackageID: args[0], ComponentID: args[1]})
+	if err != nil {
+		return err
+	}
+	if !resp.OK {
+		return respErr(resp)
+	}
+	outf(out, "launched %s/%s\n", args[0], args[1])
+	return nil
+}

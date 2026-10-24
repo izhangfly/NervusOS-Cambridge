@@ -57,6 +57,9 @@ const (
 	// must refer to the same tree. Staging each separately would open a gap of "you looked at A,
 	// you installed B" in between, while the permission list the user saw came from A.
 	CmdInspect = "inspect"
+	// CmdLaunch starts an installed component (an app opened from outside NervusOS, e.g. an icon on the host
+	// desktop), exactly as the launcher's LaunchComponent would. Already running is not an error.
+	CmdLaunch = "launch"
 )
 
 // Wire representation of grant states. Maps one to one onto permission.GrantState, but this package doesn't import

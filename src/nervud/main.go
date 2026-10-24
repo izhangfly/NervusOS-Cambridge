@@ -692,6 +692,7 @@ func assemble(
 		Packages:    pkgMod,
 		Registry:    pkgReg,
 		Permissions: permReg,
+		Launcher:    svcMgr,
 		Auditor:     aud,
 		Log:         logger,
 	})

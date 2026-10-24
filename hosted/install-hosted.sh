@@ -157,6 +157,18 @@ install -D -m 0644 "$HOSTED/icons/nervusos.svg" /usr/share/icons/hicolor/scalabl
 gtk-update-icon-cache -q /usr/share/icons/hicolor 2>/dev/null || true
 install -D -m 0644 "$HOSTED/applications/nervusos.desktop" /usr/share/applications/nervusos.desktop
 install -D -m 0644 "$HOSTED/applications/nervusos-quit.desktop" /usr/share/applications/nervusos-quit.desktop
+# Apps that open straight from the Ubuntu desktop: nervus-open starts NervusOS if needed, then the app.
+APP_LAUNCHERS=(nervus-handteleop nervus-llmarm)
+install -D -m 0755 "$HOSTED/bin/nervus-open" /usr/local/bin/nervus-open
+for a in "${APP_LAUNCHERS[@]}"; do
+	install -D -m 0644 "$HOSTED/icons/$a.svg" "/usr/share/icons/hicolor/scalable/apps/$a.svg"
+	install -D -m 0644 "$HOSTED/applications/$a.desktop" "/usr/share/applications/$a.desktop"
+done
+gtk-update-icon-cache -q /usr/share/icons/hicolor 2>/dev/null || true
+# nervus-open needs nervud's admin socket (root only) for one thing: starting an installed app.
+printf '%s ALL=(root) NOPASSWD: /usr/bin/nervusctl launch *\n' "$DESKTOP_USER" >/etc/sudoers.d/50-nervus-open
+chmod 0440 /etc/sudoers.d/50-nervus-open
+visudo -cq -f /etc/sudoers.d/50-nervus-open || { rm -f /etc/sudoers.d/50-nervus-open; warn "sudoers rule for nervus-open rejected"; }
 update-desktop-database -q /usr/share/applications 2>/dev/null || true
 ok "NervusOS and Quit NervusOS in the app grid"
 
@@ -195,6 +207,10 @@ desk="$(as_user xdg-user-dir DESKTOP 2>/dev/null || echo "$DESKTOP_HOME/Desktop"
 if [[ -d "$desk" ]]; then
 	install -o "$DESKTOP_USER" -g "$DESKTOP_USER" -m 0755 "$HOSTED/applications/nervusos.desktop" "$desk/nervusos.desktop"
 	as_user gio set "$desk/nervusos.desktop" metadata::trusted true 2>/dev/null || true
+	for a in "${APP_LAUNCHERS[@]}"; do
+		install -o "$DESKTOP_USER" -g "$DESKTOP_USER" -m 0755 "$HOSTED/applications/$a.desktop" "$desk/$a.desktop"
+		as_user gio set "$desk/$a.desktop" metadata::trusted true 2>/dev/null || true
+	done
 	ok "launcher on the desktop ($desk)"
 fi
 
