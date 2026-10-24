@@ -1,5 +1,7 @@
 package com.nervus.handteleop.vision
 
+import com.nervus.handteleop.math.HandMath
+import com.nervus.handteleop.math.Vec3
 import kotlin.math.atan2
 import kotlin.math.hypot
 import kotlin.math.max
@@ -89,40 +91,45 @@ class Tracker(private val pose: PoseEstimator, private val hand: HandEstimator) 
     }
 }
 
-/** Measurements of one hand used for control, all in frame pixels except the ratios. */
+/** Measurements of one hand used for control. */
 class HandMetrics(
+    /** Palm centre (wrist and the four knuckles), frame pixels. */
     val palmX: Float,
     val palmY: Float,
-    /** Wrist to middle-finger knuckle: the hand's own ruler, so pinch measures don't depend on distance. */
-    val palmSize: Float,
-    /** Thumb tip to index tip, divided by [palmSize]. */
+    /** The palm bones' summed length in the image, pixels ([HandMath.palmBonesXy]). */
+    val bonesPx: Double,
+    /** The same bones in the world landmarks with depth dropped, metres: what the camera sees of them. */
+    val bonesM: Double,
+    /**
+     * Thumb tip to index tip in 3-D, over wrist to middle knuckle in 3-D: the hand's own ruler, so the
+     * ratio changes with neither distance nor how the palm is tilted (the 2-D one did, with tilt).
+     */
     val pinchIndex: Float,
-    /** Thumb tip to the centre of the four fingertips, divided by [palmSize]. */
+    /** Thumb tip to the centre of the four fingertips, the same way. */
     val pinchFour: Float,
 ) {
+    /** Distance from the camera to the hand, metres, for a focal length of [focalPx]; null if unmeasurable. */
+    fun depth(focalPx: Double): Double? = HandMath.depth(bonesM, bonesPx, focalPx)
+
     companion object {
         fun of(h: HandLandmarks): HandMetrics {
             var px = 0f
             var py = 0f
-            for (i in intArrayOf(0, 5, 9, 13, 17)) {
+            for (i in HandMath.PALM_POINTS) {
                 px += h[i].x / 5f
                 py += h[i].y / 5f
             }
-            val w = h[HandLandmarks.WRIST]
-            val m = h[HandLandmarks.MIDDLE_MCP]
-            val size = max(1f, hypot(m.x - w.x, m.y - w.y))
-            val t = h[HandLandmarks.THUMB_TIP]
-            val i = h[HandLandmarks.INDEX_TIP]
-            var fx = 0f
-            var fy = 0f
-            for (k in intArrayOf(8, 12, 16, 20)) {
-                fx += h[k].x / 4f
-                fy += h[k].y / 4f
-            }
+            val pixels = h.points.map { Vec3(it.x.toDouble(), it.y.toDouble(), 0.0) }
+            val w = h.world
+            val ruler = max(1e-3, (w[HandLandmarks.MIDDLE_MCP] - w[HandLandmarks.WRIST]).norm())
+            val tips = (w[HandLandmarks.INDEX_TIP] + w[HandLandmarks.MIDDLE_TIP] + w[HandLandmarks.RING_TIP] + w[HandLandmarks.PINKY_TIP]) * 0.25
+            val thumb = w[HandLandmarks.THUMB_TIP]
             return HandMetrics(
-                px, py, size,
-                hypot(t.x - i.x, t.y - i.y) / size,
-                hypot(t.x - fx, t.y - fy) / size,
+                px, py,
+                HandMath.palmBonesXy(pixels),
+                HandMath.palmBonesXy(w),
+                ((thumb - w[HandLandmarks.INDEX_TIP]).norm() / ruler).toFloat(),
+                ((thumb - tips).norm() / ruler).toFloat(),
             )
         }
     }
@@ -161,4 +168,17 @@ class OneEuro(private val minCutoff: Double = 1.2, private val beta: Double = 0.
         val tau = 1.0 / (2 * Math.PI * cutoff)
         return 1.0 / (1.0 + tau / dt)
     }
+}
+
+/** [OneEuro] on each axis of a point. */
+class OneEuro3(minCutoff: Double, beta: Double) {
+    private val x = OneEuro(minCutoff, beta)
+    private val y = OneEuro(minCutoff, beta)
+    private val z = OneEuro(minCutoff, beta)
+
+    fun reset() {
+        x.reset(); y.reset(); z.reset()
+    }
+
+    fun filter(v: Vec3, tNanos: Long) = Vec3(x.filter(v.x, tNanos), y.filter(v.y, tNanos), z.filter(v.z, tNanos))
 }

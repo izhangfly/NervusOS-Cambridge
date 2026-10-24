@@ -34,6 +34,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nervus.handteleop.app.Pipeline
 import com.nervus.handteleop.control.PinchMode
+import com.nervus.handteleop.control.RollMode
+import com.nervus.handteleop.control.TeleopSettings
 import com.nervus.handteleop.control.TeleopStatus
 import com.nervus.handteleop.vision.BodyPose
 import com.nervus.handteleop.vision.HandLandmarks
@@ -127,7 +129,7 @@ fun TeleopScreen(p: Pipeline) {
                                 drawImage(img, srcOffset = IntOffset.Zero, srcSize = IntSize(img.width, img.height),
                                     dstOffset = IntOffset(fit.left.toInt(), fit.top.toInt()), dstSize = IntSize(fit.width.toInt(), fit.height.toInt()))
                             }
-                            obs?.let { drawSkeleton(it, fit, p.settings.pinchMode, p.settings.hand) }
+                            obs?.let { drawSkeleton(it, fit, p.settings) }
                             drawScanFrame(fit, frameColor)
                         }
                         if (image == null) {
@@ -141,6 +143,11 @@ fun TeleopScreen(p: Pipeline) {
                         Column(Modifier.align(Alignment.TopStart).padding(14.dp)) {
                             Text("CAM · FRONT · $camFormat", style = Hud.label.copy(color = Hud.cyan))
                             Text("${"%.0f".format(camFps)} FPS IN · " + if (p.visionIdle) "STANDBY: NOBODY IN VIEW" else "${"%.0f".format(visionFps)} FPS TRACKED", style = Hud.label)
+                            Text(
+                                "HAND ${status.handDistance?.let { "%.2f M".format(it) } ?: "-"} · ROLL " +
+                                    if (status.rollMode == RollMode.OFF) "OFF" else "${status.handRollDeg?.let { "%+.0f°".format(it) } ?: "-"} (${status.rollMode.label.uppercase()})",
+                                style = Hud.label.copy(color = Hud.magenta),
+                            )
                         }
                         Column(Modifier.align(Alignment.BottomStart).padding(14.dp)) {
                             val o = obs
@@ -223,12 +230,33 @@ fun TeleopScreen(p: Pipeline) {
                     var up by remember { mutableStateOf(p.settings.gainUp.toFloat()) }
                     var reach by remember { mutableStateOf(p.settings.gainReach.toFloat()) }
                     var speed by remember { mutableStateOf(p.settings.speed.toFloat()) }
-                    HudSlider("sideways", side, 0.1f..0.8f, { "%.0f cm / frame".format(it * 100) }) { side = it; p.settings.gainSide = it.toDouble() }
-                    HudSlider("up / down", up, 0.1f..0.8f, { "%.0f cm / frame".format(it * 100) }) { up = it; p.settings.gainUp = it.toDouble() }
-                    HudSlider("reach", reach, 0.0f..0.6f, { "%.0f cm / 2x size".format(it * 100) }) { reach = it; p.settings.gainReach = it.toDouble() }
+                    var lens by remember { mutableStateOf(p.settings.focalFraction.toFloat()) }
+                    Text("GAINS: METRES OF ARM PER METRE OF HAND", style = Hud.label)
+                    Spacer(Modifier.height(4.dp))
+                    HudSlider("sideways", side, 0.2f..3.0f, { "%.1f x".format(it) }) { side = it; p.settings.gainSide = it.toDouble() }
+                    HudSlider("up / down", up, 0.2f..3.0f, { "%.1f x".format(it) }) { up = it; p.settings.gainUp = it.toDouble() }
+                    HudSlider("reach", reach, 0.0f..3.0f, { "%.1f x".format(it) }) { reach = it; p.settings.gainReach = it.toDouble() }
                     HudSlider("arm speed", speed, 0.1f..1.0f, { "%.0f %%".format(it * 100) }) { speed = it; p.settings.speed = it.toDouble() }
                     var inv by remember { mutableStateOf(p.settings.invertSide) }
                     Segmented(listOf(false to "MIRROR ME", true to "FACE ME"), inv) { inv = it; p.settings.invertSide = it }
+                    Spacer(Modifier.height(8.dp))
+                    // Focal length over frame width; the camera's horizontal field of view is shown so it can be matched to the spec.
+                    HudSlider("camera lens", lens, 0.4f..1.4f, { "%.2f · %.0f° wide".format(it, Math.toDegrees(2 * kotlin.math.atan(0.5 / it))) }) {
+                        lens = it; p.settings.focalFraction = it.toDouble()
+                    }
+                }
+
+                HudPanel(accent = Hud.magenta) {
+                    HudLabel("hand in metres · wrist roll")
+                    Spacer(Modifier.height(6.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Readout("distance", status.handDistance?.let { "%.2f m".format(it) } ?: "-", Hud.magenta)
+                        Readout("hand roll", status.handRollDeg?.let { "%+.0f°".format(it) } ?: "-", Hud.magenta)
+                        Readout("tool roll", "%+.0f°".format(status.toolRollDeg), Hud.cyan)
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    var rollMode by remember { mutableStateOf(p.settings.rollMode) }
+                    Segmented(RollMode.values().map { it to "ROLL ${it.label.uppercase()}" }, rollMode) { rollMode = it; p.settings.rollMode = it }
                 }
 
                 HudPanel(accent = Hud.green) {
@@ -266,7 +294,9 @@ private fun fitRect(w: Float, h: Float, area: Size): Fit {
 private fun Fit.map(x: Float, y: Float, fw: Int, fh: Int) =
     Offset(left + width * (1f - x / fw), top + height * (y / fh))
 
-private fun DrawScope.drawSkeleton(o: Observation, fit: Fit, mode: PinchMode, operator: HandLandmarks.Side) {
+private fun DrawScope.drawSkeleton(o: Observation, fit: Fit, settings: TeleopSettings) {
+    val mode = settings.pinchMode
+    val operator = settings.hand
     val fw = o.frame.width
     val fh = o.frame.height
     val stroke = 4.dp.toPx()
@@ -314,7 +344,7 @@ private fun DrawScope.drawSkeleton(o: Observation, fit: Fit, mode: PinchMode, op
                 intArrayOf(8, 12, 16, 20).map { h[it].x }.average().toFloat() to intArrayOf(8, 12, 16, 20).map { h[it].y }.average().toFloat()
             }
             val ratio = if (mode == PinchMode.THUMB_INDEX) m.pinchIndex else m.pinchFour
-            val open = (ratio / 1.1f).coerceIn(0f, 1f)
+            val open = ((ratio - settings.closedRatio) / (settings.openRatio - settings.closedRatio)).toFloat().coerceIn(0f, 1f)
             val c = Color(1f - open, 0.35f + 0.6f * open, 0.45f, 1f)
             val a = fit.map(t.x, t.y, fw, fh)
             val b = fit.map(tx, ty, fw, fh)
