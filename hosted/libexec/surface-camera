@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Stream the Surface Pro 9's rear camera (OV13858 behind Intel IPU6) into a plain V4L2 webcam,
+# /dev/video60 "Surface Camera", so any app can open it like a USB camera.
+#
+# The IPU6 sensors have no webcam driver: libcamera (built by hosted/surface/build-libcamera.sh into
+# /usr/local) captures the raw Bayer frames and turns them into images in software. The front camera
+# (OV5693) has no Linux support on the Pro 9, so this uses the rear one.
+set -eu
+export LD_LIBRARY_PATH=/usr/local/lib/x86_64-linux-gnu
+export GST_PLUGIN_PATH=/usr/local/lib/x86_64-linux-gnu/gstreamer-1.0
+DEV="${SURFACE_CAMERA_DEVICE:-/dev/video60}"
+CAM="${SURFACE_CAMERA_ID:-\\_SB_.PC00.I2C2.CAMR}"
+W="${SURFACE_CAMERA_WIDTH:-1280}" H="${SURFACE_CAMERA_HEIGHT:-720}" FPS="${SURFACE_CAMERA_FPS:-30}"
+[[ -e "$DEV" ]] || modprobe v4l2loopback video_nr=60 card_label="Surface Camera" exclusive_caps=1
+# gst-launch unescapes backslashes in quoted values, and the camera id starts with one.
+exec gst-launch-1.0 -q libcamerasrc camera-name="\\${CAM}" \
+	! "video/x-raw,width=$W,height=$H,framerate=$FPS/1" ! videoconvert ! video/x-raw,format=YUY2 \
+	! v4l2sink device="$DEV" sync=false

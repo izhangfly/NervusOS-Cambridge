@@ -1,0 +1,13 @@
+[Unit]
+Description=Surface Pro 9 rear camera as a webcam (/dev/video60 "Surface Camera", via libcamera)
+# Started on demand (Hand Teleop, LLM Arm); the software ISP costs CPU, so it isn't left running.
+
+[Service]
+Type=simple
+ExecStartPre=-/usr/sbin/modprobe v4l2loopback video_nr=60 card_label="Surface Camera" exclusive_caps=1
+ExecStart=/usr/libexec/nervus/surface-camera
+DynamicUser=yes
+SupplementaryGroups=video
+Restart=on-failure
+RestartSec=2s
+SyslogIdentifier=surface-camera
