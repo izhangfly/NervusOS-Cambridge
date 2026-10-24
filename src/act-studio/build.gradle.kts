@@ -1,3 +1,6 @@
+import java.time.Duration
+import org.gradle.api.tasks.testing.logging.TestExceptionFormat
+
 plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.kotlin.compose)
@@ -40,6 +43,12 @@ tasks.test {
     // The UI test drives a running engine (python -m nervus_act --sim); it is skipped without one.
     environment("ACT_ENGINE_TEST", System.getenv("ACT_ENGINE_TEST") ?: "")
     systemProperty("java.awt.headless", "true")
+    // The test has its own 5-minute limit; this one catches a JVM that hangs outside it.
+    timeout.set(Duration.ofMinutes(10))
+    testLogging {
+        events("passed", "skipped", "failed")
+        exceptionFormat = TestExceptionFormat.FULL
+    }
 }
 
 compose.desktop {
