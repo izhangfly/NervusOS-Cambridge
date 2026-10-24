@@ -30,6 +30,9 @@ import java.util.logging.Logger
 import kotlin.system.exitProcess
 
 fun main(args: Array<String>) {
+    // Bring ONNX Runtime up before the window: created while Compose/Skia initialise on another thread,
+    // its first session crashed the JVM inside ORT's logging on the Surface (SIGSEGV in ostream).
+    ai.onnxruntime.OrtEnvironment.getEnvironment()
     if ("--standalone" in args) {
         val opts = try {
             StandaloneOptions.parse(args.toList())
