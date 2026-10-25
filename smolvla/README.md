@@ -31,7 +31,7 @@ driver and ACT engine it talks to.
 
 | Part | What this project assumes |
 |---|---|
-| Arm | AgileX PiPER (6 joints + parallel gripper) on CAN, driven by the [NervusOS PiPER driver](https://github.com/izhangfly/NervusOS-Cambridge/tree/main/hardware/piper) (`piper_webctl.py`, `127.0.0.1:8770`). Nothing here touches CAN: the robot class is an HTTP client of the driver, claiming the arm as client `smolvla`, so it never fights the other apps that use the arm (one controller at a time). |
+| Arm | AgileX PiPER (6 joints + parallel gripper) on CAN, driven by the [NervusOS PiPER driver](https://github.com/izhangfly/NervusOS-Cambridge/tree/main/hardware/piper) (`piper_webctl.py`, `127.0.0.1:8770`; a copy with its systemd units is in `driver/` of the standalone repository). Nothing here touches CAN: the robot class is an HTTP client of the driver, claiming the arm as client `smolvla`, so it never fights the other apps that use the arm (one controller at a time). |
 | Cameras | Served by the [NervusOS ACT engine](https://github.com/izhangfly/NervusOS-Cambridge/tree/main/act) as `GET /api/camera/<role>.jpg` (`127.0.0.1:8795`): `wrist` (Orbbec Dabai DC1 RGB) and `scene` (a third-person USB webcam), 640x480. The engine opens them by `/dev/v4l/by-id` name and releases them when idle; the first request wakes them. |
 | Robot host | Any Linux machine running those two services. It only runs the client: CPU torch, no GPU. |
 | Training and inference | An Apple-silicon Mac (16 GB fits batch 4 on MPS; one inference takes about 0.5 s), and optionally an NVIDIA GPU box reachable over ssh. |

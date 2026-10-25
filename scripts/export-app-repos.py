@@ -28,6 +28,12 @@ SDK = [
     ("src/nervus-ipc/jvm/protocol/src/main", "nervus-ipc/jvm/protocol/src/main"),
     ("src/nervus-ipc/LICENSE", "nervus-ipc/LICENSE"),
 ]
+DRIVER_ONLY = [
+    ("hardware/piper", "driver"),
+    ("hosted/libexec/can-up", "driver/can-up"),
+    ("hosted/udev/90-nervus-can.rules", "driver/90-nervus-can.rules"),
+    ("export/common/systemd", "driver/systemd"),
+]
 DRIVER = [
     ("hardware/piper", "driver"),
     ("hosted/libexec/can-up", "driver/can-up"),
@@ -80,7 +86,7 @@ REPOS = {
         "description": "Fine-tune and run SmolVLA on an AgileX PiPER with LeRobot: train on a Mac or a rented GPU, "
                        "serve the policy on the Mac, drive the arm from the robot host.",
         "topics": ["robotics", "vla", "smolvla", "lerobot", "agilex-piper"],
-        "paths": [("smolvla", ".")] + DRIVER,
+        "paths": [("smolvla", ".")] + DRIVER_ONLY,
     },
 }
 IGNORE = shutil.ignore_patterns("build", ".gradle", ".kotlin", "__pycache__", "*.pyc", ".pytest_cache",
