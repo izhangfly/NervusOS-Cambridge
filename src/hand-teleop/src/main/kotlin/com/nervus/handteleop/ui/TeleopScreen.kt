@@ -34,6 +34,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nervus.handteleop.app.Pipeline
 import com.nervus.handteleop.control.PinchMode
+import com.nervus.handteleop.control.PiperKinematics
+import com.nervus.handteleop.control.StartPoseStore
 import com.nervus.handteleop.control.RollMode
 import com.nervus.handteleop.control.TeleopSettings
 import com.nervus.handteleop.control.TeleopStatus
@@ -98,6 +100,9 @@ fun TeleopScreen(p: Pipeline) {
 
     val engaged = status.phase == TeleopStatus.Phase.ENGAGED || status.phase == TeleopStatus.Phase.HOLD ||
         (status.phase == TeleopStatus.Phase.ERROR && status.leaseEpoch != 0L && status.target != null)
+    val moving = status.phase == TeleopStatus.Phase.MOVING
+    val moveUnavailable = p.teleop.jointMoveUnavailable
+    var startPoseNote by remember { mutableStateOf<String?>(null) }
 
     Box(
         Modifier.fillMaxSize().background(Hud.bg)
@@ -105,7 +110,14 @@ fun TeleopScreen(p: Pipeline) {
             .onPreviewKeyEvent { e ->
                 if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 when (e.key) {
-                    Key.Spacebar -> { if (engaged) p.teleop.disengage() else p.teleop.engage(); true }
+                    Key.Spacebar -> {
+                        when {
+                            moving -> p.teleop.stopNow()
+                            engaged -> p.teleop.disengage()
+                            else -> p.teleop.engage()
+                        }
+                        true
+                    }
                     Key.Escape -> { p.teleop.stopNow(); true }
                     else -> false
                 }
@@ -116,7 +128,7 @@ fun TeleopScreen(p: Pipeline) {
             Box(Modifier.weight(1f).fillMaxHeight()) {
                 val frameColor = when (status.phase) {
                     TeleopStatus.Phase.ENGAGED -> Hud.cyan
-                    TeleopStatus.Phase.HOLD -> Hud.amber
+                    TeleopStatus.Phase.HOLD, TeleopStatus.Phase.MOVING, TeleopStatus.Phase.OUTSIDE -> Hud.amber
                     TeleopStatus.Phase.ERROR -> Hud.red
                     TeleopStatus.Phase.IDLE -> Hud.line
                 }
@@ -134,7 +146,10 @@ fun TeleopScreen(p: Pipeline) {
                                 drawImage(img, srcOffset = IntOffset.Zero, srcSize = IntSize(img.width, img.height),
                                     dstOffset = IntOffset(fit.left.toInt(), fit.top.toInt()), dstSize = IntSize(fit.width.toInt(), fit.height.toInt()))
                             }
-                            obs?.let { drawSkeleton(it, fit, p.settings) }
+                            obs?.let {
+                                drawSkeleton(it, fit, p.settings)
+                                if (status.gestureProgress > 0) drawFistRing(it, fit, p.settings.hand, status.gestureProgress, status.gestureEngages)
+                            }
                             drawScanFrame(fit, frameColor)
                         }
                         if (image == null) {
@@ -166,10 +181,42 @@ fun TeleopScreen(p: Pipeline) {
                                 TeleopStatus.Phase.HOLD -> "■ HOLD"
                                 TeleopStatus.Phase.ERROR -> "▲ ATTENTION"
                                 TeleopStatus.Phase.IDLE -> "○ STANDBY"
+                                TeleopStatus.Phase.OUTSIDE -> "▲ OUTSIDE THE WORKSPACE"
+                                TeleopStatus.Phase.MOVING -> "▶ MOVING TO THE START POSE"
                             },
                             style = Hud.title.copy(fontSize = 15.sp, color = frameColor),
                             modifier = Modifier.align(Alignment.TopEnd).padding(14.dp),
                         )
+                        if (status.phase == TeleopStatus.Phase.OUTSIDE) {
+                            // Engage was asked for with the arm outside the workspace: say so, big, and offer the way out.
+                            HudPanel(Modifier.align(Alignment.Center).width(520.dp), accent = Hud.amber, padding = 20.dp) {
+                                Text("THE ARM IS OUTSIDE THE WORKSPACE", style = Hud.title.copy(color = Hud.amber, fontSize = 18.sp))
+                                Spacer(Modifier.height(10.dp))
+                                Text(
+                                    if (moveUnavailable == null) "Move it to the start pose and engage? It goes slowly, joint by joint; STOP or Esc halts it."
+                                    else status.message,
+                                    style = Hud.value.copy(fontSize = 14.sp),
+                                )
+                                Spacer(Modifier.height(16.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    HudButton("MOVE TO START POSE", Hud.amber, Modifier.weight(1.6f), filled = true, enabled = moveUnavailable == null) {
+                                        p.teleop.goToStartPose(engageAfter = true)
+                                        runCatching { focus.requestFocus() }
+                                    }
+                                    HudButton("CANCEL", Hud.dim, Modifier.weight(1f)) {
+                                        p.teleop.cancelPrompt()
+                                        runCatching { focus.requestFocus() }
+                                    }
+                                }
+                            }
+                        }
+                        if (moving) {
+                            Column(Modifier.align(Alignment.BottomCenter).padding(bottom = 48.dp).width(420.dp)) {
+                                Text("MOVING TO THE START POSE · ESC STOPS", style = Hud.label.copy(color = Hud.amber))
+                                Spacer(Modifier.height(6.dp))
+                                Gauge((status.moveProgress ?: 0.0).toFloat(), Hud.amber)
+                            }
+                        }
                     }
                 }
             }
@@ -189,10 +236,12 @@ fun TeleopScreen(p: Pipeline) {
                     StatusChip("lease", if (status.leaseEpoch != 0L && engaged) "epoch ${status.leaseEpoch}" else "none", if (engaged) true else null)
                     StatusChip("servo", "%.0f Hz".format(status.servoHz), if (status.phase == TeleopStatus.Phase.ENGAGED) status.servoHz > 12f else null)
                 }
+                // The arm's state in words: what the chip's one word can't say (motors off, teach mode, who has it).
+                Text("ARM: ${status.armWords.uppercase()}", style = Hud.label.copy(color = if (status.armWords == "ready") Hud.green else Hud.amber))
 
                 HudPanel(accent = if (engaged) Hud.cyan else Hud.dim) {
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        HudButton(if (engaged) "DISENGAGE" else "ENGAGE", Hud.cyan, Modifier.weight(1.4f), filled = engaged) {
+                        HudButton(if (engaged) "DISENGAGE" else "ENGAGE", Hud.cyan, Modifier.weight(1.4f), filled = engaged, enabled = !moving) {
                             if (engaged) p.teleop.disengage() else p.teleop.engage()
                             runCatching { focus.requestFocus() }
                         }
@@ -205,6 +254,46 @@ fun TeleopScreen(p: Pipeline) {
                     Text(status.message, style = Hud.value.copy(fontSize = 13.sp, color = if (status.phase == TeleopStatus.Phase.ERROR) Hud.red else Hud.text))
                     Spacer(Modifier.height(4.dp))
                     Text("SPACE  engage / disengage     ESC  stop", style = Hud.label)
+                    Spacer(Modifier.height(10.dp))
+                    var gesture by remember { mutableStateOf(p.settings.fistGesture) }
+                    Segmented(listOf(true to "FIST GESTURE ON", false to "FIST GESTURE OFF"), gesture) { gesture = it; p.settings.fistGesture = it }
+                    Text("A fist held 1.5 s engages or disengages; while engaged a fist holds the arm (clutch).", style = Hud.label)
+                }
+
+                HudPanel(accent = Hud.amber) {
+                    HudLabel("start pose (joint move, no IK)")
+                    Spacer(Modifier.height(6.dp))
+                    val sp = p.teleop.startPose.joints
+                    val tcp = PiperKinematics.tcp(sp)
+                    Text(
+                        "J " + sp.joinToString("  ") { "%.0f".format(it) } + " deg" + if (p.teleop.startPose.isDefault) "  (READY)" else "  (saved)",
+                        style = Hud.value.copy(fontSize = 12.sp),
+                    )
+                    Text("TCP ${StartPoseStore.mm(tcp)}", style = Hud.label)
+                    Spacer(Modifier.height(8.dp))
+                    if (moving) {
+                        Gauge((status.moveProgress ?: 0.0).toFloat(), Hud.amber)
+                        Spacer(Modifier.height(8.dp))
+                    }
+                    Hint(moveUnavailable?.let { "Not available: $it" }) {
+                        HudButton("GO TO START POSE", Hud.amber, Modifier.fillMaxWidth(), enabled = moveUnavailable == null && !moving && !engaged) {
+                            p.teleop.goToStartPose()
+                            runCatching { focus.requestFocus() }
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        HudButton("SET START POSE HERE", Hud.dim, Modifier.weight(1.4f), enabled = !moving) {
+                            startPoseNote = p.teleop.setStartPoseHere()
+                        }
+                        HudButton("RESET", Hud.dim, Modifier.weight(1f), enabled = !moving && !p.teleop.startPose.isDefault) {
+                            startPoseNote = p.teleop.resetStartPose()
+                        }
+                    }
+                    startPoseNote?.let {
+                        Spacer(Modifier.height(6.dp))
+                        Text(it, style = Hud.label)
+                    }
                 }
 
                 HudPanel(accent = Hud.amber) {
@@ -361,6 +450,18 @@ private fun DrawScope.drawSkeleton(o: Observation, fit: Fit, settings: TeleopSet
             drawCircle(c, 9.dp.toPx(), Offset((a.x + b.x) / 2, (a.y + b.y) / 2), style = Stroke(2.dp.toPx()))
         }
     }
+}
+
+/** The fist countdown: a ring round the operator's palm that fills while the fist is held. */
+private fun DrawScope.drawFistRing(o: Observation, fit: Fit, operator: HandLandmarks.Side, progress: Double, engages: Boolean) {
+    val h = o.hands.firstOrNull { it.side == operator } ?: return
+    val ids = intArrayOf(0, 5, 9, 13, 17)
+    val c = fit.map(ids.map { h[it].x }.average().toFloat(), ids.map { h[it].y }.average().toFloat(), o.frame.width, o.frame.height)
+    val r = 46.dp.toPx()
+    val color = if (engages) Hud.cyan else Hud.amber
+    val tl = Offset(c.x - r, c.y - r)
+    drawCircle(color.copy(alpha = 0.25f), r, c, style = Stroke(6.dp.toPx()))
+    drawArc(color, -90f, (360 * progress).toFloat(), false, tl, Size(2 * r, 2 * r), style = Stroke(6.dp.toPx(), cap = StrokeCap.Round))
 }
 
 private fun DrawScope.glowLine(c: Color, a: Offset, b: Offset, w: Float) {

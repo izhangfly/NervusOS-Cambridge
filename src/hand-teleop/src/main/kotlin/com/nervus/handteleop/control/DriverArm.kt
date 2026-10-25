@@ -14,6 +14,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
@@ -112,8 +113,23 @@ class DriverArm(
 
     override val label = "PiPER driver · ${base.removePrefix("http://")}"
 
+    @Volatile
+    override var words: String = "-"
+        private set
+
+    override val jointMoveUnavailable: String? = null
+    override val confirmsMoves = false
+    private var lastBeat = 0L
+    private var speedBefore: Int? = null
+
     override fun state(): ArmState {
-        val st = fetchState()
+        val st = try {
+            fetchState()
+        } catch (e: Exception) {
+            words = "PiPER driver not reachable"
+            throw e
+        }
+        words = describe(st)
         val b = ArmState.newBuilder().setReadiness(readiness(st))
         if (st.bool("feedback_fresh")) {
             st.doubles("pose_current")?.let { p -> PiperPose.toPose(p)?.let { b.setTcpPose(it) } }
@@ -171,6 +187,38 @@ class DriverArm(
         }
     }
 
+    /**
+     * The start-pose move, in the driver's joint mode (MOVE J: no IK, so no singularity faults): the
+     * motors on if they are off, the speed down to [MOVE_SPEED] % for the move, then each joint's
+     * target. Joint targets are streamed by the driver only while a heartbeat is fresh (1.5 s), which
+     * [keepJointMove] sends every 0.5 s; /api/stop (STOP) holds the arm wherever it got to.
+     */
+    override fun startJointMove(jointsDeg: List<Double>, nowNanos: Long) {
+        require(jointsDeg.size == 6) { "6 joints" }
+        val st = fetchState()
+        ownerElse(st)?.let { throw ArmRefusedException("another app is controlling the arm ($it)") }
+        ensureEnabled(st)
+        speedBefore = (st["speed"] as? JsonPrimitive)?.intOrNull
+        post("/api/speed", buildJsonObject { put("speed", MOVE_SPEED) })
+        jointsDeg.forEachIndexed { i, deg ->
+            post("/api/joint", buildJsonObject { put("joint", i + 1); put("deg", deg) })
+        }
+        lastBeat = nowNanos
+    }
+
+    override fun keepJointMove(nowNanos: Long) {
+        if (nowNanos - lastBeat >= 500_000_000L) {
+            post("/api/heartbeat", JsonObject(emptyMap()))
+            lastBeat = nowNanos
+        }
+    }
+
+    override fun endJointMove() {
+        val s = speedBefore ?: return
+        speedBefore = null
+        runCatching { post("/api/speed", buildJsonObject { put("speed", s) }) }
+    }
+
     /** Runs [block]; if the driver says the motors are off, enables them (when it's safe) and tries once more. */
     private fun withEnable(block: () -> Unit) {
         try {
@@ -206,6 +254,17 @@ class DriverArm(
         val o = st["owner"] as? JsonObject ?: return null
         val c = (o["client"] as? JsonPrimitive)?.content ?: return null
         return c.takeIf { it != client }
+    }
+
+    /** The driver's view in the operator's words. */
+    private fun describe(st: JsonObject): String = when {
+        !st.bool("feedback_fresh") -> "not powered (no feedback from the arm)"
+        st.bool("estopped") -> "e-stopped: press Recover in Robot Arm or the driver panel"
+        st.str("arm_status") != "NORMAL" && !st.bool("soft_fault") -> "fault ${st.str("arm_status")}: press Recover"
+        st.bool("teaching") -> "teach mode (being drag-taught)"
+        ownerElse(st) != null -> "controlled by another app (${ownerElse(st)})"
+        !st.bool("enabled") -> "motors off (engaging turns them on)"
+        else -> "ready"
     }
 
     private fun readiness(st: JsonObject): ArmReadiness = when {
@@ -246,6 +305,8 @@ class DriverArm(
         /** The gripper's opening is mapped onto 0..70 mm, as piperd does (the driver allows up to 95). */
         const val MAX_GRIP_MM = 70.0
         const val NOT_ENABLED = "motors are not enabled"
+        /** Driver speed (% of rated) for the start-pose move: slow enough to watch and stop. */
+        const val MOVE_SPEED = 12
 
         /** The driver's 409 body, in words for the operator. */
         fun refusal(body: String): String {

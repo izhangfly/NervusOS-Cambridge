@@ -59,6 +59,11 @@ class TeleopSettings {
     @Volatile var focalFraction: Double = 0.7
     /** Wrist roll turns the tool about its own axis; the other two wrist angles stay as engaged. */
     @Volatile var rollMode: RollMode = RollMode.ON
+    /**
+     * Hands-free engage: a fist held 1.5 s engages, and disengages when engaged; while engaged a fist is
+     * a clutch (the arm holds, and the hand is anchored afresh when it opens).
+     */
+    @Volatile var fistGesture: Boolean = true
     @Volatile var gripperEffortNm: Double = 1.0
     /**
      * Pinch ratio at which the gripper is fully closed / fully open. The ratio is a 3-D distance over the
@@ -76,6 +81,8 @@ data class TeleopStatus(
     val phase: Phase = Phase.IDLE,
     val message: String = "Raise your hand and press ENGAGE",
     val armReadiness: String = "-",
+    /** The arm's state in words: ready, motors off, teach mode, controlled by another app... */
+    val armWords: String = "-",
     val tcp: Pose? = null,
     val target: Pose? = null,
     val gripper: Double = 0.0,
@@ -89,12 +96,22 @@ data class TeleopStatus(
     val handRollDeg: Double? = null,
     val toolRollDeg: Double = 0.0,
     val rollMode: RollMode = RollMode.ON,
+    /** The start-pose move's progress, 0..1, while [Phase.MOVING]. */
+    val moveProgress: Double? = null,
+    /** How far through a held fist, 0..1 (0 when none), and whether it will engage (else disengage). */
+    val gestureProgress: Double = 0.0,
+    val gestureEngages: Boolean = true,
 ) {
-    enum class Phase { IDLE, ENGAGED, HOLD, ERROR }
+    /**
+     * IDLE: not in control. OUTSIDE: engage was asked for, but the arm is outside the workspace; the UI
+     * offers the start pose. MOVING: going to the start pose. ENGAGED / HOLD: in control, following or
+     * holding. ERROR: in control (or trying), but the last command was refused.
+     */
+    enum class Phase { IDLE, OUTSIDE, MOVING, ENGAGED, HOLD, ERROR }
 }
 
 /**
- * Maps the operator's hand to the arm.
+ * Maps the operator's hand to the arm. SPEC.md next to this app is the definition of what it does.
  *
  * Engage is a clutch: at the moment you engage (and again whenever a lost hand comes back) the
  * current hand position is anchored to the arm's current pose, and from then on the arm follows the
@@ -104,16 +121,20 @@ data class TeleopStatus(
  * up/down moves it up/down, and toward the camera reaches forward. Rolling the wrist turns the tool
  * about its own axis; its other two angles stay as they were at the anchor. The gripper follows the
  * pinch. At the edge of the workspace the anchor slips along, so the arm comes back as soon as the
- * hand does.
+ * hand does. A fist held 1.5 s engages or disengages; a shorter fist is a clutch.
  *
- * Safety: a HUMAN ControlLease is held only while engaged, the kernel refuses commands without it,
- * every command feeds the lease's 300 ms deadman, and the arm holds still the moment the hand is lost.
- * Frames where tracking jumps are dropped; three in a row count as a lost hand.
+ * Teleop can only start inside the workspace. Outside it (the PiPER at rest is folded below it), the
+ * start pose is a slow joint-space move there, offered instead of a refusal.
+ *
+ * Safety: control (a HUMAN ControlLease, or the driver's ownership) is held only while engaged or
+ * moving, every command feeds a deadman, and the arm holds still the moment the hand is lost. Frames
+ * where tracking jumps are dropped; three in a row count as a lost hand.
  */
 class Teleop(
     private val arm: Arm,
     private val settings: TeleopSettings,
     private val log: Logger,
+    val startPose: StartPoseStore = StartPoseStore(null, log),
 ) {
     @Volatile
     var status = TeleopStatus()
@@ -123,9 +144,14 @@ class Teleop(
     private var engageRequested = false
     @Volatile
     private var disengageRequested = false
+    @Volatile
+    private var moveRequested: Boolean? = null // engage after the move?
+    @Volatile
+    private var cancelRequested = false
     private var lease: ArmControl? = null
     private var anchor: Anchor? = null
     private var meas: Measurement? = null
+    private var move: Move? = null
     private var lastObsAt = 0L
     private var lastTickAt = 0L
     private var lastRenew = 0L
@@ -133,12 +159,16 @@ class Teleop(
     private var lastGripAt = 0L
     private var lastHandAt = 0L
     private var holding = false
+    private var clutched = false
     private var note: String? = null
     private var noteUntil = 0L
+    private var noteIsError = false
     private var servoCount = 0
     private var servoWindow = System.nanoTime()
+    @Volatile
     private var lastState: ArmState? = null
     private var lastStateAt = 0L
+    private val fist = HoldTimer()
     private val fx = OneEuro(1.0, 0.015)
     private val fy = OneEuro(1.0, 0.015)
     // Depth is a ratio of small lengths and the noisiest of the three, so it is smoothed harder.
@@ -159,16 +189,42 @@ class Teleop(
         val q0: Quat? = Quat(tcp.qx, tcp.qy, tcp.qz, tcp.qw).unit()
     }
 
+    /** A start-pose move in progress. */
+    private class Move(val target: List<Double>, val startedAt: Long, val engageAfter: Boolean) {
+        var initialError = Double.NaN
+    }
+
     private enum class Frame { ACCEPTED, EDGE_ON, DROPPED, RESET, UNMEASURABLE }
+
+    /** Why this path can't move to the start pose, for the UI; null when it can. */
+    val jointMoveUnavailable: String? get() = arm.jointMoveUnavailable
 
     fun engage() { engageRequested = true }
     fun disengage() { disengageRequested = true }
 
-    /** Emergency: stop the arm now and give up control. Callable from any thread. */
+    /** Moves the arm to the start pose in joint space, then engages if [engageAfter]. */
+    fun goToStartPose(engageAfter: Boolean = false) { moveRequested = engageAfter }
+
+    /** Dismisses the outside-the-workspace prompt. */
+    fun cancelPrompt() { cancelRequested = true }
+
+    /** Emergency: stop the arm now (a start-pose move too) and give up control. Callable from any thread. */
     fun stopNow() {
         disengageRequested = true
         runCatching { arm.stop() }
     }
+
+    /** "Set start pose here": the arm's current joints, if its TCP is inside the workspace. Returns what happened. */
+    fun setStartPoseHere(): String {
+        val st = lastState ?: return "No arm state yet"
+        val j = jointsDeg(st) ?: return "The arm's joints aren't known (is it powered?)"
+        val tcp = if (st.hasTcpPose()) Vec3(st.tcpPose.x, st.tcpPose.y, st.tcpPose.z) else PiperKinematics.tcp(j)
+        if (tcp !in WORKSPACE) return "Not saved: the arm is outside the workspace here (${StartPoseStore.mm(tcp)})"
+        return startPose.save(j)?.let { "Not saved: $it" } ?: "Start pose saved"
+    }
+
+    /** "Reset start pose": back to the driver's READY pose. Returns what happened. */
+    fun resetStartPose(): String = startPose.reset()?.let { "Start pose reset, but $it" } ?: "Start pose reset to READY"
 
     /** One control tick (call at ~20 Hz with the newest observation). */
     fun tick(obs: Observation?, nowNanos: Long) {
@@ -178,14 +234,42 @@ class Teleop(
         if (disengageRequested) {
             disengageRequested = false
             engageRequested = false
-            release("Disengaged")
+            moveRequested = null
+            if (move != null) endMove("Move to the start pose stopped") else release("Disengaged")
             return
         }
+        if (cancelRequested) {
+            cancelRequested = false
+            if (status.phase == TeleopStatus.Phase.OUTSIDE) status = status.copy(phase = TeleopStatus.Phase.IDLE, message = "Press ENGAGE (Space) to take control")
+        }
+        if (move != null) {
+            stepMove(nowNanos)
+            return
+        }
+        moveRequested?.let { engageAfter ->
+            moveRequested = null
+            startMove(engageAfter, nowNanos)
+            return
+        }
+
         val hand = obs?.hands?.firstOrNull { it.side == settings.hand }
         val metrics = hand?.let { HandMetrics.of(it) }
         val frameW = obs?.frame?.width ?: 640
         val frameH = obs?.frame?.height ?: 480
         val focal = settings.focalFraction * frameW
+
+        // The fist gesture: held 1.5 s it engages (or disengages); while engaged, any fist is a clutch.
+        val isFist = settings.fistGesture && hand != null && HandGesture.isFist(hand.world)
+        if (fist.update(isFist, nowNanos)) {
+            if (lease == null) {
+                engageRequested = true
+                clutched = true // anchor once the fist opens, not on the fist itself
+            } else {
+                release("Disengaged (fist)")
+                return
+            }
+        }
+        status = status.copy(gestureProgress = fist.progress(nowNanos), gestureEngages = lease == null)
 
         if (engageRequested && lease == null) {
             engageRequested = false
@@ -193,15 +277,12 @@ class Teleop(
                 status = status.copy(phase = TeleopStatus.Phase.IDLE, message = "Show your ${settings.hand.name.lowercase()} hand to the camera first")
                 return
             }
-            try {
-                val c = arm.acquire()
-                lease = c
-                lastRenew = nowNanos
-                log.info("${c.description}, epoch ${c.epoch}")
-            } catch (e: Exception) {
-                status = status.copy(phase = TeleopStatus.Phase.ERROR, message = leaseText(e), lastError = e.message)
+            if (outsideWorkspace()) {
+                // Don't take control just to give it back: offer the start pose instead.
+                prompt()
                 return
             }
+            if (!takeControl(nowNanos)) return
             anchor = null
             meas = null
             lastObsAt = 0
@@ -209,14 +290,23 @@ class Teleop(
         }
         val l = lease
         if (l == null) {
-            status = status.copy(
-                phase = TeleopStatus.Phase.IDLE,
+            clutched = false
+            val idle = status.copy(
                 pinch = metrics?.let { pinchOf(it) } ?: 0.0,
                 handDistance = metrics?.depth(focal),
                 handRollDeg = null,
                 toolRollDeg = 0.0,
                 rollMode = settings.rollMode,
-                message = if (metrics == null) "Raise your ${settings.hand.name.lowercase()} hand into view" else "Press ENGAGE (Space) to take control",
+                moveProgress = null,
+            )
+            // The outside-the-workspace prompt stays up until it's answered.
+            val n = noteNow(nowNanos)
+            status = if (status.phase == TeleopStatus.Phase.OUTSIDE) idle else idle.copy(
+                phase = if (n != null && noteIsError) TeleopStatus.Phase.ERROR else TeleopStatus.Phase.IDLE,
+                message = n
+                    ?: if (metrics == null) "Raise your ${settings.hand.name.lowercase()} hand into view"
+                    else if (settings.fistGesture) "Press ENGAGE (Space), or hold a fist for 1.5 s, to take control"
+                    else "Press ENGAGE (Space) to take control",
             )
             return
         }
@@ -239,9 +329,31 @@ class Teleop(
                 }
                 lastRenew = nowNanos
             } catch (e: Exception) {
-                release(leaseText(e))
+                release(leaseText(e), error = true)
                 return
             }
+        }
+
+        // A fist while engaged is a clutch: the arm and gripper hold, and the hand is anchored afresh when
+        // it opens, so it can be repositioned without moving the arm (the AgileX demo's open-hand rule).
+        if (fist.held && settings.fistGesture) {
+            if (!clutched) {
+                clutched = true
+                runCatching { arm.stop() }
+            }
+            anchor = null
+            lastObsAt = obs.atNanos // the fist's frames don't count as hand positions
+            status = status.copy(
+                phase = TeleopStatus.Phase.HOLD,
+                message = if (fist.spent) "Engaged: open your hand to start moving the arm"
+                else "Fist: arm holding. Open your hand to move on, or keep the fist to disengage",
+            )
+            return
+        }
+        if (clutched) {
+            clutched = false
+            meas = null
+            resetFilters()
         }
 
         // Each vision frame is measured once. The ticks in between send the same target again, which
@@ -278,8 +390,9 @@ class Teleop(
             val at = Vec3(tcp.x, tcp.y, tcp.z)
             if (at !in WORKSPACE) {
                 // Folded at rest, or somewhere teleop can't start from: dragging the target into the box
-                // from there makes the arm look for an IK solution it often can't find.
-                release("The arm is outside the teleop workspace (folded?). Open Robot Arm, press HOME (ready pose), then engage again")
+                // from there makes the arm look for an IK solution it often can't find. Offer the start pose.
+                release("The arm is outside the workspace")
+                prompt()
                 return
             }
             anchor = Anchor(m, tcp, SlipAnchor(at, WORKSPACE))
@@ -295,7 +408,9 @@ class Teleop(
         val up = -settings.gainUp * d.y
         val reach = -settings.gainReach * d.z
         // Pushed past the edge of the workspace, the anchor slides along, so turning back moves the arm at once.
+        val raw = a.base.base + Vec3(reach, side, up)
         val p = a.base.target(Vec3(reach, side, up))
+        val atEdge = (raw - p).norm() > 1e-6
 
         // Roll only (the paper's choice): the twist about the anchor's finger axis. Pitch and yaw of the
         // hand would need the arm's wrist to follow through poses IK often can't reach from a webcam's view.
@@ -316,7 +431,7 @@ class Teleop(
         } catch (e: ArmRefusedException) {
             // The lease may have lapsed (deadman, pre-empted), or the driver is holding the arm (busy, IK
             // guard): show why, renew next tick, then re-anchor on wherever the arm really is.
-            err = "servo refused: ${e.message}"
+            err = "Arm holding, servo refused: ${e.message}"
             lastRenew = 0
             anchor = null
         } catch (e: Exception) {
@@ -341,7 +456,9 @@ class Teleop(
         }
         status = status.copy(
             phase = if (err == null) TeleopStatus.Phase.ENGAGED else TeleopStatus.Phase.ERROR,
-            message = err ?: note?.takeIf { nowNanos < noteUntil } ?: "Engaged: the arm follows your ${settings.hand.name.lowercase()} hand",
+            message = err ?: noteNow(nowNanos)
+                ?: if (atEdge) "At the edge of the workspace: the arm stops there and comes back as soon as your hand does"
+                else "Engaged: the arm follows your ${settings.hand.name.lowercase()} hand",
             target = target,
             gripper = opening,
             pinch = m.pinch,
@@ -353,6 +470,135 @@ class Teleop(
             rollMode = settings.rollMode,
         )
     }
+
+    // ---------------------------------------------------------------- start pose
+
+    private fun outsideWorkspace(): Boolean {
+        val st = lastState ?: return false
+        if (!st.hasTcpPose()) return false
+        return Vec3(st.tcpPose.x, st.tcpPose.y, st.tcpPose.z) !in WORKSPACE
+    }
+
+    private fun prompt() {
+        val canMove = arm.jointMoveUnavailable == null
+        status = status.copy(
+            phase = TeleopStatus.Phase.OUTSIDE,
+            message = if (canMove) "The arm is outside the workspace: move it to the start pose?"
+            else "The arm is outside the workspace, and this connection can't move it to the start pose (${arm.jointMoveUnavailable}). Move it into the workspace first",
+            target = null,
+        )
+    }
+
+    private fun takeControl(nowNanos: Long): Boolean {
+        if (lease != null) return true
+        return try {
+            val c = arm.acquire()
+            lease = c
+            lastRenew = nowNanos
+            log.info("${c.description}, epoch ${c.epoch}")
+            true
+        } catch (e: Exception) {
+            flag(leaseText(e), nowNanos, NOTE_NS, error = true)
+            status = status.copy(phase = TeleopStatus.Phase.ERROR, message = leaseText(e), lastError = e.message)
+            false
+        }
+    }
+
+    private fun startMove(engageAfter: Boolean, nowNanos: Long) {
+        arm.jointMoveUnavailable?.let {
+            flag("Can't move to the start pose: $it", nowNanos, NOTE_NS, error = true)
+            status = status.copy(phase = TeleopStatus.Phase.ERROR, message = "Can't move to the start pose: $it")
+            return
+        }
+        fist.reset()
+        if (!takeControl(nowNanos)) return
+        anchor = null
+        meas = null
+        val target = startPose.joints
+        try {
+            arm.startJointMove(target, nowNanos)
+        } catch (e: Exception) {
+            release("Can't move to the start pose: ${e.message}", error = true)
+            return
+        }
+        log.info("moving to the start pose $target")
+        move = Move(target, nowNanos, engageAfter).also { mv -> lastState?.let { jointsDeg(it) }?.let { mv.initialError = maxError(it, target).second } }
+        lastStateAt = 0 // read the joints again right away
+        status = status.copy(
+            phase = TeleopStatus.Phase.MOVING,
+            moveProgress = 0.0,
+            gestureProgress = 0.0,
+            target = null,
+            message = if (arm.confirmsMoves) "Moving to the start pose (confirm it on screen)" else "Moving to the start pose",
+        )
+    }
+
+    /** One tick of the start-pose move: keep it alive, watch the joints, finish or give up. */
+    private fun stepMove(nowNanos: Long) {
+        val mv = move ?: return
+        try {
+            lease?.let { l ->
+                // A NervusOS HUMAN lease has a 300 ms deadman, and a move sends no commands of its own.
+                if (nowNanos - lastRenew > 200_000_000L) {
+                    l.renew()
+                    lastRenew = nowNanos
+                }
+            }
+            arm.keepJointMove(nowNanos)
+        } catch (e: Exception) {
+            endMove("Move to the start pose stopped: ${e.message}", error = true)
+            return
+        }
+        val cur = lastState?.let { jointsDeg(it) }
+        if (cur != null) {
+            val (worst, err) = maxError(cur, mv.target)
+            if (mv.initialError.isNaN()) mv.initialError = err
+            if (err <= ARRIVED_DEG) {
+                finishMove(mv, nowNanos)
+                return
+            }
+            val limit = MOVE_TIMEOUT_NS + if (arm.confirmsMoves) CONFIRM_GRACE_NS else 0L
+            if (nowNanos - mv.startedAt > limit) {
+                endMove("The start pose wasn't reached in ${MOVE_TIMEOUT_NS / 1_000_000_000L} s (J${worst + 1} is ${"%.0f".format(err)} deg short): arm stopped", error = true)
+                return
+            }
+            val p = if (mv.initialError > ARRIVED_DEG) (1 - (err - ARRIVED_DEG) / (mv.initialError - ARRIVED_DEG)).coerceIn(0.0, 1.0) else 0.0
+            status = status.copy(
+                phase = TeleopStatus.Phase.MOVING,
+                moveProgress = p,
+                message = "Moving to the start pose: ${"%.0f".format(err)} deg to go (J${worst + 1}). STOP or Esc aborts",
+            )
+        } else if (nowNanos - mv.startedAt > MOVE_TIMEOUT_NS) {
+            endMove("The start pose move stopped: no joint feedback from the arm", error = true)
+        }
+    }
+
+    private fun finishMove(mv: Move, nowNanos: Long) {
+        move = null
+        runCatching { arm.endJointMove() }
+        log.info("at the start pose")
+        if (mv.engageAfter && lease != null) {
+            anchor = null
+            meas = null
+            lastObsAt = 0
+            holding = false
+            resetFilters()
+            flag("At the start pose: engaged", nowNanos)
+            status = status.copy(phase = TeleopStatus.Phase.HOLD, moveProgress = null, message = "At the start pose: engaged. Show your hand")
+        } else {
+            release("At the start pose. Press ENGAGE (Space) to take control")
+        }
+    }
+
+    /** The move is over without arriving (STOP, refused, timed out): hold the arm where it is and give up control. */
+    private fun endMove(message: String, error: Boolean = false) {
+        move = null
+        runCatching { arm.endJointMove() }
+        log.info(message)
+        release(message, error) // stops the arm, so it holds where it got to
+    }
+
+    // ---------------------------------------------------------------- measuring
 
     /** Gates one new vision frame and, if it passes, filters it into [meas]. */
     private fun measure(h: HandLandmarks, m: HandMetrics, frameW: Int, frameH: Int, focal: Double, t: Long): Frame {
@@ -400,41 +646,55 @@ class Teleop(
         roll.reset()
     }
 
-    /** Shows [text] in place of the usual message for a second, so a one-frame event can be read. */
-    private fun flag(text: String, nowNanos: Long) {
+    /**
+     * Shows [text] in place of the usual message for a while (a second by default), so that a one-frame
+     * event, or why control was given up, can be read before the next tick's message replaces it.
+     */
+    private fun flag(text: String, nowNanos: Long, forNanos: Long = 1_000_000_000L, error: Boolean = false) {
         note = text
-        noteUntil = nowNanos + 1_000_000_000L
+        noteUntil = nowNanos + forNanos
+        noteIsError = error
     }
 
+    private fun noteNow(nowNanos: Long): String? = note?.takeIf { nowNanos < noteUntil }
+
     private fun refreshState(nowNanos: Long) {
-        if (nowNanos - lastStateAt < 200_000_000L) return
+        // Five times a second, ten while a move is watching the joints.
+        val period = if (move != null) 100_000_000L else 200_000_000L
+        if (nowNanos - lastStateAt < period) return
         lastStateAt = nowNanos
         try {
             val st = arm.state()
             lastState = st
             status = status.copy(
                 armReadiness = st.readiness.name.removePrefix("ARM_READINESS_"),
+                armWords = arm.words,
                 tcp = if (st.hasTcpPose()) st.tcpPose else null,
             )
         } catch (e: Exception) {
-            status = status.copy(armReadiness = "UNREACHABLE")
+            status = status.copy(armReadiness = "UNREACHABLE", armWords = arm.words)
         }
     }
 
-    private fun release(message: String) {
+    /** Gives up control, stopping the arm where it is. [message] stays on screen for a few seconds. */
+    private fun release(message: String, error: Boolean = false) {
         val l = lease
         lease = null
         anchor = null
         meas = null
         holding = false
-        note = null
+        clutched = false
+        flag(message, lastTickAt, NOTE_NS, error)
         resetFilters()
         if (l != null) {
             runCatching { arm.stop() }
             runCatching { l.release() }
         }
         lastGripSent = -1.0
-        status = status.copy(phase = TeleopStatus.Phase.IDLE, message = message, target = null, handRollDeg = null, toolRollDeg = 0.0)
+        status = status.copy(
+            phase = if (error) TeleopStatus.Phase.ERROR else TeleopStatus.Phase.IDLE,
+            message = message, target = null, handRollDeg = null, toolRollDeg = 0.0, moveProgress = null,
+        )
     }
 
     private fun leaseText(e: Throwable): String = when (e) {
@@ -442,7 +702,9 @@ class Teleop(
         else -> "Could not take control of the arm: ${(e.cause ?: e).message}"
     }
 
-    fun shutdown() = release("Closed")
+    fun shutdown() {
+        if (move != null) endMove("Closed") else release("Closed")
+    }
 
     companion object {
         // Metres in base_link, a little inside the driver's own box.
@@ -453,5 +715,22 @@ class Teleop(
 
         /** A frame whose palm bones look shorter than this fraction of the anchor's is taken as edge-on. */
         const val EDGE_ON = 0.4
+
+        /** How long a reason for giving up control stays on screen. */
+        const val NOTE_NS = 5_000_000_000L
+
+        /** The start pose is reached when every joint is this close (degrees). */
+        const val ARRIVED_DEG = 1.0
+        const val MOVE_TIMEOUT_NS = 25_000_000_000L
+        /** Extra time for a move that waits for the user's confirmation first (NervusOS). */
+        const val CONFIRM_GRACE_NS = 60_000_000_000L
+
+        /** The joints of [st] in degrees, or null when the arm doesn't report six. */
+        fun jointsDeg(st: ArmState): List<Double>? =
+            st.joints.positionRadList.takeIf { st.hasJoints() && it.size == 6 }?.map { Math.toDegrees(it) }
+
+        /** The joint furthest from its target, and by how much (degrees). */
+        fun maxError(cur: List<Double>, target: List<Double>): Pair<Int, Double> =
+            cur.indices.map { it to kotlin.math.abs(cur[it] - target[it]) }.maxBy { it.second }
     }
 }

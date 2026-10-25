@@ -12,6 +12,8 @@ import com.nervus.handteleop.camera.V4l2Source
 import com.nervus.handteleop.control.Arm
 import com.nervus.handteleop.control.ArmLink
 import com.nervus.handteleop.control.DriverArm
+import com.nervus.handteleop.control.OperationCaller
+import com.nervus.handteleop.control.StartPoseStore
 import com.nervus.handteleop.control.Teleop
 import com.nervus.handteleop.control.TeleopSettings
 import com.nervus.handteleop.control.TeleopStatus
@@ -129,9 +131,14 @@ class HandTeleopApp : NervusApp(
         private set
 
     override fun onReady() {
-        val arm = ArmLink(caller) {
-            acquireControl("nervus.resource.manipulator.arm", "arm.main", ControllerClass.CONTROLLER_CLASS_HUMAN)
-        }
+        val arm = ArmLink(
+            caller,
+            leaseFactory = {
+                acquireControl("nervus.resource.manipulator.arm", "arm.main", ControllerClass.CONTROLLER_CLASS_HUMAN)
+            },
+            // The start-pose move is Manipulator@1 MoveJointTrajectory, a long task (an operation).
+            operations = OperationCaller { iface, method, payload, timeout -> callOperation(iface, method, payload, timeout) },
+        )
         pipeline = Pipeline(CameraSource(caller, logger), arm, logger)
         pipeline.start()
         attachComposeDesktop(title = "Hand Teleop", width = 1600.dp, height = 900.dp) {
@@ -151,10 +158,12 @@ class Pipeline(
     private val log: Logger,
     /** Running without NervusOS (for the UI's labels). */
     val standalone: Boolean = false,
+    /** Where "Set start pose here" saves (null: nowhere, for tests). */
+    startPoseFile: java.io.File? = StartPoseStore.defaultFile(),
 ) : AutoCloseable {
     val settings = TeleopSettings()
     val armLabel = arm.label
-    val teleop = Teleop(arm, settings, log)
+    val teleop = Teleop(arm, settings, log, StartPoseStore(startPoseFile, log))
     private val latest = AtomicReference<Observation?>(null)
 
     @Volatile var visionError: String? = null
