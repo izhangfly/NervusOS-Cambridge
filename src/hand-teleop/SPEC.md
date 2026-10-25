@@ -108,7 +108,7 @@ In the operator's axes, as the robot copies them: `forward = -V.z`, `up = -V.y`,
 
 with `O = (0, 0, 0.123)` m, the robot's shoulder (the J2 axis, d1 = 123 mm above the base), and `s` the
 ARM SCALE: the robot's reach over your arm's length, shoulder to palm, 0.50 / 0.62 = 0.81 by default.
-RAISE TARGETS (`lift`, 0 by default) shifts every target up, for working with the hand below shoulder
+RAISE TARGETS (`lift`, 0.15 m by default) shifts every target up, for working with the hand below shoulder
 height: the robot's shoulder is only 12 cm above the table, so with lift 0 a hand at chest height asks
 for the table.
 
