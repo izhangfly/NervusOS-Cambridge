@@ -57,10 +57,29 @@ class TeleopUiTest {
     }
 
     @Test
-    fun `outside the workspace the screen offers the start pose, shows the move, and STOP ends it`() = FakePiper(List(6) { 0.0 }).use { fake ->
-        val p = Pipeline(StillCamera(), DriverArm(fake.url, log = log, enableSettleMs = 0), log, standalone = true, startPoseFile = null)
+    fun `mirror mode shows the shoulder-to-hand vector and the target before engaging`() = FakePiper(com.nervus.handteleop.control.PiperKinematics.READY_POSE).use { fake ->
+        val p = Pipeline(StillCamera(), DriverArm(fake.url, log = log, enableSettleMs = 0), log, standalone = true, settingsFile = null, tickLogDir = null)
         runSkikoComposeUiTest {
             mainClock.autoAdvance = false
+            setContent { TeleopScreen(p) }
+            repeat(6) {
+                p.teleop.tick(com.nervus.handteleop.SyntheticPerson.reaching(1.6, Vec3(0.0, 0.0, -0.40), now), now)
+                now += 50_000_000L
+            }
+            mainClock.advanceTimeBy(100)
+            onNodeWithText("MIRROR MY ARM").assertExists()
+            onNodeWithText("SHOULDER → HAND  FWD +40 · SIDE +0 · UP +0 CM").assertExists()
+            onNodeWithText("TARGET 323 0 123 MM").assertExists()
+            onNodeWithText("CALIBRATE ARM").assertExists()
+        }
+    }
+
+    @Test
+    fun `outside the workspace the screen offers the start pose, shows the move, and STOP ends it`() = FakePiper(List(6) { 0.0 }).use { fake ->
+        val p = Pipeline(StillCamera(), DriverArm(fake.url, log = log, enableSettleMs = 0), log, standalone = true, settingsFile = null, tickLogDir = null)
+        runSkikoComposeUiTest {
+            mainClock.autoAdvance = false
+            p.settings.controlMode = com.nervus.handteleop.control.ControlMode.RELATIVE // the prompt is the clutch mode's
             setContent { TeleopScreen(p) }
             tick(p, 5)
             onNodeWithText("ARM: MOTORS OFF (ENGAGING TURNS THEM ON)").assertExists()

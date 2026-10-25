@@ -33,6 +33,7 @@ class TeleopFlowTest {
     private fun start(joints: List<Double>) {
         fake.close()
         fake = FakePiper(joints)
+        settings.controlMode = ControlMode.RELATIVE // these are the clutch mode's flows; MirrorFlowTest has the other
         teleop = Teleop(DriverArm(fake.url, log = log, enableSettleMs = 0), settings, log, StartPoseStore(null, log))
     }
 

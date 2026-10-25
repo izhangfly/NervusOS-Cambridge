@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nervus.handteleop.app.Pipeline
+import com.nervus.handteleop.control.ControlMode
 import com.nervus.handteleop.control.PinchMode
 import com.nervus.handteleop.control.PiperKinematics
 import com.nervus.handteleop.control.StartPoseStore
@@ -99,6 +100,7 @@ fun TeleopScreen(p: Pipeline) {
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
 
     val engaged = status.phase == TeleopStatus.Phase.ENGAGED || status.phase == TeleopStatus.Phase.HOLD ||
+        status.phase == TeleopStatus.Phase.APPROACH ||
         (status.phase == TeleopStatus.Phase.ERROR && status.leaseEpoch != 0L && status.target != null)
     val moving = status.phase == TeleopStatus.Phase.MOVING
     val moveUnavailable = p.teleop.jointMoveUnavailable
@@ -127,7 +129,8 @@ fun TeleopScreen(p: Pipeline) {
             // ---------------------------------------------------------------- video
             Box(Modifier.weight(1f).fillMaxHeight()) {
                 val frameColor = when (status.phase) {
-                    TeleopStatus.Phase.ENGAGED -> Hud.cyan
+                    TeleopStatus.Phase.ENGAGED, TeleopStatus.Phase.APPROACH -> Hud.cyan
+                    TeleopStatus.Phase.CALIBRATING -> Hud.magenta
                     TeleopStatus.Phase.HOLD, TeleopStatus.Phase.MOVING, TeleopStatus.Phase.OUTSIDE -> Hud.amber
                     TeleopStatus.Phase.ERROR -> Hud.red
                     TeleopStatus.Phase.IDLE -> Hud.line
@@ -148,6 +151,7 @@ fun TeleopScreen(p: Pipeline) {
                             }
                             obs?.let {
                                 drawSkeleton(it, fit, p.settings)
+                                if (status.mode == ControlMode.MIRROR) drawShoulderToHand(it, fit, p.settings.hand)
                                 if (status.gestureProgress > 0) drawFistRing(it, fit, p.settings.hand, status.gestureProgress, status.gestureEngages)
                             }
                             drawScanFrame(fit, frameColor)
@@ -183,6 +187,8 @@ fun TeleopScreen(p: Pipeline) {
                                 TeleopStatus.Phase.IDLE -> "○ STANDBY"
                                 TeleopStatus.Phase.OUTSIDE -> "▲ OUTSIDE THE WORKSPACE"
                                 TeleopStatus.Phase.MOVING -> "▶ MOVING TO THE START POSE"
+                                TeleopStatus.Phase.APPROACH -> "▶ MOVING TO YOUR HAND"
+                                TeleopStatus.Phase.CALIBRATING -> "◎ CALIBRATING"
                             },
                             style = Hud.title.copy(fontSize = 15.sp, color = frameColor),
                             modifier = Modifier.align(Alignment.TopEnd).padding(14.dp),
@@ -208,6 +214,14 @@ fun TeleopScreen(p: Pipeline) {
                                         runCatching { focus.requestFocus() }
                                     }
                                 }
+                            }
+                        }
+                        Diagnostics(status, Modifier.align(Alignment.BottomEnd).padding(14.dp))
+                        if (status.phase == TeleopStatus.Phase.CALIBRATING) {
+                            Column(Modifier.align(Alignment.BottomCenter).padding(bottom = 48.dp).width(420.dp)) {
+                                Text("CALIBRATING · ARM STRAIGHT OUT SIDEWAYS, LEVEL", style = Hud.label.copy(color = Hud.magenta))
+                                Spacer(Modifier.height(6.dp))
+                                Gauge((status.calibration ?: 0.0).toFloat(), Hud.magenta)
                             }
                         }
                         if (moving) {
@@ -296,6 +310,37 @@ fun TeleopScreen(p: Pipeline) {
                     }
                 }
 
+                HudPanel(accent = Hud.cyan) {
+                    HudLabel("control mode")
+                    Spacer(Modifier.height(6.dp))
+                    var mode by remember { mutableStateOf(p.settings.controlMode) }
+                    // Switching while in control would jump between two different mappings: only while idle.
+                    val idle = !engaged && !moving && status.phase != TeleopStatus.Phase.CALIBRATING
+                    Segmented(ControlMode.values().map { it to it.label.uppercase() }, mode) { if (idle) { mode = it; p.settings.controlMode = it } }
+                    Spacer(Modifier.height(8.dp))
+                    if (mode == ControlMode.MIRROR) {
+                        Text("The arm's TCP goes where your hand is relative to your shoulder, scaled; the robot's shoulder (J2) stands in for yours.", style = Hud.label)
+                        Spacer(Modifier.height(6.dp))
+                        var scale by remember { mutableStateOf(p.settings.armScale.toFloat()) }
+                        var width by remember { mutableStateOf(p.settings.shoulderWidthM.toFloat()) }
+                        var lift by remember { mutableStateOf(p.settings.mirrorLiftM.toFloat()) }
+                        // Calibration changes these from the control thread: show the new values.
+                        LaunchedEffect(status.phase) { scale = p.settings.armScale.toFloat(); width = p.settings.shoulderWidthM.toFloat() }
+                        HudSlider("arm scale", scale, 0.4f..1.6f, { "%.2f robot m / your m".format(it) }) { scale = it; p.settings.armScale = it.toDouble() }
+                        HudSlider("shoulder width", width, 0.28f..0.50f, { "%.0f cm".format(it * 100) }) { width = it; p.settings.shoulderWidthM = it.toDouble() }
+                        HudSlider("raise targets", lift, -0.10f..0.30f, { "%+.0f cm".format(it * 100) }) { lift = it; p.settings.mirrorLiftM = it.toDouble() }
+                        Spacer(Modifier.height(6.dp))
+                        HudButton("CALIBRATE ARM", Hud.magenta, Modifier.fillMaxWidth(), enabled = idle) {
+                            p.teleop.calibrate()
+                            runCatching { focus.requestFocus() }
+                        }
+                        Text("Face the camera and hold your arm straight out to the side, level, for 2 s.", style = Hud.label)
+                    } else {
+                        Text("The arm follows your hand's movement from where you engaged; a fist repositions your hand.", style = Hud.label)
+                    }
+                    p.tickLogFile?.let { Text("LOG ${it.path}", style = Hud.label) }
+                }
+
                 HudPanel(accent = Hud.amber) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         HudLabel("gripper")
@@ -326,7 +371,7 @@ fun TeleopScreen(p: Pipeline) {
                     var reach by remember { mutableStateOf(p.settings.gainReach.toFloat()) }
                     var speed by remember { mutableStateOf(p.settings.speed.toFloat()) }
                     var lens by remember { mutableStateOf(p.settings.focalFraction.toFloat()) }
-                    Text("GAINS: METRES OF ARM PER METRE OF HAND", style = Hud.label)
+                    Text("CLUTCH-MODE GAINS: METRES OF ARM PER METRE OF HAND", style = Hud.label)
                     Spacer(Modifier.height(4.dp))
                     HudSlider("sideways", side, 0.2f..3.0f, { "%.1f x".format(it) }) { side = it; p.settings.gainSide = it.toDouble() }
                     HudSlider("up / down", up, 0.2f..3.0f, { "%.1f x".format(it) }) { up = it; p.settings.gainUp = it.toDouble() }
@@ -462,6 +507,46 @@ private fun DrawScope.drawFistRing(o: Observation, fit: Fit, operator: HandLandm
     val tl = Offset(c.x - r, c.y - r)
     drawCircle(color.copy(alpha = 0.25f), r, c, style = Stroke(6.dp.toPx()))
     drawArc(color, -90f, (360 * progress).toFloat(), false, tl, Size(2 * r, 2 * r), style = Stroke(6.dp.toPx(), cap = StrokeCap.Round))
+}
+
+/** Mirror mode: the operating side's shoulder, and the line from it to the palm the arm copies. */
+private fun DrawScope.drawShoulderToHand(o: Observation, fit: Fit, operator: HandLandmarks.Side) {
+    val b = o.body ?: return
+    val s = if (operator == HandLandmarks.Side.LEFT) BodyPose.L_SHOULDER else BodyPose.R_SHOULDER
+    if (b[s].score < 0.3f) return
+    val fw = o.frame.width
+    val fh = o.frame.height
+    val a = fit.map(b[s].x, b[s].y, fw, fh)
+    drawCircle(Hud.magenta, 9.dp.toPx(), a, style = Stroke(3.dp.toPx()))
+    val h = o.hands.firstOrNull { it.side == operator } ?: return
+    val ids = intArrayOf(0, 5, 9, 13, 17)
+    val c = fit.map(ids.map { h[it].x }.average().toFloat(), ids.map { h[it].y }.average().toFloat(), fw, fh)
+    drawLine(Hud.magenta, a, c, 3.dp.toPx(), cap = StrokeCap.Round, pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(14f, 8f)))
+    drawCircle(Hud.magenta, 5.dp.toPx(), c)
+}
+
+/**
+ * Why the arm is where it is, in numbers: the operator's reach (mirror) or hand movement (clutch) in cm,
+ * the TCP target before and after the clamp, the arm's actual TCP, and what is limiting it.
+ */
+@Composable
+private fun Diagnostics(s: TeleopStatus, modifier: Modifier) {
+    val r = s.reach ?: return
+    // Rounded to whole numbers before formatting, so a hair below zero doesn't show as "-0".
+    fun cm(v: Double) = "%+d".format(Math.round(v * 100))
+    fun mm(v: com.nervus.handteleop.math.Vec3?) = v?.let { "%d %d %d".format(Math.round(it.x * 1000), Math.round(it.y * 1000), Math.round(it.z * 1000)) } ?: "-"
+    val tcp = s.tcp?.let { com.nervus.handteleop.math.Vec3(it.x, it.y, it.z) }
+    Column(modifier.background(Hud.bg.copy(alpha = 0.72f), RoundedCornerShape(3.dp)).padding(10.dp), horizontalAlignment = Alignment.End) {
+        Text(
+            (if (s.mode == ControlMode.MIRROR) "SHOULDER → HAND" else "HAND MOVED") + "  FWD ${cm(r.x)} · SIDE ${cm(r.y)} · UP ${cm(r.z)} CM",
+            style = Hud.label.copy(color = Hud.magenta),
+        )
+        Text("TARGET ${mm(s.goalRaw)} MM" + if (s.clamped) "  → ${mm(s.goal)} (CLAMPED)" else "", style = Hud.label.copy(color = if (s.clamped) Hud.amber else Hud.cyan))
+        val gap = if (tcp != null && s.goal != null) "  · Δ %.0f MM".format((tcp - s.goal).norm() * 1000) else ""
+        Text("TCP ${mm(tcp)} MM$gap", style = Hud.label.copy(color = Hud.green))
+        if (s.slipping) Text("AT THE EDGE: ANCHOR SLIPPING", style = Hud.label.copy(color = Hud.amber))
+        s.servoNote?.let { Text(it.uppercase(), style = Hud.label.copy(color = Hud.amber)) }
+    }
 }
 
 private fun DrawScope.glowLine(c: Color, a: Offset, b: Offset, w: Float) {
