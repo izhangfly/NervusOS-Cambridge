@@ -39,6 +39,7 @@ CONTROL_HZ = 100          # JointCtrl stream rate (the vendor demos stream at 20
 # with max(speed, 30 %) so slow moves still start and stop crisply. The firmware's own MOVE J cap
 # is the speed setting times its rated 3 rad/s (172 deg/s), so it stays above these at every speed
 # and acts as a backstop; its default acceleration limit is 5 rad/s^2 (286 deg/s^2).
+EDGE_DEG = 0.3            # paths are planned this far inside the joint limits
 JOINT_VMAX = np.array([90.0, 90.0, 90.0, 120.0, 120.0, 120.0])        # deg/s
 JOINT_AMAX = np.array([200.0, 200.0, 200.0, 300.0, 300.0, 300.0])     # deg/s^2
 JOINT_JMAX = np.array([1000.0, 1000.0, 1000.0, 1500.0, 1500.0, 1500.0])  # deg/s^3
@@ -210,6 +211,13 @@ class Follower:
     # -- targets -----------------------------------------------------------------
     def _set_path(self, path: np.ndarray, corners: Sequence[int], scale: float, brisk: bool = False) -> None:
         path = np.asarray(path, dtype=float).reshape(-1, K.DOF)
+        # Plan strictly inside the limits, so tracking can't overshoot them and fault (which held the arm
+        # until the next new target). A new path also clears an old fault.
+        lo, hi = np.minimum(self.lo + EDGE_DEG, self.hi), np.maximum(self.hi - EDGE_DEG, self.lo)
+        if self.q is not None:              # never move a resting arm just to get inside the margin
+            lo, hi = np.minimum(lo, self.q), np.maximum(hi, self.q)
+        path = np.clip(path, lo, hi)
+        self.fault = None
         if len(path) > 1:                                   # drop repeated samples
             keep = np.r_[True, np.max(np.abs(np.diff(path, axis=0)), axis=1) > 1e-9]
             newidx = np.cumsum(keep) - 1

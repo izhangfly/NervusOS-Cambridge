@@ -88,6 +88,12 @@ MDEG = 1000.0
 GRIP_UNIT = 1000.0
 JOINT_LIMITS = {1: (-154.0, 154.0), 2: (0.0, 195.0), 3: (-175.0, 0.0),
                 4: (-106.0, 106.0), 5: (-75.0, 75.0), 6: (-100.0, 100.0)}
+# One set of limits everywhere: the sliders, the clamps and the smooth follower. The follower plans within
+# the stricter of these and piper_sdk's (kinematics.LIMITS_DEG); a slider allowed past those made the
+# trajectory run out of bounds, fault and freeze (J3 to -175, J5 to 75: "stuck until I shake it").
+if KIN is not None:
+    JOINT_LIMITS = {j + 1: (max(lo, float(KIN.LIMITS_DEG[j][0])), min(hi, float(KIN.LIMITS_DEG[j][1])))
+                    for j, (lo, hi) in enumerate(JOINT_LIMITS.values())}
 # Commanded gripper opening. The jaws measure up to ~101 mm when pulled open by
 # hand, but 95 mm is the widest opening that was commanded reliably.
 GRIPPER_MM = (0.0, 95.0)
@@ -183,6 +189,10 @@ class Busy(Exception):
 
 def log_call(fn, params):
     entry = {"t": time.strftime("%H:%M:%S"), "fn": fn, "params": params}
+    if fn.startswith("("):
+        # Guards, deadmen and trajectory faults also go to the journal (journalctl -u nervus-piper):
+        # the in-memory log is lost when the driver restarts.
+        print(f"{fn} {json.dumps(params)}", flush=True)
     with state_lock:
         STATE["log"].insert(0, entry)
         del STATE["log"][40:]
@@ -912,6 +922,11 @@ class Arm:
         if fol.fault and fol.fault != ctx["fault_seen"]:
             ctx["fault_seen"] = fol.fault
             log_call("(trajectory)", {"fault": fol.fault, "action": "held"})
+            # Where it is held becomes the target, so nothing keeps pulling toward the refused one.
+            with state_lock:
+                if STATE["mode"] == "joint":
+                    STATE["targets"] = [clamp(n + 1, float(v)) for n, v in enumerate(q)]
+                    self._applied_targets = list(STATE["targets"])
         cmd = [int(round(clamp(n + 1, float(v)) * MDEG)) for n, v in enumerate(q)]
         with io_lock:
             # estop() sets the flag before it sends EmergencyStop under this lock, so a command
@@ -1215,9 +1230,16 @@ class Handler(BaseHTTPRequestHandler):
             if STATE["mode"] != "joint":
                 ARM.enter_joint()
             v = clamp(j, deg)
+            fol = getattr(ARM, "follower", None)
             with state_lock:
+                # A slider moves its own joint only. Targets the other joints never reached (a hold, a
+                # fault, a stop) are reset to where the arm is held, or moving J5 dragged J2 along.
+                if fol is not None and fol.q is not None and not fol.moving():
+                    for k in range(6):
+                        if k != j - 1:
+                            STATE["targets"][k] = clamp(k + 1, float(fol.q[k]))
                 STATE["targets"][j - 1] = v
-            log_call("JointCtrl", {f"joint_{j}": round(v, 2), "note": "streamed @20Hz"})
+            log_call("JointCtrl", {f"joint_{j}": round(v, 2), "note": "smooth" if fol is not None else "streamed @20Hz"})
             return self._json(200, {"ok": True, "deg": v})
 
         if path == "/api/mode":
