@@ -464,7 +464,7 @@ class SmoothDriverTest(HttpMixin, unittest.TestCase):
                 if W.STATE["guard"]:
                     break
             self.assertIsNotNone(W.STATE["guard"])
-            self.assertIn("from its command", W.STATE["guard"]["reason"])
+            self.assertIn("its command", W.STATE["guard"]["reason"])
             self.assertEqual(W.STATE["mode"], "joint")
             code, body = self.post("/api/servo", {"client": "piperd", "pose": goal})
             self.assertEqual(code, 409)

@@ -136,8 +136,9 @@ IK_GUARD_RATIO = 3.0        # trip if swing > ratio x (TCP turn deg + TCP travel
 IK_GUARD_LATCH = 2.0        # s that servo goals are refused after a trip
 
 # Smooth mode. The trajectory limits, rates and planner settings are in motion.py.
-TRACK_ERR_DEG = 20.0        # measured joint this far from its command, and not catching up: blocked
-TRACK_STALL_S = 1.0         # ... for this long without closing the gap by TRACK_PROGRESS_DEG
+TRACK_ERR_DEG = 20.0        # measured joint this far from its command: something moved it; hold at once
+TRACK_STALL_S = 1.0         # more than LAG_PAUSE_DEG behind for this long without closing the gap
+                            # by TRACK_PROGRESS_DEG: blocked; hold
 TRACK_PROGRESS_DEG = 1.0
 LAG_PAUSE_DEG = 6.0         # the trajectory waits while the arm is this far behind it
 FK_TOL_MM = 15.0            # our FK of the measured joints must match the arm's own pose this well
@@ -914,18 +915,23 @@ class Arm:
             err = np.abs(np.asarray(meas) - q_cmd)
             worst = int(np.argmax(err))
             lagging = err[worst] > LAG_PAUSE_DEG
+            why = None
             if err[worst] > self.track_err_deg:
+                # With the pause below, slow following can't open a gap this big: something moved the arm.
+                why = f"J{worst + 1} is {err[worst]:.0f} deg from its command"
+            elif lagging:
                 st = ctx.get("stall")
                 if st is None or st[0] != worst or err[worst] < st[2] - TRACK_PROGRESS_DEG:
                     ctx["stall"] = (worst, now, err[worst])          # (re)start the clock on progress
                 elif now - st[1] > TRACK_STALL_S:
-                    ctx["stall"] = None
-                    self._trip(f"J{worst + 1} is {err[worst]:.0f} deg from its command and not catching up "
-                               "(blocked, or the arm is not following)", owner, hard=True)
-                    ctx["streaming"] = False
-                    return
+                    why = f"J{worst + 1} is {err[worst]:.0f} deg behind its command and not catching up"
             else:
                 ctx["stall"] = None
+            if why:
+                ctx["stall"] = None
+                self._trip(why + " (blocked, or the arm is not following)", owner, hard=True)
+                ctx["streaming"] = False
+                return
         if not live or mode not in ("cartesian", "servo") or mode != self._guard_mode:
             self.guard.reset()
         self._guard_mode = mode if live else None
