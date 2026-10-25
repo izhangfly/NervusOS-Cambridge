@@ -107,6 +107,9 @@ id nervus-piper >/dev/null 2>&1 || useradd --system --no-create-home --home-dir 
 	--shell /usr/sbin/nologin nervus-piper
 install -d -m 0755 /opt/nervus/piper
 install -m 0644 "$REPO/hardware/piper/piper_webctl.py" /opt/nervus/piper/piper_webctl.py
+# The smooth Cartesian mode: our kinematics, planner and trajectory (numpy + ruckig).
+install -m 0644 "$REPO/hardware/piper/kinematics.py" /opt/nervus/piper/kinematics.py
+install -m 0644 "$REPO/hardware/piper/motion.py" /opt/nervus/piper/motion.py
 install -m 0644 "$REPO/hardware/piper/panel.html" /opt/nervus/piper/panel.html
 install -m 0644 "$REPO/hardware/piper/README.md" /opt/nervus/piper/README.md
 if [[ ! -x /opt/nervus/piper/venv/bin/python ]]; then
@@ -115,6 +118,11 @@ fi
 /opt/nervus/piper/venv/bin/pip install -q --upgrade pip >/dev/null
 /opt/nervus/piper/venv/bin/pip install -q -r "$REPO/hardware/piper/requirements.txt"
 ok "driver venv: $(/opt/nervus/piper/venv/bin/python -c 'import piper_sdk,can;print("piper_sdk", getattr(piper_sdk,"__version__","?"), "python-can", can.__version__)')"
+if smooth=$(/opt/nervus/piper/venv/bin/python -c 'import numpy,ruckig;print("numpy", numpy.__version__, "ruckig", getattr(ruckig,"__version__","ok"))' 2>/dev/null); then
+	ok "smooth Cartesian mode: $smooth"
+else
+	warn "numpy/ruckig missing in the driver venv: the driver will run in firmware Cartesian mode"
+fi
 systemctl daemon-reload
 systemctl enable --now nervus-can.service >/dev/null 2>&1 || warn "nervus-can.service failed (is the CAN adapter plugged in?)"
 ip -br link show can0 2>/dev/null | sed 's/^/    /' || warn "can0 not present"
