@@ -1,5 +1,7 @@
 package com.nervus.handteleop.ui
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.TooltipArea
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -110,6 +112,21 @@ fun HudButton(text: String, color: Color, modifier: Modifier = Modifier, filled:
     ) {
         Text(text, style = Hud.title.copy(fontSize = 16.sp, color = c))
     }
+}
+
+/** [content] with a tooltip saying [text] on hover (for a disabled button: why); just [content] when [text] is null. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun Hint(text: String?, content: @Composable () -> Unit) {
+    if (text == null) {
+        content()
+        return
+    }
+    TooltipArea(tooltip = {
+        Box(Modifier.background(Hud.panelHi, RoundedCornerShape(3.dp)).border(1.dp, Hud.line, RoundedCornerShape(3.dp)).padding(8.dp)) {
+            Text(text, style = Hud.label.copy(color = Hud.text))
+        }
+    }) { content() }
 }
 
 /** Two-option toggle. */

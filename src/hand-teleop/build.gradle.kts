@@ -52,6 +52,8 @@ dependencies {
     ortFull(ortVersion)
     implementation(files(slimOrt))
     testImplementation(libs.kotlin.test)
+    // TeleopUiTest renders the real screen off-screen (Skiko) and clicks its buttons.
+    testImplementation(compose.desktop.uiTestJUnit4)
 }
 
 kotlin {
