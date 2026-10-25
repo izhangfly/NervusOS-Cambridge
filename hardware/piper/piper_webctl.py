@@ -136,7 +136,10 @@ IK_GUARD_RATIO = 3.0        # trip if swing > ratio x (TCP turn deg + TCP travel
 IK_GUARD_LATCH = 2.0        # s that servo goals are refused after a trip
 
 # Smooth mode. The trajectory limits, rates and planner settings are in motion.py.
-TRACK_ERR_DEG = 20.0        # measured joint this far from its command: blocked, or the arm ignores us
+TRACK_ERR_DEG = 20.0        # measured joint this far from its command, and not catching up: blocked
+TRACK_STALL_S = 1.0         # ... for this long without closing the gap by TRACK_PROGRESS_DEG
+TRACK_PROGRESS_DEG = 1.0
+LAG_PAUSE_DEG = 6.0         # the trajectory waits while the arm is this far behind it
 FK_TOL_MM = 15.0            # our FK of the measured joints must match the arm's own pose this well
 JOINT_JOG_DEG_S = 12.0      # a held wrist key (firmware mode: 0.6 deg per 20 Hz tick)
 JJOG_LEAD_DEG = 3.0         # ... whose target stays this close to the commanded joint
@@ -617,6 +620,25 @@ class Arm:
             out.append(v)
         return out
 
+    def read_motor_limits(self):
+        """The arm's own per-joint angle limits and maximum speeds (feedback 0x473, read-only; the SDK
+        asks for them in ConnectPort). Speeds are 0.01 rad/s from firmware V1.5-8 on."""
+        try:
+            for _ in range(20):
+                m = self.piper.GetAllMotorAngleLimitMaxSpd().all_motor_angle_limit_max_spd
+                rows = [m.motor[i] for i in range(1, 7)]
+                if all(getattr(r, "max_joint_spd", 0) > 0 for r in rows):
+                    return [{"min_deg": r.min_angle_limit / 10.0, "max_deg": r.max_angle_limit / 10.0,
+                             "max_deg_s": round(r.max_joint_spd * 0.01 * 180.0 / math.pi, 1)} for r in rows]
+                try:
+                    self.piper.SearchAllMotorMaxAngleSpd()
+                except Exception:
+                    pass
+                time.sleep(0.1)
+        except Exception as e:
+            print(f"motor limits unavailable: {e}", flush=True)
+        return None
+
     def _trip(self, why, owner, hard=False):
         """A guard fired: hold where the arm is (motors stay on) and drop the controller,
         whose goals are refused for IK_GUARD_LATCH seconds. hard: hold the measured joints at
@@ -882,15 +904,28 @@ class Arm:
             q_cmd = fol.anchor(meas)
         # Guards. Tracking: the arm must be where the trajectory says (else it is blocked,
         # faulted or ignoring commands). IK flip: as in firmware mode, from the feedback.
+        # A slow arm is not a blocked arm: the owner's J3 stopped at -110 because the firmware moved it
+        # slower than the trajectory and the old guard tripped on the lag alone. Now it trips only when
+        # the gap is large AND hasn't closed for TRACK_STALL_S; and the trajectory waits while the arm
+        # is more than LAG_PAUSE_DEG behind, so the lag can't build up in the first place.
         tripped = False
+        lagging = False
         if meas is not None:
             err = np.abs(np.asarray(meas) - q_cmd)
             worst = int(np.argmax(err))
+            lagging = err[worst] > LAG_PAUSE_DEG
             if err[worst] > self.track_err_deg:
-                self._trip(f"J{worst + 1} is {err[worst]:.0f} deg from its command (blocked, or the "
-                           "arm is not following)", owner, hard=True)
-                ctx["streaming"] = False
-                return
+                st = ctx.get("stall")
+                if st is None or st[0] != worst or err[worst] < st[2] - TRACK_PROGRESS_DEG:
+                    ctx["stall"] = (worst, now, err[worst])          # (re)start the clock on progress
+                elif now - st[1] > TRACK_STALL_S:
+                    ctx["stall"] = None
+                    self._trip(f"J{worst + 1} is {err[worst]:.0f} deg from its command and not catching up "
+                               "(blocked, or the arm is not following)", owner, hard=True)
+                    ctx["streaming"] = False
+                    return
+            else:
+                ctx["stall"] = None
         if not live or mode not in ("cartesian", "servo") or mode != self._guard_mode:
             self.guard.reset()
         self._guard_mode = mode if live else None
@@ -916,7 +951,7 @@ class Arm:
                 fol.deactivate()
                 self.jogger.reset()
             return
-        q = fol.step(speed)
+        q = fol.hold_tick() if lagging and fol.moving() else fol.step(speed)
         if q is None:
             return
         if fol.fault and fol.fault != ctx["fault_seen"]:
@@ -1052,6 +1087,7 @@ def state_json(lite=False):
             "guard": STATE["guard"], "ik_guard_deg": ARM.guard.limit,
             "ready_pose": READY_POSE, "workspace_mm": WORKSPACE_MM,
             "firmware": ARM.firmware,
+            "motor_limits": getattr(ARM, "motor_limits", None),
             # --- Cartesian control mode ---
             "cartesian": ARM.cartesian,
             "cartesian_note": ARM.cartesian_note,
@@ -1362,6 +1398,11 @@ def main():
         ARM.firmware = ARM.piper.GetPiperFirmwareVersion()
     except Exception:
         ARM.firmware = None
+    ARM.motor_limits = ARM.read_motor_limits()
+    if ARM.motor_limits and getattr(ARM, "follower", None) is not None:
+        # Never plan faster than the arm goes: the firmware moves each joint at most at its own maximum
+        # times the MOVE J speed percentage; the trajectory keeps 20 % below that.
+        ARM.follower.vcap = np.array([0.8 * m["max_deg_s"] for m in ARM.motor_limits])
     srv = ThreadingHTTPServer((args.bind, args.port), Handler)
     srv.daemon_threads = True
 

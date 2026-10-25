@@ -151,6 +151,7 @@ class Follower:
         self._prof: Optional[dict] = None
         self._last_ref = None        # the reference this tick followed: (q, velocity, acceleration)
         self.lo, self.hi = K.LIMITS_DEG[:, 0].copy(), K.LIMITS_DEG[:, 1].copy()
+        self.vcap: Optional[np.ndarray] = None   # deg/s per joint at 100 %: the arm's own maxima (driver sets it)
 
     # -- state -------------------------------------------------------------------
     @property
@@ -427,12 +428,20 @@ class Follower:
         self.inp.current_velocity = self.v.tolist()
         self.inp.current_acceleration = self.a.tolist()
 
+    def hold_tick(self) -> Optional[np.ndarray]:
+        """One tick with the trajectory's clock stopped: the command stays where it is (the arm is
+        behind and catches up), and the next step() resumes from the same state."""
+        with self.lock:
+            return None if self.q is None else self.q.copy()
+
     def step(self, speed: float) -> Optional[np.ndarray]:
         """Advance one control period. Returns the joint command (deg), or None if not anchored."""
         with self.lock:
             if self.q is None:
                 return None
             vmax, amax, jmax = motion_limits(speed)
+            if self.vcap is not None:      # the arm's own joint speeds at this MOVE J percentage
+                vmax = np.minimum(vmax, self.vcap * min(1.0, max(0.01, float(speed) / 100.0)))
             self._tracker_limits = (vmax, amax, jmax)
             ref = None
             if self.stopping:
