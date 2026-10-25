@@ -16,10 +16,11 @@
 - Keys: `keys/`, `**/signing/*.pem`, SSH or deploy keys, Syncthing API keys, tokens, passwords.
 - Chinese text. The repository is English only.
 
-## Safety rules for the Dell (A7-BAE)
+## Safety rules for the robot host (Surface Pro 9, A7-BAH)
 
 - Hosted mode only: never change Ubuntu's GDM or default target, never remove Ubuntu.
 - The PiPER driver (127.0.0.1:8770) and the ACT engine (127.0.0.1:8795) listen on loopback only and must stay
   that way: neither has authentication and both move the arm.
-- Small, slow arm motions only when testing, with someone nearby. Leave the arm enabled when you finish: it goes
+- Never move the arm when testing (owner's rule): use the simulators, fake drivers, dry runs and read-only
+  state. Real motion only when the owner starts it. Leave the arm enabled when you finish: it goes
   limp when disabled.
