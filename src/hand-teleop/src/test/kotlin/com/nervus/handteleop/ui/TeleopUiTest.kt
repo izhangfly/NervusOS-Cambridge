@@ -69,7 +69,7 @@ class TeleopUiTest {
             mainClock.advanceTimeBy(100)
             onNodeWithText("MIRROR MY ARM").assertExists()
             onNodeWithText("SHOULDER → HAND  FWD +40 · SIDE +0 · UP +0 CM").assertExists()
-            onNodeWithText("TARGET 323 0 123 MM").assertExists()
+            onNodeWithText("TARGET 323 0 273 MM").assertExists() // 123 mm shoulder + the default 150 mm lift
             onNodeWithText("CALIBRATE ARM").assertExists()
         }
     }

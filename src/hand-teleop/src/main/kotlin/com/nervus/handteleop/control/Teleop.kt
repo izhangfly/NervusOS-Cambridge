@@ -85,8 +85,11 @@ class TeleopSettings {
      * length (shoulder to palm): 0.50 / 0.62 by default; "Calibrate arm" measures the arm.
      */
     @Volatile var armScale: Double = ROBOT_REACH_M / DEFAULT_ARM_LENGTH_M
-    /** Mirror mode: raises every target, metres, for working with the hand below shoulder height. */
-    @Volatile var mirrorLiftM: Double = 0.0
+    /**
+     * Mirror mode: raises every target, metres. The robot's shoulder (J2) is only 0.123 m above the table, so
+     * without a lift a relaxed hand at chest height maps onto the table; 0.15 puts it in mid-air.
+     */
+    @Volatile var mirrorLiftM: Double = 0.15
     @Volatile var gripperEffortNm: Double = 1.0
     /**
      * Pinch ratio at which the gripper is fully closed / fully open. The ratio is a 3-D distance over the

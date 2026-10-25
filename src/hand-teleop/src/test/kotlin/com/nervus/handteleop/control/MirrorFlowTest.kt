@@ -26,7 +26,8 @@ class MirrorFlowTest {
     private val log = Logger.getLogger("test")
     private val dir: File = Files.createTempDirectory("mirror").toFile()
     private var fake = FakePiper(PiperKinematics.READY_POSE)
-    private val settings = TeleopSettings()
+    // The geometry below assumes no lift (the default lifts targets 0.15 m, see TeleopSettings.mirrorLiftM).
+    private val settings = TeleopSettings().apply { mirrorLiftM = 0.0 }
     private lateinit var teleop: Teleop
     private var now = 1_000_000_000L
 
