@@ -78,7 +78,9 @@ ACT engine ⇄ ~/Shared/NervusACT ⇄ (Syncthing: LAN, or the relay on the serve
 | `src/nervus-app-example/`, `src/nervus-deploy/`, `src/nring/` | The SDK sample, the upstream release builder, the NRing BLE ring SDK |
 | `hosted/` | What makes hosted mode work: `nervus-session`, the installer, systemd units and drop-ins, udev, polkit, Openbox, desktop entries |
 | `hardware/piper/` | The PiPER driver and its HTTP API ([README](hardware/piper/README.md)) |
-| `act/` | The ACT system: the engine on the Dell, the worker on the Mac, tests ([README](act/README.md)) |
+| `act/` | The ACT system: the engine on the robot host, the worker on the Mac, tests ([README](act/README.md)) |
+| `llm-arm/` | The LLM Arm service: grounding, skill decider, governor, cameras ([README](llm-arm/README.md)) |
+| `export/` | Per-repository files for the standalone app repos (`scripts/export-app-repos.py`) |
 | `store/catalog.ini` | What the App Store offers |
 | `team/` | The Nervus-OS team repositories as they are upstream now, where they differ from `src/`: the restarted nervud and nervus-ipc, nervud_old, Nervus-Console, the Gazebo motion provider, and the team's planning repository ([README](team/README.md)) |
 | `legacy/piper-act/` | The Piper-ACT project (Windows Dell + Mac) that ACT here grew out of, complete |
