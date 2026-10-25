@@ -12,16 +12,35 @@ changed. GDM, the login screen and the default boot target are never touched.
 It is also the one repository for the whole project: the Nervus-OS team's repositories, the Piper-ACT project,
 the robot lab scripts and the planning documents all live here as folders (see the layout below), in English.
 
-What works today, on a Dell Latitude (i7-8650U, Intel graphics, no GPU):
+What works today, on a Surface Pro 9 (i5-1245U, no GPU; it replaced a Dell Latitude in October 2026):
 
 - The NervusOS desktop, Settings, Files and the App Store, fullscreen at 1920×1080; Exit NervusOS returns to Ubuntu.
 - Installing signed `.nspkg` apps from the App Store, with the permission consent dialog.
 - **Robot Arm**: live joint telemetry, per-joint sliders, Cartesian jog, gripper, home, recover and e-stop.
 - **Hand Teleop**: the laptop camera tracks your arm and fingers (YOLO26 pose + hand landmarks on the CPU) and the
-  arm follows your hand; a pinch closes the gripper. Frames come from the camera service and commands go through
-  the kernel under a control lease, to the arm's Provider (`piperd`).
+  arm follows your hand, with metric depth and wrist roll; a pinch closes the gripper. Inside NervusOS, frames come
+  from the camera service and commands go through the kernel under a control lease, to the arm's Provider (`piperd`).
+- **LLM Arm**: say what the arm should do; GPT-6 Astra or DeepSeek grounds it in the camera image and picks one
+  bounded skill at a time under a safety governor (see [llm-arm/README.md](llm-arm/README.md)).
 - **ACT Studio**: record demonstrations by moving the arm by hand, train an ACT policy on a Mac, run it, correct it,
   and post-train on the corrections (see [act/README.md](act/README.md)).
+
+## Standalone desktop apps and their repositories
+
+Hand Teleop, LLM Arm and ACT Studio also run as ordinary Ubuntu desktop apps, without NervusOS: their icons run
+`nervus-standalone <app>`, which starts the services the app needs (the PiPER driver, the ACT engine, the LLM Arm
+service, the Surface camera bridge) and opens the app's self-contained build (`scripts/build.sh standalone`).
+Each is also published on its own as a reusable project, exported from this repository by
+`scripts/export-app-repos.py` (this repository stays the source of truth):
+
+| App | Repository |
+|---|---|
+| Hand Teleop | [izhangfly/piper-hand-teleop](https://github.com/izhangfly/piper-hand-teleop) |
+| LLM Arm | [izhangfly/piper-llm-arm](https://github.com/izhangfly/piper-llm-arm) |
+| ACT Studio | [izhangfly/piper-act-studio](https://github.com/izhangfly/piper-act-studio) |
+| SmolVLA training and execution | [izhangfly/piper-smolvla](https://github.com/izhangfly/piper-smolvla) |
+
+Training is moving to a rented GPU, with the Mac executing policies: [docs/GPU-TRAINING-PLAN.md](docs/GPU-TRAINING-PLAN.md).
 
 ## How it fits together
 
@@ -104,9 +123,12 @@ authentication and listen on `127.0.0.1` only. Keep it that way.
 
 ## Cameras
 
-The Dell's built-in camera is `cam.front` for NervusOS apps (Hand Teleop). The two robot cameras belong to the ACT
-engine: the Orbbec Dabai DC1 on the wrist and a Logitech C270 for the scene. Plug the C270 into a **USB-A** port: on
-the USB-C/Thunderbolt side the JHL6540's USB keeps resetting it and it delivers no frames (ACT Studio says so).
+The operator camera for Hand Teleop is the Surface Pro 9's front camera. It sits behind Intel's IPU6 and has no
+webcam driver, so `nervus-surface-camera.service` (started on demand) captures it with libcamera
+(`hosted/surface/build-libcamera.sh`) and streams it into a v4l2loopback webcam, `/dev/video60` "Surface Camera".
+The sensor needs `MIPI_CTRL00 (0x4800) = 0x2d`, which the kernel driver doesn't write yet (linux-surface PR #2171);
+the bridge sets it over I2C at each start. The robot cameras belong to the ACT engine: the Orbbec Dabai DC1 on the
+wrist and a fixed scene webcam (the Logitech C270 kept resetting on two machines and is out of use).
 
 ## Working on this repository
 
