@@ -42,6 +42,8 @@ DRIVER = [
     ("export/common/50-piper-apps.rules.in", "driver/50-piper-apps.rules.in"),
     ("export/common/install-common.sh", "scripts/install-common.sh"),
     ("hosted/bin/nervus-standalone", "desktop/nervus-standalone"),
+    ("hosted/applications/nervus-piper-control.desktop", "desktop/nervus-piper-control.desktop"),
+    ("hosted/icons/nervus-piper-control.svg", "desktop/nervus-piper-control.svg"),
 ]
 
 REPOS = {
