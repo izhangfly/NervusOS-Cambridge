@@ -13,7 +13,10 @@ import com.nervus.handteleop.control.Arm
 import com.nervus.handteleop.control.ArmLink
 import com.nervus.handteleop.control.DriverArm
 import com.nervus.handteleop.control.OperationCaller
+import com.nervus.handteleop.control.BodySizeStore
+import com.nervus.handteleop.control.SettingsFile
 import com.nervus.handteleop.control.StartPoseStore
+import com.nervus.handteleop.control.TickLog
 import com.nervus.handteleop.control.Teleop
 import com.nervus.handteleop.control.TeleopSettings
 import com.nervus.handteleop.control.TeleopStatus
@@ -158,12 +161,18 @@ class Pipeline(
     private val log: Logger,
     /** Running without NervusOS (for the UI's labels). */
     val standalone: Boolean = false,
-    /** Where "Set start pose here" saves (null: nowhere, for tests). */
-    startPoseFile: java.io.File? = StartPoseStore.defaultFile(),
+    /** Where the start pose and the arm calibration are saved (null: nowhere, for tests). */
+    settingsFile: java.io.File? = SettingsFile.defaultFile(),
+    /** Where the per-tick CSV log goes (null: no log). */
+    tickLogDir: java.io.File? = TickLog.defaultDir(),
 ) : AutoCloseable {
     val settings = TeleopSettings()
     val armLabel = arm.label
-    val teleop = Teleop(arm, settings, log, StartPoseStore(startPoseFile, log))
+    private val saved = SettingsFile(settingsFile)
+    private val tickLog = TickLog(tickLogDir, log)
+    val teleop = Teleop(arm, settings, log, StartPoseStore(saved, log), BodySizeStore(saved), tickLog)
+    /** The CSV log of this session, once it has started. */
+    val tickLogFile get() = tickLog.file
     private val latest = AtomicReference<Observation?>(null)
 
     @Volatile var visionError: String? = null
@@ -272,5 +281,6 @@ class Pipeline(
         teleop.stopNow()
         camera.close()
         threads.forEach { it.join(1500) }
+        tickLog.close()
     }
 }

@@ -1,6 +1,7 @@
 package com.nervus.handteleop.control
 
 import com.nervus.handteleop.camera.Caller
+import com.nervus.handteleop.math.Box
 import com.nervus.sdk.component.ControlLease
 import com.nervus.sdk.ipc.ControlLeaseException
 import com.nervus.sdk.ipc.NervusCallException
@@ -43,6 +44,11 @@ interface Arm {
     fun keepJointMove(nowNanos: Long)
     /** The move is over (arrived, stopped or failed): put back whatever [startJointMove] changed. */
     fun endJointMove()
+
+    /** Why the last servo target won't be reached as asked (the driver's planner: partial, unreachable...), or null. */
+    val servoNote: String? get() = null
+    /** The box this arm clamps servo targets to, if it says; null when unknown. */
+    val workspace: Box? get() = null
 }
 
 /** NervusApp.callOperation, handed in by the app (it's protected there). */

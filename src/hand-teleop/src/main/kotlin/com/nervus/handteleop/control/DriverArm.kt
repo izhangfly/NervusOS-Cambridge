@@ -1,5 +1,6 @@
 package com.nervus.handteleop.control
 
+import com.nervus.handteleop.math.Box
 import com.nervus.handteleop.math.Quat
 import io.github.nervusos.iface.manipulator.v1.ArmReadiness
 import io.github.nervusos.iface.manipulator.v1.ArmState
@@ -118,6 +119,20 @@ class DriverArm(
         private set
 
     override val jointMoveUnavailable: String? = null
+
+    @Volatile
+    override var servoNote: String? = null
+        private set
+
+    /** The box the driver clamps servo goals to (its --workspace, reported in /api/state). */
+    override val workspace: Box?
+        get() = last?.let { st ->
+            val w = st["workspace_mm"] as? JsonObject ?: return@let null
+            fun r(k: String) = (w[k] as? JsonArray)?.map { it.jsonPrimitive.doubleOrNull ?: Double.NaN }
+                ?.takeIf { it.size == 2 && it.all(Double::isFinite) }?.let { it[0] / 1000..it[1] / 1000 }
+            val x = r("x"); val y = r("y"); val z = r("z")
+            if (x == null || y == null || z == null) null else Box(x, y, z)
+        }
     override val confirmsMoves = false
     private var lastBeat = 0L
     private var speedBefore: Int? = null
@@ -147,7 +162,19 @@ class DriverArm(
             // max_vel_scale 0..1 to the driver's speed percentage, as piperd maps it.
             if (velScale > 0) put("speed", round(5 + 95 * velScale.coerceAtMost(1.0)).toInt())
         }
-        withEnable { post("/api/servo", body) }
+        withEnable {
+            // In smooth mode the driver plans every new goal and says how (line, joint, via) or why not
+            // (partial, unreachable, blocked): that's what tells the operator why the arm stopped short.
+            val text = post("/api/servo", body) // a refusal (409) propagates; only the reply's parsing may fail quietly
+            val reply = runCatching { Json.parseToJsonElement(text) as JsonObject }.getOrNull()
+            val kind = reply?.str("plan")?.ifEmpty { null }
+            val reason = reply?.str("reason")?.ifEmpty { null }
+            servoNote = when {
+                kind == null -> if (reply?.bool("clamped") == true) "clamped to the driver's box" else null
+                kind in setOf("partial", "unreachable", "blocked") -> "driver: $kind${reason?.let { " ($it)" } ?: ""}"
+                else -> null
+            }
+        }
     }
 
     override fun gripper(opening: Double, effortNm: Double) {
@@ -285,7 +312,7 @@ class DriverArm(
         return st
     }
 
-    private fun post(path: String, body: JsonObject, timeoutMs: Long = 500) {
+    private fun post(path: String, body: JsonObject, timeoutMs: Long = 500): String {
         val full = JsonObject(body + ("client" to JsonPrimitive(client)))
         val req = HttpRequest.newBuilder(URI.create(base + path))
             .timeout(Duration.ofMillis(timeoutMs))
@@ -297,6 +324,7 @@ class DriverArm(
         if (resp.statusCode() != 200) {
             throw IllegalStateException("driver $path: HTTP ${resp.statusCode()}: ${resp.body().take(200)}")
         }
+        return resp.body()
     }
 
     companion object {

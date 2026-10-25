@@ -1,16 +1,10 @@
 package com.nervus.handteleop.control
 
 import com.nervus.handteleop.math.Vec3
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.doubleOrNull
-import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
-import java.nio.file.attribute.PosixFilePermissions
 import java.util.logging.Logger
 import kotlin.math.PI
 import kotlin.math.atan2
@@ -86,11 +80,13 @@ object PiperKinematics {
 
 /**
  * The joint pose "Go to start pose" moves to: the driver's READY pose unless the operator saved
- * another with "Set start pose here". Saved in ~/.config/nervus/hand-teleop.json (0644), so it
- * survives a restart. Every pose is checked before use: six finite joints inside the limits whose TCP
+ * another with "Set start pose here". Kept in the settings file (~/.config/nervus/hand-teleop.json), so
+ * it survives a restart. Every pose is checked before use: six finite joints inside the limits whose TCP
  * is inside the teleop workspace; a saved one that isn't is ignored.
  */
-class StartPoseStore(private val file: File?, private val log: Logger) {
+class StartPoseStore(private val settings: SettingsFile, private val log: Logger) {
+    constructor(file: File?, log: Logger) : this(SettingsFile(file), log)
+
     @Volatile
     var joints: List<Double> = PiperKinematics.READY_POSE
         private set
@@ -103,15 +99,10 @@ class StartPoseStore(private val file: File?, private val log: Logger) {
 
     @Synchronized
     private fun load() {
-        val f = file ?: return
-        if (!f.exists()) return
-        val saved = runCatching {
-            val o = Json.parseToJsonElement(f.readText()) as JsonObject
-            (o[KEY] as? JsonArray)?.map { it.jsonPrimitive.doubleOrNull ?: Double.NaN }
-        }.getOrNull() ?: return
+        val saved = (settings[KEY] as? JsonArray)?.map { (it as? JsonPrimitive)?.doubleOrNull ?: Double.NaN } ?: return
         val why = problem(saved)
         if (why != null) {
-            log.warning("ignoring the start pose in $f: $why")
+            log.warning("ignoring the start pose in ${settings.file}: $why")
             return
         }
         joints = saved
@@ -122,7 +113,7 @@ class StartPoseStore(private val file: File?, private val log: Logger) {
     fun save(j: List<Double>): String? {
         problem(j)?.let { return it }
         val rounded = j.map { Math.round(it * 100) / 100.0 }
-        write(JsonObject(mapOf(KEY to JsonArray(rounded.map { JsonPrimitive(it) }))))?.let { return it }
+        settings.put(KEY, JsonArray(rounded.map { JsonPrimitive(it) }))?.let { return it }
         joints = rounded
         return null
     }
@@ -131,27 +122,11 @@ class StartPoseStore(private val file: File?, private val log: Logger) {
     @Synchronized
     fun reset(): String? {
         joints = PiperKinematics.READY_POSE
-        return if (file?.exists() == true) write(JsonObject(emptyMap())) else null
-    }
-
-    private fun write(o: JsonObject): String? {
-        val f = file ?: return null
-        return try {
-            f.parentFile?.mkdirs()
-            val tmp = File(f.parentFile, f.name + ".tmp")
-            tmp.writeText(o.toString() + "\n")
-            runCatching { Files.setPosixFilePermissions(tmp.toPath(), PosixFilePermissions.fromString("rw-r--r--")) }
-            Files.move(tmp.toPath(), f.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
-            null
-        } catch (e: Exception) {
-            "could not save $f: ${e.message}"
-        }
+        return settings.put(KEY, null)
     }
 
     companion object {
         const val KEY = "start_pose_deg"
-
-        fun defaultFile() = File(System.getProperty("user.home"), ".config/nervus/hand-teleop.json")
 
         /** Why [j] can't be a start pose, or null if it can. */
         fun problem(j: List<Double>): String? {

@@ -1,5 +1,7 @@
 package com.nervus.handteleop.control
 
+import com.nervus.handteleop.math.ArmCalibrator
+import com.nervus.handteleop.math.BodyMath
 import com.nervus.handteleop.math.Box
 import com.nervus.handteleop.math.HandMath
 import com.nervus.handteleop.math.Mat3
@@ -8,6 +10,7 @@ import com.nervus.handteleop.math.Quat
 import com.nervus.handteleop.math.RollShaper
 import com.nervus.handteleop.math.SlipAnchor
 import com.nervus.handteleop.math.Vec3
+import com.nervus.handteleop.vision.BodyPose
 import com.nervus.handteleop.vision.HandLandmarks
 import com.nervus.handteleop.vision.HandMetrics
 import com.nervus.handteleop.vision.Observation
@@ -33,8 +36,19 @@ enum class RollMode(val label: String, val sign: Double) {
     INVERTED("Inverted", -1.0),
 }
 
+/**
+ * How the hand drives the arm. MIRROR: absolute, shoulder-anchored; the arm puts its TCP where your hand
+ * is relative to your shoulder (scaled), with the robot's shoulder standing in for yours. RELATIVE: the
+ * clutch; the arm follows the hand's movement since you engaged.
+ */
+enum class ControlMode(val label: String) {
+    MIRROR("Mirror my arm"),
+    RELATIVE("Relative (clutch)"),
+}
+
 /** Everything the operator can tune. Read by the control loop every tick. */
 class TeleopSettings {
+    @Volatile var controlMode: ControlMode = ControlMode.MIRROR
     @Volatile var hand: HandLandmarks.Side = HandLandmarks.Side.RIGHT
     @Volatile var pinchMode: PinchMode = PinchMode.THUMB_INDEX
     /**
@@ -64,6 +78,15 @@ class TeleopSettings {
      * a clutch (the arm holds, and the hand is anchored afresh when it opens).
      */
     @Volatile var fistGesture: Boolean = true
+    /** Mirror mode: the operator's shoulder width, metres. It sets the torso's distance from the camera; "Calibrate arm" measures it. */
+    @Volatile var shoulderWidthM: Double = DEFAULT_SHOULDER_WIDTH_M
+    /**
+     * Mirror mode: robot metres per metre of the operator's reach, the robot's reach over the arm's
+     * length (shoulder to palm): 0.50 / 0.62 by default; "Calibrate arm" measures the arm.
+     */
+    @Volatile var armScale: Double = ROBOT_REACH_M / DEFAULT_ARM_LENGTH_M
+    /** Mirror mode: raises every target, metres, for working with the hand below shoulder height. */
+    @Volatile var mirrorLiftM: Double = 0.0
     @Volatile var gripperEffortNm: Double = 1.0
     /**
      * Pinch ratio at which the gripper is fully closed / fully open. The ratio is a 3-D distance over the
@@ -74,6 +97,13 @@ class TeleopSettings {
      */
     @Volatile var closedRatio: Double = 0.25
     @Volatile var openRatio: Double = 1.0
+
+    companion object {
+        /** How far the PiPER reaches for a fully stretched operator arm in mirror mode, metres. */
+        const val ROBOT_REACH_M = 0.50
+        const val DEFAULT_ARM_LENGTH_M = 0.62
+        const val DEFAULT_SHOULDER_WIDTH_M = 0.37
+    }
 }
 
 /** What the UI shows about the control loop. */
@@ -101,13 +131,30 @@ data class TeleopStatus(
     /** How far through a held fist, 0..1 (0 when none), and whether it will engage (else disengage). */
     val gestureProgress: Double = 0.0,
     val gestureEngages: Boolean = true,
+    val mode: ControlMode = ControlMode.MIRROR,
+    /**
+     * Diagnostics. [reach]: mirror mode, the operator's shoulder-to-hand vector (forward, side, up; m);
+     * clutch mode, the hand's movement since the anchor in the same axes. [goalRaw] / [goal]: the TCP
+     * target before and after the workspace clamp (base_link, m); [clamped]: they differ; [slipping]:
+     * clutch mode, the anchor is sliding along the edge.
+     */
+    val reach: Vec3? = null,
+    val goalRaw: Vec3? = null,
+    val goal: Vec3? = null,
+    val clamped: Boolean = false,
+    val slipping: Boolean = false,
+    /** Why the arm won't reach the target as asked (the driver's planner), or null. */
+    val servoNote: String? = null,
+    /** "Calibrate arm" progress, 0..1, while [Phase.CALIBRATING]. */
+    val calibration: Double? = null,
 ) {
     /**
-     * IDLE: not in control. OUTSIDE: engage was asked for, but the arm is outside the workspace; the UI
-     * offers the start pose. MOVING: going to the start pose. ENGAGED / HOLD: in control, following or
-     * holding. ERROR: in control (or trying), but the last command was refused.
+     * IDLE: not in control. OUTSIDE: engage was asked for (clutch mode), but the arm is outside the
+     * workspace; the UI offers the start pose. MOVING: going to the start pose. CALIBRATING: measuring the
+     * operator's arm. APPROACH: mirror mode, engaged and on the way to where the hand says. ENGAGED /
+     * HOLD: in control, following or holding. ERROR: in control (or trying), but the last command was refused.
      */
-    enum class Phase { IDLE, OUTSIDE, MOVING, ENGAGED, HOLD, ERROR }
+    enum class Phase { IDLE, OUTSIDE, MOVING, CALIBRATING, APPROACH, ENGAGED, HOLD, ERROR }
 }
 
 /**
@@ -123,6 +170,11 @@ data class TeleopStatus(
  * pinch. At the edge of the workspace the anchor slips along, so the arm comes back as soon as the
  * hand does. A fist held 1.5 s engages or disengages; a shorter fist is a clutch.
  *
+ * That is RELATIVE (clutch) mode. In MIRROR mode (the default) the mapping is absolute instead: the
+ * vector from the operator's shoulder (YOLO pose, at the torso's depth from the shoulder width) to the
+ * palm (at the palm's own depth) is scaled onto the robot with the robot's shoulder (J2) as the origin.
+ * Engaging there means the arm first travels to where the hand says (APPROACH), slowly, and then follows.
+ *
  * Teleop can only start inside the workspace. Outside it (the PiPER at rest is folded below it), the
  * start pose is a slow joint-space move there, offered instead of a refusal.
  *
@@ -135,6 +187,8 @@ class Teleop(
     private val settings: TeleopSettings,
     private val log: Logger,
     val startPose: StartPoseStore = StartPoseStore(null, log),
+    private val body: BodySizeStore = BodySizeStore(SettingsFile(null)),
+    private val tickLog: TickLog? = null,
 ) {
     @Volatile
     var status = TeleopStatus()
@@ -179,9 +233,40 @@ class Teleop(
     private val fw = Array(HandMath.PALM_POINTS.size) { OneEuro3(0.4, 0.1) }
     private val gate = OutlierGate()
     private val roll = RollShaper()
+    // Mirror mode: the shoulder's pixel position and the shoulder width (the torso's distance) are smoothed
+    // like the hand; the width hardest, since the torso hardly moves toward or away while working.
+    private val fsu = OneEuro(1.0, 0.015)
+    private val fsv = OneEuro(1.0, 0.015)
+    private val fsw = OneEuro(0.3, 0.005)
+    // A whole-arm estimate can legitimately move much faster than a hand nudge: 15 cm per frame.
+    private val mirrorGate = OutlierGate(maxStep = MIRROR_JUMP_M)
+    private var approaching = false
+    private var approachGoal: Vec3? = null
+    private var approachStart = 0L
+    private var mirrorRef: MirrorRef? = null
+    private val tcpTrail = ArrayDeque<Pair<Long, Vec3>>()
+    @Volatile
+    private var calibrateRequested = false
+    private var calibrating = false
+    private var calibrationStart = 0L
+    private val calibrator = ArmCalibrator()
 
-    /** One accepted vision frame, filtered: the palm centre in camera metres, the palm frame, the pinch. */
-    private class Measurement(val pos: Vec3, val palm: Mat3?, val pinch: Double, val bonesPx: Double)
+    init {
+        // A saved calibration replaces the defaults.
+        body.load()?.let {
+            settings.shoulderWidthM = it.shoulderWidthM
+            settings.armScale = TeleopSettings.ROBOT_REACH_M / it.armLengthM
+        }
+    }
+
+    /**
+     * One accepted vision frame, filtered: the palm centre in camera metres, the palm frame, the pinch;
+     * in mirror mode also the shoulder-to-hand vector in the operator's axes (forward, side, up).
+     */
+    private class Measurement(val pos: Vec3, val palm: Mat3?, val pinch: Double, val bonesPx: Double, val reach: Vec3? = null)
+
+    /** Mirror mode: the tool orientation to keep and the palm to measure roll from, taken when engaging. */
+    private class MirrorRef(val q0: Quat?, val palm: Mat3?, val bonesPx: Double)
 
     /** The hand and the arm as they were at the anchor. */
     private class Anchor(val hand: Measurement, val tcp: Pose, val base: SlipAnchor) {
@@ -194,7 +279,7 @@ class Teleop(
         var initialError = Double.NaN
     }
 
-    private enum class Frame { ACCEPTED, EDGE_ON, DROPPED, RESET, UNMEASURABLE }
+    private enum class Frame { ACCEPTED, EDGE_ON, DROPPED, RESET, UNMEASURABLE, NO_SHOULDERS }
 
     /** Why this path can't move to the start pose, for the UI; null when it can. */
     val jointMoveUnavailable: String? get() = arm.jointMoveUnavailable
@@ -207,6 +292,9 @@ class Teleop(
 
     /** Dismisses the outside-the-workspace prompt. */
     fun cancelPrompt() { cancelRequested = true }
+
+    /** "Calibrate arm": measure the operator's arm and shoulders (arm held straight out sideways for 2 s). */
+    fun calibrate() { calibrateRequested = true }
 
     /** Emergency: stop the arm now (a start-pose move too) and give up control. Callable from any thread. */
     fun stopNow() {
@@ -228,6 +316,16 @@ class Teleop(
 
     /** One control tick (call at ~20 Hz with the newest observation). */
     fun tick(obs: Observation?, nowNanos: Long) {
+        tickInner(obs, nowNanos)
+        val s = status
+        if (tickLog != null && (lease != null || move != null || s.reach != null || calibrating)) {
+            val tcp = s.tcp?.let { Vec3(it.x, it.y, it.z) }
+            tickLog.write(nowNanos, s.phase.name, s.mode.name, s.reach, s.goalRaw, s.goal, tcp,
+                listOfNotNull(if (s.clamped) "clamped" else null, if (s.slipping) "slip" else null, s.servoNote, s.message).joinToString(" | "))
+        }
+    }
+
+    private fun tickInner(obs: Observation?, nowNanos: Long) {
         val dt = if (lastTickAt == 0L) 0.05 else ((nowNanos - lastTickAt) / 1e9).coerceIn(0.0, 0.2)
         lastTickAt = nowNanos
         refreshState(nowNanos)
@@ -235,7 +333,12 @@ class Teleop(
             disengageRequested = false
             engageRequested = false
             moveRequested = null
-            if (move != null) endMove("Move to the start pose stopped") else release("Disengaged")
+            calibrateRequested = false
+            when {
+                move != null -> endMove("Move to the start pose stopped")
+                calibrating -> endCalibration("Calibration stopped", error = false)
+                else -> release("Disengaged")
+            }
             return
         }
         if (cancelRequested) {
@@ -258,6 +361,21 @@ class Teleop(
         val frameH = obs?.frame?.height ?: 480
         val focal = settings.focalFraction * frameW
 
+        if (calibrateRequested) {
+            calibrateRequested = false
+            if (lease != null) {
+                flag("Disengage before calibrating", nowNanos, NOTE_NS, error = true)
+            } else {
+                calibrating = true
+                calibrationStart = nowNanos
+                calibrator.reset()
+            }
+        }
+        if (calibrating) {
+            stepCalibration(obs, hand, metrics, focal, nowNanos)
+            return
+        }
+
         // The fist gesture: held 1.5 s it engages (or disengages); while engaged, any fist is a clutch.
         val isFist = settings.fistGesture && hand != null && HandGesture.isFist(hand.world)
         if (fist.update(isFist, nowNanos)) {
@@ -277,8 +395,9 @@ class Teleop(
                 status = status.copy(phase = TeleopStatus.Phase.IDLE, message = "Show your ${settings.hand.name.lowercase()} hand to the camera first")
                 return
             }
-            if (outsideWorkspace()) {
-                // Don't take control just to give it back: offer the start pose instead.
+            if (settings.controlMode == ControlMode.RELATIVE && outsideWorkspace()) {
+                // Don't take control just to give it back: offer the start pose instead. (Mirror mode doesn't
+                // start from the arm's pose, so it needs no start pose: the driver's planner gets it there.)
                 prompt()
                 return
             }
@@ -287,11 +406,20 @@ class Teleop(
             meas = null
             lastObsAt = 0
             resetFilters()
+            startApproach(nowNanos)
+            mirrorRef = null
         }
         val l = lease
         if (l == null) {
             clutched = false
+            val pv = preview(obs, metrics, focal)
             val idle = status.copy(
+                mode = settings.controlMode,
+                reach = pv?.first,
+                goalRaw = pv?.second,
+                goal = pv?.third,
+                clamped = pv != null && (pv.second - pv.third).norm() > 1e-6,
+                slipping = false,
                 pinch = metrics?.let { pinchOf(it) } ?: 0.0,
                 handDistance = metrics?.depth(focal),
                 handRollDeg = null,
@@ -354,17 +482,19 @@ class Teleop(
             clutched = false
             meas = null
             resetFilters()
+            startApproach(nowNanos) // mirror mode: the hand may be somewhere else now
         }
 
         // Each vision frame is measured once. The ticks in between send the same target again, which
         // keeps the stream (and the lease's deadman) going while the arm holds there.
         if (obs.atNanos != lastObsAt) {
             lastObsAt = obs.atNanos
-            when (measure(hand, metrics, frameW, frameH, focal, obs.atNanos)) {
+            when (measure(hand, metrics, obs.body, frameW, frameH, focal, obs.atNanos)) {
                 Frame.ACCEPTED -> {}
                 Frame.EDGE_ON -> flag("Palm edge-on to the camera: holding the last position", nowNanos)
                 Frame.DROPPED -> flag("Tracking jumped: frame skipped", nowNanos)
                 Frame.UNMEASURABLE -> flag("Hand too small to measure: holding the last position", nowNanos)
+                Frame.NO_SHOULDERS -> flag("Shoulders not in view: step back so the camera sees both, arm holding", nowNanos)
                 Frame.RESET -> {
                     // Three jumps in a row: treat it as a lost hand that is back somewhere else.
                     hold()
@@ -376,7 +506,14 @@ class Teleop(
         }
         val m = meas
         if (m == null) {
-            status = status.copy(phase = TeleopStatus.Phase.HOLD, message = "Hold your hand still to anchor")
+            status = status.copy(
+                phase = TeleopStatus.Phase.HOLD,
+                message = noteNow(nowNanos) ?: if (settings.controlMode == ControlMode.MIRROR) "Show your hand and both shoulders to the camera" else "Hold your hand still to anchor",
+            )
+            return
+        }
+        if (settings.controlMode == ControlMode.MIRROR) {
+            mirrorStep(m, l, nowNanos, dt)
             return
         }
 
@@ -424,37 +561,17 @@ class Teleop(
             }
         }.build()
 
-        var err: String? = null
-        try {
-            arm.servo(target, settings.speed)
-            servoCount++
-        } catch (e: ArmRefusedException) {
-            // The lease may have lapsed (deadman, pre-empted), or the driver is holding the arm (busy, IK
-            // guard): show why, renew next tick, then re-anchor on wherever the arm really is.
-            err = "Arm holding, servo refused: ${e.message}"
-            lastRenew = 0
-            anchor = null
-        } catch (e: Exception) {
-            err = e.message
-        }
-
-        val opening = ((m.pinch - settings.closedRatio) / (settings.openRatio - settings.closedRatio)).coerceIn(0.0, 1.0)
-        val gripStep = kotlin.math.abs(opening - lastGripSent)
-        if (gripStep > 0.04 || (gripStep > 0.005 && (opening == 0.0 || opening == 1.0)) || lastGripSent < 0) {
-            if (nowNanos - lastGripAt > 100_000_000L) {
-                runCatching { arm.gripper(opening, settings.gripperEffortNm) }
-                    .onSuccess { lastGripSent = opening; lastGripAt = nowNanos }
-                    .onFailure { if (err == null) err = "gripper: ${it.message}" }
-            }
-        }
-
-        if (nowNanos - servoWindow > 1_000_000_000L) {
-            val hz = servoCount * 1e9f / (nowNanos - servoWindow)
-            servoCount = 0
-            servoWindow = nowNanos
-            status = status.copy(servoHz = hz)
-        }
+        var err = servo(target, settings.speed)
+        val opening = gripper(m, nowNanos)?.let { e -> if (err == null) err = e; null } ?: status.gripper
+        countServo(nowNanos)
         status = status.copy(
+            mode = ControlMode.RELATIVE,
+            reach = BodyMath.toUser(d, settings.invertSide),
+            goalRaw = raw,
+            goal = p,
+            clamped = atEdge,
+            slipping = atEdge,
+            servoNote = arm.servoNote,
             phase = if (err == null) TeleopStatus.Phase.ENGAGED else TeleopStatus.Phase.ERROR,
             message = err ?: noteNow(nowNanos)
                 ?: if (atEdge) "At the edge of the workspace: the arm stops there and comes back as soon as your hand does"
@@ -470,6 +587,227 @@ class Teleop(
             rollMode = settings.rollMode,
         )
     }
+
+    /** Sends [target]; null when accepted, else why not (and the anchor is dropped, so the next tick starts from the arm's real pose). */
+    private fun servo(target: Pose, speed: Double): String? = try {
+        arm.servo(target, speed)
+        servoCount++
+        null
+    } catch (e: ArmRefusedException) {
+        // The lease may have lapsed (deadman, pre-empted), or the driver is holding the arm (busy, IK
+        // guard): show why, renew next tick, then re-anchor on wherever the arm really is.
+        lastRenew = 0
+        anchor = null
+        "Arm holding, servo refused: ${e.message}"
+    } catch (e: Exception) {
+        e.message ?: "servo failed"
+    }
+
+    /**
+     * The gripper follows the pinch (continuous opening), sent only when it changes enough, at most 10
+     * times a second. Updates the status's opening; returns an error, or null.
+     */
+    private fun gripper(m: Measurement, nowNanos: Long): String? {
+        val opening = ((m.pinch - settings.closedRatio) / (settings.openRatio - settings.closedRatio)).coerceIn(0.0, 1.0)
+        status = status.copy(gripper = opening)
+        val gripStep = kotlin.math.abs(opening - lastGripSent)
+        if (gripStep > 0.04 || (gripStep > 0.005 && (opening == 0.0 || opening == 1.0)) || lastGripSent < 0) {
+            if (nowNanos - lastGripAt > 100_000_000L) {
+                return runCatching { arm.gripper(opening, settings.gripperEffortNm) }
+                    .onSuccess { lastGripSent = opening; lastGripAt = nowNanos }
+                    .exceptionOrNull()?.let { "gripper: ${it.message}" }
+            }
+        }
+        return null
+    }
+
+    private fun countServo(nowNanos: Long) {
+        if (nowNanos - servoWindow > 1_000_000_000L) {
+            val hz = servoCount * 1e9f / (nowNanos - servoWindow)
+            servoCount = 0
+            servoWindow = nowNanos
+            status = status.copy(servoHz = hz)
+        }
+    }
+
+    // ---------------------------------------------------------------- mirror mode
+
+    private fun startApproach(nowNanos: Long) {
+        approaching = true
+        approachGoal = null
+        approachStart = nowNanos
+    }
+
+    /**
+     * Mirror mode, one tick: the shoulder-to-hand vector scaled onto the robot's shoulder, clamped to the
+     * reachable band and the driver's box. Engaging (and coming back after a lost hand or a fist) starts
+     * with APPROACH: the arm travels to the target slowly, the goal re-sent unchanged until the hand has
+     * moved a few cm (so the driver keeps one plan instead of replanning every tick), until the TCP is
+     * within [ARRIVE_M] or stops getting closer. Then it follows every tick at the normal speed.
+     */
+    private fun mirrorStep(m: Measurement, l: ArmControl, nowNanos: Long, dt: Double) {
+        val reach = m.reach ?: return
+        val raw = BodyMath.mirrorTarget(reach, settings.armScale, settings.mirrorLiftM)
+        val goal = (arm.workspace ?: MIRROR_WORKSPACE).clamp(BodyMath.clampReach(raw))
+        val clamped = (goal - raw).norm() > 1e-6
+        val st = lastState
+        val tcp = st?.takeIf { it.hasTcpPose() && it.tcpPose.frame.isNotEmpty() }?.tcpPose
+        if (tcp == null) {
+            status = status.copy(phase = TeleopStatus.Phase.HOLD, message = "Waiting for the arm's pose (is the PiPER powered?)", reach = reach, goalRaw = raw, goal = goal, clamped = clamped)
+            return
+        }
+        val here = Vec3(tcp.x, tcp.y, tcp.z)
+        val ref = mirrorRef ?: MirrorRef(
+            // Keep the tool's orientation from engaging; from a folded arm, the READY pose's (pointing
+            // forward and down), which works across the workspace, instead of the folded one.
+            q0 = if (here in WORKSPACE) Quat(tcp.qx, tcp.qy, tcp.qz, tcp.qw).unit() else READY_Q,
+            palm = m.palm, bonesPx = m.bonesPx,
+        ).also { mirrorRef = it; roll.reset() }
+
+        val dist = (here - goal).norm()
+        val sent: Vec3
+        val speed: Double
+        var arrivedShort = false
+        if (approaching) {
+            val g = approachGoal
+            if (g == null || (goal - g).norm() > APPROACH_RESEND_M) approachGoal = goal
+            sent = approachGoal!!
+            speed = minOf(settings.speed, APPROACH_SPEED)
+            if (dist < ARRIVE_M) {
+                approaching = false
+            } else if (nowNanos - approachStart > 2_000_000_000L && settled(nowNanos)) {
+                // The planner got as close as it can (out of reach, partial plan): follow from here.
+                approaching = false
+                arrivedShort = true
+            }
+        } else {
+            sent = goal
+            speed = settings.speed
+        }
+        // Roll only once the arm is following: while approaching, the goal must stay the same goal.
+        val handRoll = if (ref.palm != null && m.palm != null) HandMath.roll(ref.palm, m.palm) else null
+        val toolRoll = when {
+            approaching -> roll.value
+            handRoll == null -> roll.value
+            else -> roll.step(handRoll * settings.rollMode.sign, dt)
+        }
+        val target = Pose.newBuilder(tcp).setFrame(tcp.frame).setX(sent.x).setY(sent.y).setZ(sent.z).apply {
+            ref.q0?.let { q0 ->
+                val q = q0 * Quat.about(Vec3.Z, toolRoll)
+                setQx(q.x).setQy(q.y).setQz(q.z).setQw(q.w)
+            }
+        }.build()
+        var err = servo(target, speed)
+        if (err != null) {
+            startApproach(nowNanos) // after a refusal, go back to the hand slowly
+            mirrorRef = null
+        }
+        val opening = gripper(m, nowNanos)?.let { e -> if (err == null) err = e; null } ?: status.gripper
+        countServo(nowNanos)
+        val note = arm.servoNote
+        status = status.copy(
+            phase = when {
+                err != null -> TeleopStatus.Phase.ERROR
+                approaching -> TeleopStatus.Phase.APPROACH
+                else -> TeleopStatus.Phase.ENGAGED
+            },
+            message = err ?: noteNow(nowNanos) ?: when {
+                approaching -> "Moving to your hand: %.0f cm to go".format(dist * 100)
+                arrivedShort -> "The arm stopped %.0f cm short of where your hand says (out of reach?): following from here".format(dist * 100)
+                note != null -> "Following, but $note"
+                clamped -> "At the edge of what the arm can reach: following as close as it can"
+                else -> "Mirroring your ${settings.hand.name.lowercase()} arm"
+            },
+            mode = ControlMode.MIRROR,
+            target = target,
+            reach = reach,
+            goalRaw = raw,
+            goal = sent,
+            clamped = clamped,
+            slipping = false,
+            servoNote = note,
+            gripper = opening,
+            pinch = m.pinch,
+            leaseEpoch = l.epoch,
+            lastError = err ?: status.lastError,
+            handDistance = m.pos.z,
+            handRollDeg = handRoll?.let { Math.toDegrees(it) },
+            toolRollDeg = Math.toDegrees(toolRoll),
+            rollMode = settings.rollMode,
+        )
+        if (arrivedShort) flag(status.message, nowNanos, 3_000_000_000L)
+    }
+
+    /** The TCP has moved less than 5 mm over the last second (the approach got as far as it will). */
+    private fun settled(nowNanos: Long): Boolean {
+        val recent = tcpTrail.filter { nowNanos - it.first <= 1_000_000_000L }
+        if (recent.size < 4 || nowNanos - recent.first().first < 800_000_000L) return false
+        val p0 = recent.first().second
+        return recent.all { (it.second - p0).norm() < 0.005 }
+    }
+
+    // ---------------------------------------------------------------- calibration
+
+    /**
+     * "Calibrate arm", one tick: the operator faces the camera with the arm straight out sideways. The
+     * palm's metric depth stands in for the torso's, so the shoulder width and the shoulder-to-palm length
+     * come out in metres; [ArmCalibrator] needs 2 s of good frames and takes the medians.
+     */
+    private fun stepCalibration(obs: Observation?, hand: HandLandmarks?, metrics: HandMetrics?, focal: Double, nowNanos: Long) {
+        if (nowNanos - calibrationStart > CALIBRATION_TIMEOUT_NS) {
+            endCalibration("Calibration timed out: hold your arm straight out to the side, level, for 2 s", error = true)
+            return
+        }
+        val side = settings.hand.name.lowercase()
+        val b = obs?.body
+        val (sIdx, eIdx) = shoulderElbow()
+        val other = if (sIdx == BodyPose.L_SHOULDER) BodyPose.R_SHOULDER else BodyPose.L_SHOULDER
+        val z = metrics?.depth(focal)
+        val why = when {
+            b == null || hand == null || metrics == null || z == null -> "show your $side hand and your shoulders"
+            b[sIdx].score < KP_SCORE || b[other].score < KP_SCORE || b[eIdx].score < KP_SCORE -> "the camera needs to see both shoulders and your elbow"
+            else -> calibrator.check(b[sIdx].x.toDouble(), b[sIdx].y.toDouble(), b[eIdx].x.toDouble(), b[eIdx].y.toDouble(), metrics.palmX.toDouble(), metrics.palmY.toDouble())
+        }
+        val result = if (b != null && metrics != null && z != null) {
+            val w = kotlin.math.hypot((b[sIdx].x - b[other].x).toDouble(), (b[sIdx].y - b[other].y).toDouble())
+            val armPx = kotlin.math.hypot(metrics.palmX.toDouble() - b[sIdx].x, metrics.palmY.toDouble() - b[sIdx].y)
+            calibrator.update(why, nowNanos, w, armPx, z, focal)
+        } else {
+            calibrator.update(why ?: "no hand", nowNanos, 0.0, 0.0, 1.0, focal)
+        }
+        if (result != null) {
+            if (result.armLengthM !in ArmCalibrator.ARM_RANGE || result.shoulderWidthM !in ArmCalibrator.SHOULDER_RANGE) {
+                endCalibration("Calibration didn't look right (arm %.2f m, shoulders %.2f m): try again, facing the camera".format(result.armLengthM, result.shoulderWidthM), error = true)
+                return
+            }
+            settings.shoulderWidthM = result.shoulderWidthM
+            settings.armScale = TeleopSettings.ROBOT_REACH_M / result.armLengthM
+            val saved = body.save(result)
+            endCalibration(
+                "Calibrated: arm %.2f m, shoulders %.2f m, arm scale %.2f".format(result.armLengthM, result.shoulderWidthM, settings.armScale) +
+                    (saved?.let { " (not saved: $it)" } ?: ""),
+                error = false,
+            )
+            return
+        }
+        status = status.copy(
+            phase = TeleopStatus.Phase.CALIBRATING,
+            calibration = calibrator.progress(nowNanos),
+            message = "Calibrating: face the camera and hold your $side arm straight out to the side, level, for 2 s" +
+                (why?.let { " ($it)" } ?: ""),
+        )
+    }
+
+    private fun endCalibration(message: String, error: Boolean) {
+        calibrating = false
+        calibrator.reset()
+        flag(message, lastTickAt, NOTE_NS, error)
+        status = status.copy(phase = if (error) TeleopStatus.Phase.ERROR else TeleopStatus.Phase.IDLE, calibration = null, message = message)
+    }
+
+    /** The operating side's shoulder and elbow keypoints (COCO). */
+    private fun shoulderElbow(): Pair<Int, Int> =
+        if (settings.hand == HandLandmarks.Side.LEFT) BodyPose.L_SHOULDER to BodyPose.L_ELBOW else BodyPose.R_SHOULDER to BodyPose.R_ELBOW
 
     // ---------------------------------------------------------------- start pose
 
@@ -601,19 +939,29 @@ class Teleop(
     // ---------------------------------------------------------------- measuring
 
     /** Gates one new vision frame and, if it passes, filters it into [meas]. */
-    private fun measure(h: HandLandmarks, m: HandMetrics, frameW: Int, frameH: Int, focal: Double, t: Long): Frame {
+    private fun measure(h: HandLandmarks, m: HandMetrics, body: BodyPose?, frameW: Int, frameH: Int, focal: Double, t: Long): Frame {
         val z = m.depth(focal) ?: return Frame.UNMEASURABLE
-        val a = anchor
+        val mirror = settings.controlMode == ControlMode.MIRROR
         // Nearly edge-on (fingers toward the camera), both bone sums shrink toward nothing and their
         // ratio, the depth, is mostly noise.
-        if (a != null && m.bonesPx < EDGE_ON * a.hand.bonesPx) return Frame.EDGE_ON
+        val refBones = if (mirror) mirrorRef?.bonesPx else anchor?.hand?.bonesPx
+        if (refBones != null && m.bonesPx < EDGE_ON * refBones) return Frame.EDGE_ON
         val cx = frameW / 2.0
         val cy = frameH / 2.0
         val left = h.side == HandLandmarks.Side.LEFT
         // Raw values go to the gate before any filter sees them, so a glitch never gets into the filters.
         val raw = HandMath.backProject(m.palmX.toDouble(), m.palmY.toDouble(), z, focal, cx, cy)
         val rawPalm = if (settings.rollMode != RollMode.OFF) HandMath.palmFrame(h.world, left) else null
-        when (gate.check(raw, rawPalm)) {
+        var shoulderPx: Triple<Double, Double, Double>? = null
+        val verdict = if (mirror) {
+            val sh = shoulders(body) ?: return Frame.NO_SHOULDERS
+            val zt = BodyMath.torsoDepth(focal, settings.shoulderWidthM, sh.third) ?: return Frame.NO_SHOULDERS
+            shoulderPx = sh
+            mirrorGate.check(BodyMath.shoulderToHand(sh.first, sh.second, zt, m.palmX.toDouble(), m.palmY.toDouble(), z, focal, cx, cy), rawPalm)
+        } else {
+            gate.check(raw, rawPalm)
+        }
+        when (verdict) {
             OutlierGate.Verdict.ACCEPT -> {}
             OutlierGate.Verdict.DROP -> return Frame.DROPPED
             OutlierGate.Verdict.RESET -> return Frame.RESET
@@ -623,8 +971,40 @@ class Teleop(
         val zf = fz.filter(z, t)
         val pts = HandMath.PALM_POINTS.mapIndexed { k, i -> fw[k].filter(h.world[i], t) }
         val palm = HandMath.palmFrame(pts[0], pts[1], pts[2], pts[3], pts[4], left) ?: meas?.palm
-        meas = Measurement(HandMath.backProject(u, v, zf, focal, cx, cy), palm, fp.filter(pinchOf(m), t), m.bonesPx)
+        val reach = shoulderPx?.let { sh ->
+            val su = fsu.filter(sh.first, t)
+            val sv = fsv.filter(sh.second, t)
+            val sw = fsw.filter(sh.third, t)
+            val zt = BodyMath.torsoDepth(focal, settings.shoulderWidthM, sw) ?: return Frame.NO_SHOULDERS
+            BodyMath.toUser(BodyMath.shoulderToHand(su, sv, zt, u, v, zf, focal, cx, cy), settings.invertSide)
+        }
+        meas = Measurement(HandMath.backProject(u, v, zf, focal, cx, cy), palm, fp.filter(pinchOf(m), t), m.bonesPx, reach)
         return Frame.ACCEPTED
+    }
+
+    /** The operating side's shoulder (pixels) and the shoulder width (pixels), or null when the pose model doesn't see both shoulders. */
+    private fun shoulders(body: BodyPose?): Triple<Double, Double, Double>? {
+        val b = body ?: return null
+        val (sIdx, _) = shoulderElbow()
+        val other = if (sIdx == BodyPose.L_SHOULDER) BodyPose.R_SHOULDER else BodyPose.L_SHOULDER
+        if (b[sIdx].score < KP_SCORE || b[other].score < KP_SCORE) return null
+        val w = kotlin.math.hypot((b[sIdx].x - b[other].x).toDouble(), (b[sIdx].y - b[other].y).toDouble())
+        return Triple(b[sIdx].x.toDouble(), b[sIdx].y.toDouble(), w)
+    }
+
+    /**
+     * Mirror mode while not in control: the unfiltered shoulder-to-hand vector and where it would send
+     * the arm, so the operator can see the mapping before engaging.
+     */
+    private fun preview(obs: Observation?, m: HandMetrics?, focal: Double): Triple<Vec3, Vec3, Vec3>? {
+        if (settings.controlMode != ControlMode.MIRROR || obs == null || m == null) return null
+        val sh = shoulders(obs.body) ?: return null
+        val z = m.depth(focal) ?: return null
+        val zt = BodyMath.torsoDepth(focal, settings.shoulderWidthM, sh.third) ?: return null
+        val v = BodyMath.shoulderToHand(sh.first, sh.second, zt, m.palmX.toDouble(), m.palmY.toDouble(), z, focal, obs.frame.width / 2.0, obs.frame.height / 2.0)
+        val reach = BodyMath.toUser(v, settings.invertSide)
+        val raw = BodyMath.mirrorTarget(reach, settings.armScale, settings.mirrorLiftM)
+        return Triple(reach, raw, (arm.workspace ?: MIRROR_WORKSPACE).clamp(BodyMath.clampReach(raw)))
     }
 
     private fun pinchOf(m: HandMetrics): Double =
@@ -637,6 +1017,9 @@ class Teleop(
         meas = null
         runCatching { arm.stop() }
         resetFilters()
+        // Mirror mode: the hand may come back anywhere, so travel to it slowly again.
+        startApproach(lastTickAt)
+        mirrorRef = null
     }
 
     private fun resetFilters() {
@@ -644,6 +1027,8 @@ class Teleop(
         fw.forEach { it.reset() }
         gate.reset()
         roll.reset()
+        fsu.reset(); fsv.reset(); fsw.reset()
+        mirrorGate.reset()
     }
 
     /**
@@ -666,6 +1051,10 @@ class Teleop(
         try {
             val st = arm.state()
             lastState = st
+            if (st.hasTcpPose()) {
+                tcpTrail.addLast(nowNanos to Vec3(st.tcpPose.x, st.tcpPose.y, st.tcpPose.z))
+                while (tcpTrail.isNotEmpty() && nowNanos - tcpTrail.first().first > 2_000_000_000L) tcpTrail.removeFirst()
+            }
             status = status.copy(
                 armReadiness = st.readiness.name.removePrefix("ARM_READINESS_"),
                 armWords = arm.words,
@@ -684,6 +1073,8 @@ class Teleop(
         meas = null
         holding = false
         clutched = false
+        approaching = false
+        mirrorRef = null
         flag(message, lastTickAt, NOTE_NS, error)
         resetFilters()
         if (l != null) {
@@ -694,6 +1085,7 @@ class Teleop(
         status = status.copy(
             phase = if (error) TeleopStatus.Phase.ERROR else TeleopStatus.Phase.IDLE,
             message = message, target = null, handRollDeg = null, toolRollDeg = 0.0, moveProgress = null,
+            goalRaw = null, goal = null, clamped = false, slipping = false, servoNote = null,
         )
     }
 
@@ -715,6 +1107,27 @@ class Teleop(
 
         /** A frame whose palm bones look shorter than this fraction of the anchor's is taken as edge-on. */
         const val EDGE_ON = 0.4
+
+        /**
+         * Mirror mode's box: the PiPER driver's own default (--workspace 60,480,-320,320,80,600 mm), to
+         * which it clamps servo goals anyway; a driver that reports another box is followed instead. The
+         * floor, 80 mm, keeps the gripper off the table.
+         */
+        val MIRROR_WORKSPACE = Box(0.06..0.48, -0.32..0.32, 0.08..0.60)
+        /** Mirror mode: a shoulder-to-hand estimate moving more than this in one frame is a glitch. */
+        const val MIRROR_JUMP_M = 0.15
+        /** Mirror mode: engaged, the arm travels to the hand until it is this close... */
+        const val ARRIVE_M = 0.02
+        /** ...at this speed (fraction of the driver's), re-planning only when the target moves this far. */
+        const val APPROACH_SPEED = 0.3
+        const val APPROACH_RESEND_M = 0.03
+        /** Pose keypoints below this confidence don't count. */
+        const val KP_SCORE = 0.3f
+        const val CALIBRATION_TIMEOUT_NS = 20_000_000_000L
+
+        /** The READY pose's tool orientation, which mirror mode keeps when engaging from a folded arm. */
+        val READY_Q: Quat = PiperKinematics.endPose(PiperKinematics.READY_POSE)
+            .let { PiperPose.eulerToQuat(Math.toRadians(it[3]), Math.toRadians(it[4]), Math.toRadians(it[5])) }
 
         /** How long a reason for giving up control stays on screen. */
         const val NOTE_NS = 5_000_000_000L

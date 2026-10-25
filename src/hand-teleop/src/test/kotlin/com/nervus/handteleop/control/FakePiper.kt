@@ -16,7 +16,9 @@ import java.util.Collections
  * A stand-in for the PiPER driver (hardware/piper/piper_webctl.py) on an ephemeral loopback port, with
  * joints that move: in joint mode, while the motors are on and a heartbeat (or joint command) is under
  * 1.5 s old, each state read moves every joint [stepDeg] toward its target, and pose_current is the
- * forward kinematics of the joints. Never the real driver (port 8770), never the arm.
+ * forward kinematics of the joints. In servo mode the TCP itself moves [servoStepMm] toward the last goal
+ * per state read (the real driver plans and runs a trajectory; this only has to get there), and the
+ * reply carries [servoPlan] as the driver's planner would. Never the real driver (port 8770), never the arm.
  */
 class FakePiper(start: List<Double>) : AutoCloseable {
     class Call(val path: String, val body: JsonObject, val atMs: Long)
@@ -29,6 +31,15 @@ class FakePiper(start: List<Double>) : AutoCloseable {
     @Volatile var owner: String? = null
     val joints = start.toMutableList()
     private val targets = start.toMutableList()
+    @Volatile var servoStepMm = 15.0
+    @Volatile var servoPlan = "line"
+    @Volatile var servoReason = ""
+    /** The box reported as workspace_mm, as the driver's --workspace would be. */
+    @Volatile var workspaceMm = listOf(60.0, 480.0, -320.0, 320.0, 80.0, 600.0)
+    private var servoGoal: List<Double>? = null
+    /** Where the TCP is once servo goals have moved it (null: the forward kinematics of the joints). */
+    var tcp: MutableList<Double>? = null
+        private set
     private var lastBeatMs = 0L
     private val lock = Any()
     private val server: HttpServer = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
@@ -57,6 +68,15 @@ class FakePiper(start: List<Double>) : AutoCloseable {
                 if (enabled && mode == "joint" && now - lastBeatMs < 1500) {
                     for (i in 0..5) joints[i] += (targets[i] - joints[i]).coerceIn(-stepDeg, stepDeg)
                 }
+                val g = servoGoal
+                if (enabled && mode == "servo" && g != null) {
+                    val t = tcp ?: PiperKinematics.endPose(joints).toMutableList().also { tcp = it }
+                    val d = (0..2).map { g[it] - t[it] }
+                    val n = kotlin.math.sqrt(d.sumOf { it * it })
+                    val k = if (n <= servoStepMm) 1.0 else servoStepMm / n
+                    for (i in 0..2) t[i] += d[i] * k
+                    for (i in 3..5) t[i] = g[i]
+                }
                 200 to state()
             }
             "/api/enable" -> { enabled = body["on"]!!.jsonPrimitive.boolean; targets.indices.forEach { targets[it] = joints[it] }; 200 to OK }
@@ -71,18 +91,25 @@ class FakePiper(start: List<Double>) : AutoCloseable {
             "/api/heartbeat" -> { lastBeatMs = now; 200 to OK }
             "/api/stop", "/api/release" -> {
                 mode = "joint"; targets.indices.forEach { targets[it] = joints[it] }; owner = null; lastBeatMs = 0
+                servoGoal = null
                 200 to OK
             }
-            "/api/servo" -> if (!enabled) 409 to """{"error":"motors are not enabled"}""" else { mode = "servo"; owner = client; 200 to OK }
+            "/api/servo" -> if (!enabled) 409 to """{"error":"motors are not enabled"}""" else {
+                mode = "servo"; owner = client
+                servoGoal = (body["pose"] as JsonArray).map { it.jsonPrimitive.double }
+                200 to """{"ok":true,"clamped":false,"plan":"$servoPlan","reason":"$servoReason"}"""
+            }
             else -> 200 to OK
         }
     }
 
     private fun state(): String {
-        val pose = PiperKinematics.endPose(joints)
+        val pose = tcp ?: PiperKinematics.endPose(joints)
+        val w = workspaceMm
         return """{"enabled":$enabled,"feedback_fresh":true,"estopped":false,"teaching":false,"soft_fault":false,
             "arm_status":"NORMAL","speed":$speed,"mode":"$mode","current":${JsonArray(joints.map { JsonPrimitive(it) })},
             "pose_current":${JsonArray(pose.map { JsonPrimitive(it) })},"gripper_range":[0,95],
+            "workspace_mm":{"x":[${w[0]},${w[1]}],"y":[${w[2]},${w[3]}],"z":[${w[4]},${w[5]}]},
             "owner":${owner?.let { """{"client":"$it","kind":"panel"}""" } ?: "null"}}"""
     }
 
