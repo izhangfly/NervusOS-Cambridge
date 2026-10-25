@@ -71,7 +71,7 @@ cd ../llm-arm && LLM_ARM=http://127.0.0.1:8797 ./gradlew run --args=--standalone
 |---|---|
 | `service/` | The service (Python): grounding, decider loop, governor, executor, cameras, calibration, tests |
 | `llm-arm/` | The app (Kotlin, Compose Desktop) |
-| `driver/` | The PiPER driver (Python, piper_sdk): HTTP API on loopback, safety layer, systemd units |
+| `driver/` | The PiPER driver (Python, piper_sdk): HTTP API on loopback, safety layer, systemd units, and **PiPER Control**, its joint/Cartesian panel as a desktop app |
 | `desktop/` | Desktop entry, icon, `nervus-standalone` launcher |
 | `nervus-app-sdk/`, `nervus-packaging/`, `nervus-ipc/` | NervusOS app SDK, used when it runs inside NervusOS |
 

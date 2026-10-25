@@ -38,7 +38,7 @@ systemctl is-active --quiet nervud.service && WAS_RUNNING=1
 
 # ------------------------------------------------------------------ packages
 step "Packages"
-PKGS=(xserver-xephyr openbox wmctrl xdotool xauth x11-xserver-utils x11-utils mesa-utils
+PKGS=(xserver-xephyr openbox wmctrl xdotool xauth x11-xserver-utils x11-utils mesa-utils python3-gi gir1.2-webkit2-4.1
       can-utils iproute2 python3-venv libnotify-bin v4l-utils ffmpeg)
 missing=()
 for p in "${PKGS[@]}"; do dpkg -s "$p" >/dev/null 2>&1 || missing+=("$p"); done
@@ -112,6 +112,7 @@ install -m 0644 "$REPO/hardware/piper/kinematics.py" /opt/nervus/piper/kinematic
 install -m 0644 "$REPO/hardware/piper/motion.py" /opt/nervus/piper/motion.py
 install -m 0644 "$REPO/hardware/piper/panel.html" /opt/nervus/piper/panel.html
 install -m 0644 "$REPO/hardware/piper/README.md" /opt/nervus/piper/README.md
+install -m 0755 "$REPO/hardware/piper/piper_control.py" /opt/nervus/piper/piper_control.py
 if [[ ! -x /opt/nervus/piper/venv/bin/python ]]; then
 	python3 -m venv /opt/nervus/piper/venv
 fi
@@ -200,7 +201,7 @@ gtk-update-icon-cache -q /usr/share/icons/hicolor 2>/dev/null || true
 install -D -m 0644 "$HOSTED/applications/nervusos.desktop" /usr/share/applications/nervusos.desktop
 install -D -m 0644 "$HOSTED/applications/nervusos-quit.desktop" /usr/share/applications/nervusos-quit.desktop
 # Apps that open straight from the Ubuntu desktop: nervus-open starts NervusOS if needed, then the app.
-APP_LAUNCHERS=(nervus-handteleop nervus-llmarm nervus-act)
+APP_LAUNCHERS=(nervus-handteleop nervus-llmarm nervus-act nervus-piper-control)
 install -D -m 0755 "$HOSTED/bin/nervus-open" /usr/local/bin/nervus-open
 install -D -m 0755 "$HOSTED/bin/nervus-standalone" /usr/local/bin/nervus-standalone
 # The standalone builds (scripts/build.sh standalone): self-contained Compose apps with their own runtime.

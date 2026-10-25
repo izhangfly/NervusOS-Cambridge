@@ -52,7 +52,7 @@ Run it from the icon, or: `nervus-standalone handteleop`. Options:
 | Path | What |
 |---|---|
 | `hand-teleop/` | The app (Kotlin, Compose Desktop): vision, tracking, control, UI. `./gradlew test` runs 38 tests |
-| `driver/` | The PiPER driver (Python, piper_sdk): HTTP API on loopback, safety layer, systemd units |
+| `driver/` | The PiPER driver (Python, piper_sdk): HTTP API on loopback, safety layer, systemd units, and **PiPER Control**, its joint/Cartesian panel as a desktop app |
 | `desktop/` | Desktop entry, icon, `nervus-standalone` launcher |
 | `surface-camera/` | Surface Pro 9 front camera bridge: libcamera → v4l2loopback "Surface Camera" |
 | `nervus-app-sdk/`, `nervus-packaging/`, `nervus-ipc/` | NervusOS app SDK, used when it runs inside NervusOS |
