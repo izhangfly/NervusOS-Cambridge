@@ -570,9 +570,11 @@ class SmoothDriverTest(HttpMixin, unittest.TestCase):
         with self.fake.lock:
             self.fake.ctrl_mode = 0x02
         try:
-            code, body = self.post("/api/enable", {"on": True})
+            code, body = self.post("/api/enable", {"on": True})      # at READY: away from zero
             self.assertEqual(code, 409)
             self.assertIn("teach", body["error"])
+            self.fake.teleport([1.0, 0.0, -0.5, -3.0, 10.0, 1.0])     # folded at zero: allowed
+            self.assertEqual(self.post("/api/enable", {"on": True})[0], 200)
         finally:
             with self.fake.lock:
                 self.fake.ctrl_mode = 0x01
