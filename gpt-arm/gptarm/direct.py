@@ -26,19 +26,28 @@ from . import perception as P
 HOME = Path(os.environ.get("GPTARM_HOME", "~/.config/gptarm")).expanduser()
 CONTEXT_PATH = HOME / "context-direct.md"
 
-ACTIONS = ("move_tool", "move_joints", "gripper", "done")
+ACTIONS = ("move_tool", "move_by", "move_joints", "gripper", "skill", "done")
+SKILLS = {"look": "move the arm aside, photograph the table, and come back with fresh detections",
+          "stand_up": "stand a bottle that lies on the table back up (grips it near the cap, lets it hang, sets it on its base)"}
 _num = {"anyOf": [{"type": "number"}, {"type": "null"}]}
+_str = {"anyOf": [{"type": "string"}, {"type": "null"}]}
 SCHEMA = {
     "type": "object", "additionalProperties": False,
-    "required": ["action", "x", "y", "z", "lean", "yaw", "joints", "gripper_mm", "note"],
+    "required": ["action", "x", "y", "z", "lean", "yaw", "joints", "gripper_mm", "skill", "expect", "note"],
     "properties": {
         "action": {"type": "string", "enum": list(ACTIONS)},
         "x": _num, "y": _num, "z": _num, "lean": _num, "yaw": _num,
         "joints": {"anyOf": [{"type": "array", "items": {"type": "number"}}, {"type": "null"}]},
         "gripper_mm": _num,
+        "skill": {"anyOf": [{"type": "string", "enum": list(SKILLS)}, {"type": "null"}]},
+        "expect": _str,
         "note": {"type": "string"},
     },
 }
+PLAN_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["stages"],
+               "properties": {"stages": {"type": "array", "items": {
+                   "type": "object", "additionalProperties": False, "required": ["goal", "done_when"],
+                   "properties": {"goal": {"type": "string"}, "done_when": {"type": "string"}}}}}}
 
 DEFAULT_CONTEXT = """\
 # The arm
@@ -60,12 +69,16 @@ the arm's left, +z up. The table top is z = 0.
   direction, in the table plane, that the tool leans towards; the fingers close at right angles to it.
   Null yaw means the bearing of the point from the base (x axis = 0, +y = 90), so the fingers close
   sideways. The arm moves there in a path of its own choosing; it does not travel in a straight line.
+- move_by: move the tool point BY x, y, z millimetres from where it is now (relative; null counts as 0).
+  Best for small corrections you read off the wrist picture ("the bottle is 15 mm to the left").
 - move_joints: set all six joint angles (degrees), moved together along a straight line in joint space.
   J1 turns the arm about the vertical (positive turns it to the left, +y). J2 is the shoulder, J3 the elbow,
   J4 rolls the forearm, J5 bends the wrist, J6 turns the gripper about its own axis.
   Ranges: J1 -150..150, J2 0..180, J3 -170..0, J4 -100..100, J5 -70..70, J6 -100..100.
 - gripper: open or close the fingers: gripper_mm from 0 (closed) to 75 (fully open). After a close,
   `holding` tells you whether the fingers stopped on something.
+- skill: run a ready-made routine named in `skill`: "look" (move the arm aside, photograph the table, refresh
+  the detector) or "stand_up" (stand a bottle that lies on the table back up). Use them or not, as you see fit.
 - done: you believe the instruction has been carried out. The result is then checked by the cameras and by
   touch.
 
@@ -74,7 +87,13 @@ the arm's left, +z up. The table top is z = 0.
 - Overhead: the whole table from above. A green grid is drawn on the table top every 100 mm, labelled in
   the arm's x and y. The magenta cross is the tool point. Yellow and blue marks are an automatic detector's
   guesses (bottle, basket); they can be wrong, and the arm hides part of the table.
-- Wrist: looks down along the gripper, between the fingers.
+- Wrist: looks down along the gripper, between the two fingers (the dark shapes at the bottom corners).
+  It is not mirrored: UP in the wrist picture is the tool's yaw direction (away from the base when yaw is
+  null), LEFT is 90 degrees counter-clockwise from that seen from above. A compass drawn in the corner
+  shows where the arm's +x and +y point, and a cyan mark shows the point between the fingertips. Close to
+  an object, 1 mm is roughly 3 to 4 pixels.
+
+Fill `expect` with what you expect to see after the motion; the next step shows it next to what happened.
 
 ## Things on the table
 
@@ -141,13 +160,59 @@ def state(world):
     }
 
 
-def prompt(instruction, context, st, history):
-    lines = [context.strip(), "", "# The instruction", instruction.strip(), "", "# Now", json.dumps(st, indent=1),
-             "", "# Your previous motions in this run (oldest first)"]
+PLAN_PROMPT = """{context}
+
+# The instruction
+{instruction}
+
+Before moving, write a short plan for carrying out the instruction with this arm: 2 to 8 stages, each with a
+goal and a condition you can check in the camera pictures (or from `holding`) that says the stage is done.
+The pictures show the table now."""
+
+
+def plan_prompt(instruction, context):
+    return PLAN_PROMPT.format(context=context.strip(), instruction=instruction.strip())
+
+
+def plan_text(plan):
+    if not plan:
+        return ""
+    return "\n".join(f"{n}. {s['goal']} (done when: {s['done_when']})" for n, s in enumerate(plan, 1))
+
+
+def wrist_overlay(img, yaw_deg):
+    """The compass and the fingertip mark on the wrist picture (see the context's description)."""
+    if img is None:
+        return None
+    out = img.copy()
+    h, w = out.shape[:2]
+    cx, cy, r = w - 90, 90, 60
+    cv2.circle(out, (cx, cy), r + 18, (30, 30, 30), -1)
+    for name, ang, col in (("+x", 0.0, (60, 60, 255)), ("+y", 90.0, (60, 220, 60))):
+        a = math.radians(ang - yaw_deg)
+        dx, dy = -math.sin(a), -math.cos(a)
+        tip = (int(cx + dx * r), int(cy + dy * r))
+        cv2.arrowedLine(out, (cx, cy), tip, col, 3, cv2.LINE_AA, tipLength=0.25)
+        cv2.putText(out, name, (int(cx + dx * (r + 4)) - 12, int(cy + dy * (r + 4)) + 6), cv2.FONT_HERSHEY_SIMPLEX,
+                    0.6, (255, 255, 255), 2, cv2.LINE_AA)
+    u, v = int(w * 0.505), int(h * 0.83)                      # between the fingertips, measured on this arm
+    cv2.drawMarker(out, (u, v), (255, 255, 0), cv2.MARKER_CROSS, 34, 2, cv2.LINE_AA)
+    cv2.putText(out, "between fingertips", (u + 20, v - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2, cv2.LINE_AA)
+    return out
+
+
+def prompt(instruction, context, st, history, plan=None):
+    lines = [context.strip(), "", "# The instruction", instruction.strip()]
+    if plan:
+        lines += ["", "# Your plan (written at the start; follow it, or depart from it if the pictures say so)", plan_text(plan)]
+    lines += ["", "# Now", json.dumps(st, indent=1), "", "# Your previous motions in this run (oldest first)"]
     if not history:
         lines.append("(none yet: this is the first)")
-    for desc, ok, detail in history[-14:]:
-        lines.append(f"- {desc}: {'done' if ok else 'NOT DONE'}. {detail}".rstrip())
+    for item in history[-14:]:
+        desc, ok, detail = item[:3]
+        expect = item[3] if len(item) > 3 else None
+        lines.append(f"- {desc}: {'done' if ok else 'NOT DONE'}. {detail}".rstrip()
+                     + (f" (you expected: {expect})" if expect else ""))
     lines += ["", "Image 1 is the overhead camera, image 2 the wrist camera.",
               "Choose the next motion. In `note`, say in one or two sentences what you see and why."]
     return "\n".join(lines)
@@ -162,6 +227,10 @@ def describe(ans):
         return "move_joints [" + ", ".join(_f(v, 1) for v in (ans.get("joints") or [])) + "]"
     if a == "gripper":
         return f"gripper {_f(ans.get('gripper_mm'))} mm"
+    if a == "move_by":
+        return f"move_by ({_f(ans.get('x') or 0)}, {_f(ans.get('y') or 0)}, {_f(ans.get('z') or 0)})"
+    if a == "skill":
+        return f"skill {ans.get('skill')}"
     return str(a)
 
 
@@ -192,6 +261,30 @@ def execute(world, ans):
             world.note_release()
         return f"the fingers are now {w:.0f} mm apart" + ("; they stopped on something: holding" if world.holding else
                                                            ("; they closed on nothing" if float(mm) < 3.0 else ""))
+    if a == "skill":
+        name = ans.get("skill")
+        if name not in SKILLS:
+            raise Refused(f"skill must be one of {', '.join(SKILLS)}")
+        from .task import Refused as SkillRefused
+        try:
+            if name == "look":
+                tool, _ = world.tool()
+                if tool[2] < world.cfg.travel_z - 15.0:
+                    world._go(tool[0], tool[1], world.cfg.travel_z, min_tip_z=tool[2] - 30.0)
+                out = world._look()
+            else:
+                world.gripper = "closed" if (arm.state()["gripper_mm"] or 0) < 3.0 else world.gripper
+                out = world.do(name)
+        except SkillRefused as e:
+            raise Refused(str(e)) from None
+        return out
+    if a == "move_by":
+        st = arm.state()
+        d = [float(ans.get(k) or 0.0) for k in ("x", "y", "z")]
+        if max(abs(v) for v in d) > 300.0:
+            raise Refused("move_by is for moves of up to 300 mm per axis")
+        ans = {**ans, "x": st["tool"][0] + d[0], "y": st["tool"][1] + d[1], "z": st["tool"][2] + d[2]}
+        a = "move_tool"
     if a == "move_tool":
         x, y, z = (ans.get(k) for k in ("x", "y", "z"))
         if None in (x, y, z):

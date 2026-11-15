@@ -183,6 +183,24 @@ def _cycle(world, llm, instruction, context, run, stop_event, mode):
             return finish("failed", "scene_not_ready")
         if world.bottle and world.bottle.get("xy") and world.bottle["where"] == "table":
             world.start_xy = list(world.bottle["xy"])
+        plan = None
+        if direct and not isinstance(llm, L.Scripted):
+            run.pending("llm", note=f"{d['model']} is writing a plan")
+            ann, wrist = world.frames(grid=True)
+            imgs = {k: run.image(f"000-plan-{k}.jpg", im, 1024 if k == "overhead" else 768)[1]
+                    for k, im in (("overhead", ann), ("wrist", wrist)) if im is not None}
+            try:
+                ans, use = llm.ask(D.plan_prompt(instruction, context), imgs, D.PLAN_SCHEMA)
+                plan = ans.get("stages") or None
+                d["plan"] = plan
+                d["usage"]["llm_calls"] += 1
+                d["usage"]["tokens"] += int(use.get("tokens", 0))
+                d["usage"]["llm_s"] = round(d["usage"]["llm_s"] + float(use.get("seconds", 0.0)), 2)
+                run.step("info", note="Plan: " + " | ".join(f"{n}. {s['goal']}" for n, s in enumerate(plan or [], 1)),
+                         detail=D.plan_text(plan), tokens=int(use.get("tokens", 0)), llm_s=round(float(use.get("seconds", 0.0)), 2))
+            except L.LLMError as e:
+                run.step("error", note=f"The model could not be asked: {e}")
+                return finish("failed", "model_unavailable")
 
         declared = False
         while world.steps_used < max_steps:
@@ -203,7 +221,7 @@ def _cycle(world, llm, instruction, context, run, stop_event, mode):
             run.pending("llm", note=f"waiting for {d['model']}")
             try:
                 if direct:
-                    ans, use = llm.ask(D.prompt(instruction, context, state, history), images, D.SCHEMA)
+                    ans, use = llm.ask(D.prompt(instruction, context, state, history, plan), images, D.SCHEMA)
                 else:
                     ans, use = llm.ask(T.prompt(instruction, context, state, history), images, T.SCHEMA)
             except L.LLMError as e:
@@ -232,10 +250,12 @@ def _cycle(world, llm, instruction, context, run, stop_event, mode):
             dt = time.time() - t0
             world.steps_used += 1
             d["usage"]["motion_s"] = round(d["usage"]["motion_s"] + dt, 2)
-            history.append((D.describe(ans), ok, detail) if direct else (skill, target, note, ok, detail))
+            history.append((D.describe(ans), ok, detail, ans.get("expect")) if direct else (skill, target, note, ok, detail))
             rec = state
             if direct:                    # the standard State (API.md), and exactly what the model was given
                 rec = {**world.state(), "model_saw": state}
+            if direct and ans.get("expect"):
+                note = f"{note} (expects: {ans['expect']})"
             run.step("decision", skill=skill, target=None if target == "none" else target, note=note, ok=ok, detail=detail,
                      llm_s=round(float(use.get("seconds", 0.0)), 2), tokens=int(use.get("tokens", 0)), motion_s=round(dt, 2),
                      state=rec, images={"overhead": oname, "wrist": wname})

@@ -12,16 +12,16 @@ from gptarm import arm as A, direct as D, llm, runner, sim, task  # noqa: E402
 
 def mv(x, y, z, **kw):
     return {"action": "move_tool", "x": x, "y": y, "z": z, "lean": kw.get("lean"), "yaw": kw.get("yaw"),
-            "joints": None, "gripper_mm": None, "note": kw.get("note", "")}
+            "joints": None, "gripper_mm": None, "skill": None, "expect": None, "note": kw.get("note", "")}
 
 
 def grip(mm):
     return {"action": "gripper", "x": None, "y": None, "z": None, "lean": None, "yaw": None, "joints": None,
-            "gripper_mm": mm, "note": ""}
+            "gripper_mm": mm, "skill": None, "expect": "holding", "note": ""}
 
 
 DONE = {"action": "done", "x": None, "y": None, "z": None, "lean": None, "yaw": None, "joints": None,
-        "gripper_mm": None, "note": "finished"}
+        "gripper_mm": None, "skill": None, "expect": None, "note": "finished"}
 
 
 class DirectTest(unittest.TestCase):
@@ -51,6 +51,14 @@ class DirectTest(unittest.TestCase):
             D.execute(w, mv(None, 0, 100))
         out = D.execute(w, {**DONE, "action": "move_joints", "joints": [10, 60, -70, 0, 50, 0]})
         self.assertIn("reached", out)
+        before = w.arm.state()["tool"]
+        D.execute(w, {**DONE, "action": "move_by", "x": 20, "y": None, "z": -10})
+        after = w.arm.state()["tool"]
+        self.assertAlmostEqual(after[0] - before[0], 20, delta=1)
+        self.assertAlmostEqual(after[2] - before[2], -10, delta=1)
+        with self.assertRaises(D.Refused):
+            D.execute(w, {**DONE, "action": "skill", "skill": "fly"})
+        self.assertIn("looked", D.execute(w, {**DONE, "action": "skill", "skill": "look"}))
 
     def test_a_scripted_cycle_in_direct_mode(self):
         bx, by = self.t.bottle["xy"]

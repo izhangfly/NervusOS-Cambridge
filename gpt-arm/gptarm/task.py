@@ -518,6 +518,10 @@ class World:
             wrist = self.wrist.frame() if self.wrist else None
         except Exception:                                   # noqa: BLE001
             pass
+        if grid and wrist is not None:
+            from .direct import wrist_overlay
+            from .arm import tool_from_flange
+            wrist = wrist_overlay(wrist, tool_from_flange(self.arm.state()["flange"])[2])
         return ann, wrist
 
     def _scene_for_drawing(self):
