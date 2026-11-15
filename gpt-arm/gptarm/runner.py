@@ -64,7 +64,8 @@ class Run:
     recorder = None
 
     def step(self, kind, **kw):
-        s = {"n": len(self.d["steps"]), "t": time.time(), "kind": kind, **{k: v for k, v in kw.items() if v is not None}}
+        s = {"n": len(self.d["steps"]), "t": time.time(), "kind": kind,
+             **{k: v for k, v in kw.items() if v is not None or (k == "ok" and kind == "verdict")}}
         self.d["steps"].append(s)
         if self.recorder is not None:
             what = (s.get("skill") or kind) + (f" {s['target']}" if s.get("target") else "")

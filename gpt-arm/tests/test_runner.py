@@ -123,5 +123,66 @@ class RunnerTest(unittest.TestCase):
         self.assertTrue((b.dir / "bench.json").exists())
 
 
+class FreeAndLessonsTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        import os
+        from gptarm import lessons
+        lessons.PATH = self.root / "lessons.json"
+        lessons.HOME = self.root
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_a_free_instruction_is_not_checked_and_records_a_video(self):
+        t, make = setup()
+        run = runner.Run("scripted", "Wave hello", "direct", root=self.root)
+        done = {"action": "done", "x": None, "y": None, "z": None, "lean": None, "yaw": None, "joints": None,
+                "gripper_mm": None, "note": "I waved."}
+        d = runner.run_cycle(make(), llm.Scripted(lambda p, i, s: done), "Wave hello", "ctx", run, threading.Event(),
+                             mode="direct")
+        self.assertEqual((d["outcome"]["success"], d["outcome"]["reason"]), (None, "not_checked"))
+        v = [s for s in d["steps"] if s["kind"] == "verdict"][0]
+        self.assertIsNone(v["ok"])
+        self.assertEqual(v["detail"], "I waved.")
+        self.assertEqual(d["video"]["state"], "ready", d["video"])
+        self.assertTrue((self.root / d["id"] / "video.mp4").stat().st_size > 1000)
+
+    def test_lessons_are_learned_and_shown_next_time(self):
+        from gptarm import lessons
+        t, make = setup()
+
+        class Learner(llm.Scripted):                    # a "real" model as far as the runner is concerned
+            pass
+
+        prompts = []
+
+        def policy(p, images, schema):
+            prompts.append(p)
+            if schema is lessons.SCHEMA:
+                return {"operations": [{"op": "ADD", "index": None, "text": "Lying bottles must be gripped at table level."}]}
+            return runner.scripted_policy(p, images, schema)
+
+        m = Learner(policy)
+        m.__class__ = type("Real", (object,), {"ask": lambda self, p, i, s: (policy(p, i, s), {"tokens": 5, "seconds": 0})})
+        run = runner.Run("m", task.DEFAULT_INSTRUCTION, root=self.root)
+        d = runner.run_cycle(make(), m, task.DEFAULT_INSTRUCTION, task.DEFAULT_CONTEXT, run, threading.Event(),
+                             lessons_on=True, record=False)
+        self.assertEqual(d["steps"][-1]["kind"], "lesson")
+        self.assertIn("new: Lying bottles", d["steps"][-1]["note"])
+        self.assertEqual(lessons.state()["count"], 1)
+        run2 = runner.Run("m", task.DEFAULT_INSTRUCTION, root=self.root)
+        d2 = runner.run_cycle(make(), m, task.DEFAULT_INSTRUCTION, task.DEFAULT_CONTEXT, run2, threading.Event(),
+                              lessons_on=True, learn=False, record=False)
+        self.assertEqual(d2["lessons_used"], 1)
+        self.assertIn("# Lessons from earlier runs", prompts[-1])
+        run3 = runner.Run("m", task.DEFAULT_INSTRUCTION, root=self.root)
+        n = len(prompts)
+        runner.run_cycle(make(), m, task.DEFAULT_INSTRUCTION, task.DEFAULT_CONTEXT, run3, threading.Event(),
+                         lessons_on=False, record=False)
+        self.assertNotIn("# Lessons from earlier runs", prompts[n])
+
+
 if __name__ == "__main__":
     unittest.main()

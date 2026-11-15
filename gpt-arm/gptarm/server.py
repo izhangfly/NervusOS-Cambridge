@@ -27,12 +27,14 @@ from . import __version__
 from . import arm as A
 from . import calib as C
 from . import direct as D
+from . import lessons as Lz
 from . import llm as L
 from . import perception as P
 from . import runner as R
 from . import sim
 from . import task as T
 from .cameras import CameraError, Overhead, Wrist, to_jpeg
+from .recorder import Recorder
 
 WEB = Path(__file__).resolve().parent / "web"
 MODES = [{"id": "direct", "label": "Direct (model moves the arm)"}, {"id": "skills", "label": "Skills (AgileX style)"}]
@@ -54,6 +56,7 @@ class Service:
         self.cfg = T.Config.load()
         self.error = None
         self._ann = (0.0, None)           # (time, jpeg) of the last annotated overhead picture
+        self.recording = None             # a free recording (Recorder) outside runs, and its id
         if use_sim:
             self.table = sim.Table()
             self.cam = sim.camera()
@@ -115,7 +118,7 @@ class Service:
         if not st["fresh"]:
             raise Busy("the arm is not sending feedback (is it powered and on CAN?)")
 
-    def start_run(self, instruction, model, mode):
+    def start_run(self, instruction, model, mode, lessons=None):
         if mode not in ("skills", "direct"):
             raise ValueError("mode must be skills or direct")
         if model not in [m["id"] for m in self.models()]:
@@ -128,13 +131,15 @@ class Service:
         run = R.Run(model, instruction, mode, on_update=self._on_run)
         self.run = run.d
         context = (D.load_context() if mode == "direct" else T.load_context())[0]
-        self._start("run", lambda: R.run_cycle(self.make_world(), llm, instruction, context, run, self.stop_event, mode=mode))
+        use = Lz.state()["enabled"] if lessons is None else bool(lessons)
+        self._start("run", lambda: R.run_cycle(self.make_world(), llm, instruction, context, run, self.stop_event,
+                                               mode=mode, lessons_on=use))
         return run.d["id"]
 
     def _on_run(self, d):
         self.run = d
 
-    def start_bench(self, models, n, instruction, mode):
+    def start_bench(self, models, n, instruction, mode, lessons=False):
         if not models or any(m not in [x["id"] for x in self.models()] for m in models):
             raise ValueError("models must be a list of known model ids")
         if not 1 <= int(n) <= 100:
@@ -142,7 +147,7 @@ class Service:
         if mode not in ("skills", "direct"):
             raise ValueError("mode must be skills or direct")
         self._ready()
-        b = R.Bench(models, int(n), (instruction or "").strip() or T.DEFAULT_INSTRUCTION, mode)
+        b = R.Bench(models, int(n), (instruction or "").strip() or T.DEFAULT_INSTRUCTION, mode, lessons=bool(lessons))
         self.bench = b
         context = (D.load_context() if mode == "direct" else T.load_context())[0]
         self._start("bench", lambda: b.run(self.make_world, context, self.stop_event, self._on_run, lambda m: None))
@@ -187,6 +192,37 @@ class Service:
             raise Busy("there is nothing to calibrate in the simulator")
         self._start("calibrate", go)
 
+    # ---- free recordings (outside runs) ----------------------------------------------------------------------
+    def record(self, on):
+        with self.lock:
+            if on and self.recording is None:
+                rid = time.strftime("rec-%Y%m%d-%H%M%S")
+                rec = Recorder(self.overhead, self.wrist, R.RUNS / "recordings" / f"{rid}.mp4", title=f"GPT Arm  {rid}")
+                self.recording = (rid, time.time(), rec)
+            elif not on and self.recording is not None:
+                rid, t0, rec = self.recording
+                self.recording = None
+                rec.stop()
+        return self.recording_info()
+
+    def recording_info(self):
+        if self.recording is None:
+            return None
+        rid, t0, rec = self.recording
+        return {"id": rid, "started": t0, "seconds": round(time.time() - t0, 1), "file": f"{rid}.mp4"}
+
+    def recordings(self):
+        d = R.RUNS / "recordings"
+        out = []
+        busy = self.recording[0] if self.recording else None
+        for f in sorted(d.glob("rec-*.mp4"), reverse=True) if d.exists() else []:
+            if f.stem == busy:
+                continue
+            st = f.stat()
+            out.append({"id": f.stem, "started": st.st_mtime, "seconds": None, "size_mb": round(st.st_size / 1e6, 2),
+                        "url": f"api/recordings/{f.name}"})
+        return out
+
     # ---- what the portal reads -------------------------------------------------------------------------------
     def status(self):
         arm = {"reachable": False, "enabled": False, "status": None, "tool_xyz_mm": None, "lean_deg": None,
@@ -224,7 +260,8 @@ class Service:
             "version": __version__, "time": round(time.time(), 2), "arm": arm, "cameras": cams, "calibration": cal,
             "scene": scene, "models": self.models(), "model": "scripted" if self.sim else "gpt-6.1-sol", "modes": MODES, "mode": "direct",
             "default_instruction": T.DEFAULT_INSTRUCTION, "busy": self.busy, "error": self.error,
-            "run": self.run, "bench": bench,
+            "run": self.run, "bench": bench, "recording": self.recording_info(),
+            "lessons": {"enabled": Lz.state()["enabled"], "count": Lz.state()["count"]},
             "specs": {"arm": "AgileX PiPER (6 joints, gripper 0-75 mm)", "driver": "smooth (own IK, Ruckig, 100 Hz)",
                       "speed_pct": self.cfg.speed, "joint_speed_deg_s": self.cfg.joint_speed_deg_s,
                       "workspace_mm": {"x": [60, 480], "y": [-320, 320], "z": [80, 600]},
@@ -303,6 +340,17 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def send_file(self, f, name):
+        if not f.exists():
+            return self.send(404, {"error": "no such video (yet)"})
+        data = f.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", "video/mp4")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Content-Disposition", f'attachment; filename="{name}"')
+        self.end_headers()
+        self.wfile.write(data)
+
     def body(self):
         n = int(self.headers.get("Content-Length") or 0)
         if not n:
@@ -340,6 +388,16 @@ class Handler(BaseHTTPRequestHandler):
                 if not f.exists():
                     return self.send(404, {"error": "no such image"})
                 return self.send(200, f.read_bytes(), "image/jpeg")
+            m = re.fullmatch(r"/api/runs/([A-Za-z0-9._-]+)/video\.mp4", path)
+            if m:
+                return self.send_file(R.RUNS / m.group(1) / "video.mp4", f"gptarm-{m.group(1)}.mp4")
+            m = re.fullmatch(r"/api/recordings/(rec-[0-9-]+)\.mp4", path)
+            if m:
+                return self.send_file(R.RUNS / "recordings" / f"{m.group(1)}.mp4", f"gptarm-{m.group(1)}.mp4")
+            if path == "/api/recordings":
+                return self.send(200, {"recordings": s.recordings()})
+            if path == "/api/lessons":
+                return self.send(200, Lz.state())
             if path == "/api/bench":
                 b = s.bench.d if s.bench else {"state": "idle", "instruction": "", "runs_per_model": 0, "started": None,
                                                "current": None, "message": "", "results": [], "run_ids": []}
@@ -372,11 +430,12 @@ class Handler(BaseHTTPRequestHandler):
                 s.arm.estop()
                 return self.send(200, {"ok": True})
             if path == "/api/run":
-                rid = s.start_run(b.get("instruction"), b.get("model") or "gpt-6.1-sol", b.get("mode") or "direct")
+                rid = s.start_run(b.get("instruction"), b.get("model") or "gpt-6.1-sol", b.get("mode") or "direct",
+                                  b.get("lessons"))
                 return self.send(200, {"ok": True, "id": rid})
             if path == "/api/bench/start":
                 bid = s.start_bench(b.get("models") or [], b.get("runs_per_model") or 1, b.get("instruction"),
-                                    b.get("mode") or "direct")
+                                    b.get("mode") or "direct", bool(b.get("lessons", False)))
                 return self.send(200, {"ok": True, "id": bid})
             if path == "/api/bench/resume":
                 s.resume_bench()
@@ -390,6 +449,18 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/calibrate":
                 s.calibrate()
                 return self.send(200, {"ok": True})
+            if path == "/api/record":
+                return self.send(200, {"ok": True, "recording": s.record(bool(b.get("on")))})
+            if path == "/api/lessons":
+                if "enabled" in b:
+                    Lz.set_enabled(b["enabled"])
+                elif b.get("clear"):
+                    Lz.clear()
+                elif isinstance(b.get("text"), str):
+                    Lz.replace(b["text"])
+                else:
+                    return self.send(400, {"error": "send {\"enabled\": bool}, {\"text\": ...} or {\"clear\": true}"})
+                return self.send(200, {"ok": True, **Lz.state()})
             if path == "/api/context":
                 mode = b.get("mode") or "direct"
                 save, load = (D.save_context, D.load_context) if mode == "direct" else (T.save_context, T.load_context)
