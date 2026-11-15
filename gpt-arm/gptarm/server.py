@@ -351,6 +351,15 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    @staticmethod
+    def flag(b, key, default=None):
+        """A boolean field of a request body: absent -> default; anything but true/false is a 400."""
+        if key not in b or b[key] is None:
+            return default
+        if not isinstance(b[key], bool):
+            raise ValueError(f"{key} must be true or false")
+        return b[key]
+
     def body(self):
         n = int(self.headers.get("Content-Length") or 0)
         if not n:
@@ -431,11 +440,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200, {"ok": True})
             if path == "/api/run":
                 rid = s.start_run(b.get("instruction"), b.get("model") or "gpt-6.1-sol", b.get("mode") or "direct",
-                                  b.get("lessons"))
+                                  self.flag(b, "lessons"))
                 return self.send(200, {"ok": True, "id": rid})
             if path == "/api/bench/start":
                 bid = s.start_bench(b.get("models") or [], b.get("runs_per_model") or 1, b.get("instruction"),
-                                    b.get("mode") or "direct", bool(b.get("lessons", False)))
+                                    b.get("mode") or "direct", self.flag(b, "lessons", False))
                 return self.send(200, {"ok": True, "id": bid})
             if path == "/api/bench/resume":
                 s.resume_bench()
@@ -450,10 +459,13 @@ class Handler(BaseHTTPRequestHandler):
                 s.calibrate()
                 return self.send(200, {"ok": True})
             if path == "/api/record":
-                return self.send(200, {"ok": True, "recording": s.record(bool(b.get("on")))})
+                on = self.flag(b, "on")
+                if on is None:
+                    raise ValueError("send {\"on\": true} or {\"on\": false}")
+                return self.send(200, {"ok": True, "recording": s.record(on)})
             if path == "/api/lessons":
                 if "enabled" in b:
-                    Lz.set_enabled(b["enabled"])
+                    Lz.set_enabled(self.flag(b, "enabled"))
                 elif b.get("clear"):
                     Lz.clear()
                 elif isinstance(b.get("text"), str):
