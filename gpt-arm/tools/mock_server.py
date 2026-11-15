@@ -3,8 +3,10 @@
 
 It serves the portal (gpt-arm/gptarm/web/) at / and every endpoint of API.md with believable, changing data:
 a simulated run that advances step by step (decisions, governor refusals, missed grasps and retries, a
-verdict), a simulated benchmark that pauses for a hand reset, past runs, and synthetic camera frames. It never
-talks to the arm, the cameras or a model, and it binds to loopback only.
+verdict, the lessons written after it), free instructions ("Wave hello", "What is on the table?") that end
+"not checked", a simulated benchmark that pauses for a hand reset, past runs, run videos and free recordings,
+the lessons store, and synthetic camera frames. It never talks to the arm, the cameras or a model, and it binds
+to loopback only.
 
     python3 gpt-arm/tools/mock_server.py [--port 8800] [--speed 3] [--scenario idle] [--seed 7]
 
@@ -18,6 +20,8 @@ time (used by the contract test and for screenshots).
 
 Camera frames are drawn with Pillow if it is installed, else with OpenCV + numpy, else two small fixed JPEGs
 embedded below are served. Every frame is stamped MOCK so a screenshot can't pass for the real cameras.
+Videos (a run's video.mp4 and the free recordings) are one short test-pattern clip made with ffmpeg when it is
+installed, else a tiny blank MP4 embedded below; either is a valid MP4 served as an attachment.
 """
 from __future__ import annotations
 
@@ -30,6 +34,9 @@ import math
 import mimetypes
 import random
 import re
+import shutil
+import subprocess
+import tempfile
 import threading
 import time
 from collections import OrderedDict
@@ -44,13 +51,15 @@ MODELS = [{"id": "gpt-6-astra", "label": "GPT-6 Astra"}, {"id": "gpt-6.1-sol", "
           {"id": "gpt-5.6-sol", "label": "GPT-5.6 Sol"}]
 MODEL_IDS = [m["id"] for m in MODELS]
 LABEL = {m["id"]: m["label"] for m in MODELS}
-MODES = [{"id": "skills", "label": "Skills"}, {"id": "direct", "label": "Direct joints"}]
+MODES = [{"id": "direct", "label": "Direct (model moves the arm)"}, {"id": "skills", "label": "Skills (AgileX style)"}]
 MODE_IDS = [m["id"] for m in MODES]
 # How good each simulated model is (probability-ish knob), and its typical seconds per call.
 QUALITY = {"gpt-6-astra": 0.9, "gpt-6.1-sol": 0.75, "gpt-5.6-sol": 0.3}
 LLM_S = {"gpt-6-astra": 7.5, "gpt-6.1-sol": 5.2, "gpt-5.6-sol": 3.6}
 DEFAULT_INSTRUCTION = ("Put the hair gel bottle into the basket. Then take it out again and stand it upright on the "
                        "table where it started.")
+NOT_CHECKED_NOTE = "The model says it is done. Free instructions are not checked automatically."
+MB_PER_S = 0.11               # how big the fake videos claim to be
 
 START = (330.0, 120.0)        # the taped start spot (mm, arm base frame)
 BASKET = (300.0, -260.0)      # basket centre
@@ -429,6 +438,49 @@ FALLBACK_WRIST_B64 = (
     "AAH/2Q==")
 
 
+# A 1 s blank 160x64 H.264 MP4, served when ffmpeg is not installed.
+FALLBACK_MP4_B64 = (
+    "AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAN4bW9vdgAAAGxtdmhkAAAAAAAAAAAAAAAAAAAD6AAAA+gAAQAAAQAAAAAAAAAAAAAA"
+    "AAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAqN0cmFrAAAAXHRraGQAAAAD"
+    "AAAAAAAAAAAAAAABAAAAAAAAA+gAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAKAAAABAAAAAAAAk"
+    "ZWR0cwAAABxlbHN0AAAAAAAAAAEAAAPoAAAQAAABAAAAAAIbbWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAAAoAAAAKABVxAAAAAAALWhkbHIAAAAA"
+    "AAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABxm1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAA"
+    "AQAAAAx1cmwgAAAAAQAAAYZzdGJsAAAAwnN0c2QAAAAAAAAAAQAAALJhdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAKAAQABIAAAASAAAAAAA"
+    "AAABFUxhdmM2Mi4xMS4xMDAgbGlieDI2NAAAAAAAAAAAAAAAGP//AAAAOGF2Y0MBZAAL/+EAGmdkAAuscgRCibARAAADAAEAAAMACg8UKYRgAQAH"
+    "aOhDg5LIsP34+AAAAAAQcGFzcAAAAAEAAAABAAAAFGJ0cnQAAAAAAAADCAAAAAAAAAAYc3R0cwAAAAAAAAABAAAABQAACAAAAAAUc3RzcwAAAAAA"
+    "AAABAAAAAQAAADhjdHRzAAAAAAAAAAUAAAABAAAQAAAAAAEAACgAAAAAAQAAEAAAAAABAAAAAAAAAAEAAAgAAAAAHHN0c2MAAAAAAAAAAQAAAAEA"
+    "AAAFAAAAAQAAAChzdHN6AAAAAAAAAAAAAAAFAAAALAAAAA4AAAANAAAADQAAAA0AAAAUc3RjbwAAAAAAAAABAAADqAAAAGF1ZHRhAAAAWW1ldGEA"
+    "AAAAAAAAIWhkbHIAAAAAAAAAAG1kaXJhcHBsAAAAAAAAAAAAAAAALGlsc3QAAAAkqXRvbwAAABxkYXRhAAAAAQAAAABMYXZmNjIuMy4xMDAAAAAI"
+    "ZnJlZQAAAGltZGF0AAAAKGWIgQACX/47s8Cl1RT0PzrUaqLvdisH/00qWfaBqrUbtv8jlAWcAbMAAAAKQZoIjYh//wATEAAAAAlBnhBHEEP/FrEA"
+    "AAAJAZ4YJoh//xjQAAAACQGeGG1If/8Y0Q==")
+
+
+_mp4 = None
+_mp4_lock = threading.Lock()
+
+
+def mock_mp4():
+    """Bytes of a short valid MP4: two test patterns side by side (ffmpeg), else the embedded blank clip."""
+    global _mp4
+    with _mp4_lock:
+        if _mp4 is None:
+            ff = shutil.which("ffmpeg")
+            if ff:
+                with tempfile.TemporaryDirectory() as d:
+                    out = Path(d) / "mock.mp4"
+                    try:
+                        subprocess.run([ff, "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=320x240:r=10:d=4",
+                                        "-f", "lavfi", "-i", "smptebars=s=320x240:r=10:d=4", "-filter_complex", "hstack",
+                                        "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-an", str(out)],
+                                       check=True, timeout=30, capture_output=True)
+                        _mp4 = out.read_bytes()
+                    except (OSError, subprocess.SubprocessError):
+                        _mp4 = None
+            if not _mp4:
+                _mp4 = base64.b64decode(FALLBACK_MP4_B64)
+        return _mp4
+
+
 def render(camera, snap, annotated=False):
     if BACKEND is None:
         return base64.b64decode(FALLBACK_OVERHEAD_B64 if camera == "overhead" else FALLBACK_WRIST_B64)
@@ -532,6 +584,9 @@ class Episode:
 
     def __init__(self, world, rng, model, mode, instruction):
         self.w, self.rng, self.q, self.mode = world, rng, QUALITY[model], mode
+        self.instruction = instruction
+        # Only the bottle cycle (the default instruction) is checked; anything else is a free instruction.
+        self.free = instruction.strip() != DEFAULT_INSTRUCTION
         self.phases = phases(instruction)
         self.code = None          # failure code decided inside the episode (else derived in verdict())
         self.attempt = 1          # current attempt within the cycle (grasp/placement retries)
@@ -605,11 +660,8 @@ class Episode:
     # --- the script
     def steps(self):
         yield self.per()
-        if not self.phases:
-            yield self.dec("look", None, "Check the table before answering.", motion_s=2.0)
-            yield self.dec("done", None, "This instruction asks for something the skills can't do: they only move "
-                                         "the bottle between the table and the basket. Ending without moving.")
-            self.code = "outside_skills"
+        if self.free and not self.phases:
+            yield from self.free_script()
             return
         for dest in self.phases:
             if not (yield from self.carry(dest)):
@@ -617,6 +669,89 @@ class Episode:
         yield self.dec("done", None, "The bottle stands on the start spot and the gripper is clear. The cycle is "
                                      "complete." if "start" in self.phases else
                        "The bottle is in the basket and the gripper is clear. Done.")
+
+    def free_script(self):
+        """A short plausible answer to a free instruction, chosen by keyword (the mock has no model)."""
+        s, w = self.instruction.lower(), self.w
+        bx, by = w.bottle_xy()
+        if "wave" in s:
+            yield self.dec("move_tool", None, "Raise the gripper in front of the overhead camera so the wave is easy to "
+                           "see.", to=[260, 0, 380], motion_s=3.2, effect=lambda: self.set_pose("nothing", "carry"))
+            for y in (90, -90, 90, -90):
+                yield self.dec("move_tool", None, f"Swing to the {'left' if y > 0 else 'right'}.", to=[260, y, 380],
+                               motion_s=1.6)
+            yield self.dec("move_tool", None, "Back to the middle.", to=[260, 0, 380], motion_s=1.4)
+            yield self.dec("done", None, "I waved hello: four swings left and right, 90 mm each way, at 380 mm height "
+                                         "in front of the camera.")
+        elif "point" in s:
+            tgt, (x, y) = ("the bottle", (bx, by)) if "bottle" in s and "basket" not in s else ("the basket", BASKET)
+            yield self.dec("move_tool", None, f"Go above {tgt} at a safe height.", to=[x - 60, y, 300],
+                           motion_s=self.travel((x - 60, y)), effect=lambda: self.set_pose("nothing", "carry"))
+            yield self.dec("move_tool", None, f"Lean the gripper towards {tgt} so it points at it.", to=[x - 40, y, 240],
+                           motion_s=2.2)
+            yield self.dec("done", None, f"I am pointing at {tgt} at ({x:.0f}, {y:.0f}): the gripper is 240 mm above "
+                                         "the table, leaning towards it.")
+        elif ("pick" in s or "hold" in s or "lift" in s) and "bottle" in s:
+            if not (yield from self.pick()):
+                return
+            yield self.dec("lift", None, "Holding the bottle. Lift it clear of the table.",
+                           to=[w.tool[0], w.tool[1], Z_CARRY], motion_s=2.8, effect=lambda: self.set_pose("nothing", "carry"))
+            yield self.dec("move_tool", None, "Raise it up high, in the middle of the table.", to=[250, 0, 430],
+                           motion_s=3.4)
+            yield self.dec("done", None, "I am holding the bottle up high, 430 mm above the table. It is still in the "
+                                         "gripper; tell me where to put it down.")
+        elif "push" in s and "basket" in s:
+            x, y = BASKET
+            yield self.dec("move_tool", None, "Go to the right of the basket, past its edge, at carry height.",
+                           to=[x, y - 110, Z_CARRY], motion_s=self.travel((x, y - 110)),
+                           effect=lambda: self.set_pose("nothing", "carry"))
+            yield self.dec("move_tool", None, "Lower the closed fingers beside the basket wall.", to=[x, y - 110, 110],
+                           motion_s=2.6)
+            yield self.dec("move_tool", None, "Push slowly 100 mm to the left (+y).", to=[x, y - 10, 110], motion_s=4.0)
+            yield self.dec("move_tool", None, "Lift clear of the basket.", to=[x, y - 10, Z_CARRY], motion_s=2.4)
+            yield self.dec("done", None, "I pushed the basket about 10 cm to the left. Its centre is now near "
+                                         f"({x:.0f}, {y + 100:.0f}).")
+        elif any(k in s for k in ("look", "what", "where", "tell", "see", "?")):
+            yield self.dec("look", None, "Look at the table from above before answering.", motion_s=2.0)
+            yield self.per()
+            basket = "with the bottle in it" if w.bottle["where"] == "basket" else "empty"
+            yield self.dec("done", None, f"On the table: the hair gel bottle, {w.describe()}; the woven basket at "
+                                         f"({BASKET[0]:.0f}, {BASKET[1]:.0f}), {basket}; and the taped start cross at "
+                                         f"({START[0]:.0f}, {START[1]:.0f}). Nothing else.")
+        else:
+            yield self.dec("look", None, "Look at the table to work out what the instruction needs.", motion_s=2.0)
+            yield self.dec("move_tool", None, "Move over the middle of the table where both cameras see the gripper.",
+                           to=[280, 0, 260], motion_s=3.0, effect=lambda: self.set_pose("nothing", "carry"))
+            yield self.dec("done", None, f"I did what I understood from \"{self.instruction[:80]}\": the gripper is over "
+                                         "the middle of the table. Tell me if you meant something else.")
+
+    def lessons(self, run):
+        """A few short lessons from what happened in this run (the mock's stand-in for the model writing them)."""
+        steps = run["steps"]
+        out = []
+        if any(st.get("kind") == "decision" and st.get("ok") is False and "release" in (st.get("detail") or "")
+               for st in steps):
+            out.append("Lower to release height before opening the gripper: a release from carry height is refused.")
+        if any(st.get("kind") == "decision" and st.get("ok") is False and "grasp height" in (st.get("detail") or "")
+               for st in steps):
+            out.append("Lower to grasp height before closing the gripper.")
+        if any("closed on nothing" in (st.get("note") or "") for st in steps):
+            out.append("Line up straight above the bottle's cap before lowering; a few mm off and the fingers miss.")
+        if any("knocked it over" in (st.get("note") or "") for st in steps):
+            out.append("Come down slowly next to a standing bottle: a finger that brushes it tips it over.")
+        s = self.instruction.lower()
+        if "wave" in s:
+            out.append("A wave reads well on camera as swings of about 90 mm either side at 380 mm height.")
+        if "push" in s:
+            out.append("Push the basket from the side with closed fingers at 110 mm, slowly; lift clear afterwards.")
+        if "point" in s:
+            out.append("Pointing: stop about 240 mm above the target and lean towards it, never touch it.")
+        if not self.free and run["outcome"].get("success"):
+            out.append("The full cycle works in this order: above the bottle, lower, grasp, lift, carry, lower, "
+                       "release, lift.")
+        if not out:
+            out.append("Look before the first move: the overhead picture is the best guide to where things are.")
+        return out[:3]
 
     def pick(self):
         """Grasp the bottle wherever it is, retrying after a miss. Returns False after three misses."""
@@ -705,9 +840,12 @@ class Episode:
         return False
 
     def verdict(self):
-        """(success, reason, checks, failure_code)."""
+        """(success, reason, checks, failure_code). A free instruction is not checked: (None, note, checks,
+        "not_checked") unless it failed on its own (missed grasps, step limit, lost camera)."""
         w = self.w
         checks = {"entered_basket": None, "returned_mm": None, "upright": None}
+        if self.free and self.code not in ("missed_grasp", "step_limit", "camera_lost"):
+            return None, NOT_CHECKED_NOTE, checks, "not_checked"
         if "basket" in self.phases:
             checks["entered_basket"] = w.entered_basket
         if "start" in self.phases and w.bottle["where"] == "table":
@@ -715,8 +853,7 @@ class Episode:
             checks["upright"] = bool(w.bottle["upright"])
         fixed = {"missed_grasp": "The gripper missed the bottle three times in a row.",
                  "step_limit": f"Step limit ({MAX_STEPS}) reached before the cycle was complete.",
-                 "camera_lost": "Run aborted: the wrist camera stopped delivering frames.",
-                 "outside_skills": "The instruction did not ask for a bottle move the skills can do; nothing moved."}
+                 "camera_lost": "Run aborted: the wrist camera stopped delivering frames."}
         if self.code in fixed:
             return False, fixed[self.code], checks, self.code
         if "basket" in self.phases and not w.entered_basket:
@@ -758,6 +895,10 @@ def public(run, with_steps=True):
     out = {k: v for k, v in run.items() if not k.startswith("_")}
     if not with_steps:
         out.pop("steps", None)
+    v = out.get("video")
+    if v and v["state"] == "recording":
+        secs = round(max(0.0, time.time() - run["started"]), 1)
+        out["video"] = {**v, "seconds": secs, "size_mb": round(secs * MB_PER_S, 1)}
     return out
 
 
@@ -780,10 +921,20 @@ class Mock:
         self.wrist_fail = False
         self.frame_cache = {}
         self.image_cache = OrderedDict()
+        self.lessons_enabled = True
+        self.lessons = []               # [{"text", "source_run", "when", "score"}], oldest first
+        self.recording = None           # the free recording in progress: {"id", "started", "file"}
+        self.recordings = []            # finished free recordings, newest first
         self._history()
+        t = time.time()
+        for ago, secs in ((26 * 3600, 95.0), (5 * 3600, 41.5)):
+            started = t - ago
+            rid = "rec-" + time.strftime("%Y%m%d-%H%M%S", time.localtime(started))
+            self.recordings.insert(0, {"id": rid, "started": started, "seconds": secs,
+                                       "size_mb": round(secs * MB_PER_S, 1)})
 
     # --- runs
-    def _new_run(self, model, mode, instruction, started):
+    def _new_run(self, model, mode, instruction, started, lessons=False, video="recording"):
         rid = time.strftime("%Y%m%d-%H%M%S", time.localtime(started)) + "-" + model
         while rid in self.runs:
             rid += "x"
@@ -792,7 +943,11 @@ class Mock:
                "outcome": {"success": None, "reason": "", "checks": {"entered_basket": None, "returned_mm": None,
                                                                     "upright": None}},
                "usage": {"llm_calls": 0, "tokens": 0, "llm_s": 0.0, "motion_s": 0.0},
-               "pending": None, "steps": [], "_snaps": {}, "_code": None}
+               "checked": instruction.strip() == DEFAULT_INSTRUCTION,
+               "lessons_used": len(self.lessons) if lessons else 0,
+               "video": None if video is None else {"file": "video.mp4", "state": video, "seconds": 0.0,
+                                                    "size_mb": 0.0},
+               "pending": None, "steps": [], "_snaps": {}, "_code": None, "_lessons": bool(lessons)}
         self.runs[rid] = run
         return run
 
@@ -912,15 +1067,69 @@ class Mock:
                 run.update(state="stopped", ended=time.time())
                 run["outcome"]["reason"] = "Stopped by the operator."
                 run["_code"] = "stopped"
+                self._video_done(run)
             return run
         ok, reason, checks, code = ep.verdict()
         with self.lock:
             add({"kind": "verdict", "ok": ok, "note": reason, "detail": json.dumps(checks)})
-            run["outcome"] = {"success": ok, "reason": reason, "checks": checks}
+            run["outcome"] = {"success": ok, "reason": "not_checked" if code == "not_checked" else reason,
+                              "checks": checks}
+            run["_code"] = code
+        if run["_lessons"] and code != "camera_lost":
+            pend("lessons")
+            try:
+                wait(2.5)
+            except Stopped:
+                pass
+            with self.lock:
+                new = self._learn(run, ep.lessons(run), now())
+                add({"kind": "lesson", "note": "\n".join(new) if new else "Nothing new to learn from this run.",
+                     "detail": f"{len(new)} new, {len(self.lessons)} kept in all.",
+                     "llm_s": round(self.rng.uniform(3, 7), 1), "tokens": int(self.rng.uniform(4000, 7000))})
+        with self.lock:
             run["state"] = "failed" if code == "camera_lost" else "done"
             run["ended"] = round(now(), 2)
-            run["_code"] = code
+            run["pending"] = None
+            self._video_done(run)
         return run
+
+    def _video_done(self, run):
+        v = run.get("video")
+        if v and v["state"] == "recording":
+            secs = round(max(0.0, (run["ended"] or time.time()) - run["started"]), 1)
+            v.update(state="ready", seconds=secs, size_mb=round(secs * MB_PER_S, 1))
+
+    def _learn(self, run, texts, t):
+        """Adds lessons not already kept; returns the new ones."""
+        have = {x["text"] for x in self.lessons}
+        new = [x for x in texts if x not in have]
+        for x in new:
+            self.lessons.append({"text": x, "source_run": run["id"], "when": round(t, 2),
+                                 "score": round(self.rng.uniform(0.4, 0.95), 2)})
+        del self.lessons[:-40]                      # keep the newest 40
+        return new
+
+    def lessons_view(self):
+        return {"text": "\n".join(x["text"] for x in self.lessons), "enabled": self.lessons_enabled,
+                "count": len(self.lessons), "items": copy.deepcopy(list(reversed(self.lessons)))}
+
+    def recording_view(self):
+        r = self.recording
+        if not r:
+            return None
+        return {**r, "seconds": round(time.time() - r["started"], 1)}
+
+    def record(self, on):
+        if on and not self.recording:
+            t = time.time()
+            rid = "rec-" + time.strftime("%Y%m%d-%H%M%S", time.localtime(t))
+            self.recording = {"id": rid, "started": t, "file": rid + ".mp4"}
+        elif not on and self.recording:
+            r = self.recording_view()
+            self.recordings.insert(0, {"id": r["id"], "started": r["started"], "seconds": r["seconds"],
+                                       "size_mb": round(r["seconds"] * MB_PER_S, 1)})
+            self.recording = None
+        return self.recording_view()
 
     def _history(self):
         """Some past runs, made instantly with a fake clock so the Runs tab has something in it."""
@@ -930,13 +1139,15 @@ class Mock:
                 ("gpt-5.6-sol", DEFAULT_INSTRUCTION), ("gpt-6.1-sol", "Put the bottle in the basket"),
                 ("gpt-6.1-sol", "Take the bottle out of the basket and stand it where it started"),
                 ("gpt-6-astra", DEFAULT_INSTRUCTION), ("gpt-5.6-sol", DEFAULT_INSTRUCTION),
-                ("gpt-6.1-sol", DEFAULT_INSTRUCTION), ("gpt-6-astra", "Wave at the camera"),
-                ("gpt-5.6-sol", DEFAULT_INSTRUCTION), ("gpt-6.1-sol", DEFAULT_INSTRUCTION)]
+                ("gpt-6.1-sol", DEFAULT_INSTRUCTION), ("gpt-6-astra", "Wave hello"),
+                ("gpt-5.6-sol", DEFAULT_INSTRUCTION), ("gpt-6.1-sol", "Look around and tell me what is on the table"),
+                ("gpt-6.1-sol", DEFAULT_INSTRUCTION)]
         for i, (model, instr) in enumerate(plan):
-            mode = "direct" if i in (6, 9) else "skills"
+            mode = "skills" if i in (0, 1, 2, 5) else "direct"
             if phases(instr)[:1] != ["start"] and not w.at_start():
                 w.reset(t)  # the operator put the bottle back
-            run = self._new_run(model, mode, instr, t)
+            video = None if i < 2 else ("failed" if i == 4 else "recording")  # the first two predate video
+            run = self._new_run(model, mode, instr, t, lessons=i >= 6, video=video)
             self._play(run, w, live=False, history=True)
             t = run["ended"] + self.rng.uniform(600, 5400)
         self.current = next(reversed(self.runs))
@@ -957,17 +1168,18 @@ class Mock:
         self.worker = threading.Thread(target=body, daemon=True)
         self.worker.start()
 
-    def start_run(self, model, mode, instruction, ff_steps=0):
+    def start_run(self, model, mode, instruction, ff_steps=0, lessons=False):
         started = time.time() - (ff_steps * 9 if ff_steps else 0)
         if ff_steps and not self.world.at_start():
             self.world.reset()
-        run = self._new_run(model, mode, instruction, started)
+        run = self._new_run(model, mode, instruction, started, lessons=lessons)
         self.current = run["id"]
         self._start_worker("run", lambda: self._play(run, self.world, live=True, ff_steps=ff_steps))
         return run["id"]
 
-    def start_bench(self, models, n, instruction, mode, ff_runs=0, force_pause=False):
+    def start_bench(self, models, n, instruction, mode, ff_runs=0, force_pause=False, lessons=False):
         b = self.bench = {"state": "running", "instruction": instruction, "runs_per_model": n, "mode": mode,
+                          "lessons": bool(lessons),
                           "models": list(models), "started": time.time() - ff_runs * 200, "current": None,
                           "message": "", "results": [self._result(m, []) for m in models], "run_ids": []}
 
@@ -980,7 +1192,7 @@ class Mock:
                     with self.lock:
                         if fast and not self.world.at_start():
                             self.world.reset(fake_t)
-                        run = self._new_run(m, mode, instruction, fake_t if fast else time.time())
+                        run = self._new_run(m, mode, instruction, fake_t if fast else time.time(), lessons=lessons)
                         b["current"] = {"model": m, "index": i, "run_id": run["id"]}
                         b["run_ids"].append(run["id"])
                         self.current = run["id"]
@@ -1026,7 +1238,7 @@ class Mock:
         succ = [r for r in fin if r["outcome"]["success"]]
         fails = {}
         for r in fin:
-            if not r["outcome"]["success"]:
+            if r["outcome"]["success"] is False:
                 fails[r["_code"] or "other"] = fails.get(r["_code"] or "other", 0) + 1
         dec = [sum(1 for s in r["steps"] if s["kind"] == "decision") for r in fin]
         return {"model": model, "runs": len(fin), "successes": len(succ),
@@ -1055,7 +1267,7 @@ class Mock:
             self.estop_until = 0.0
             self.busy = None
         if name == "running":
-            self.start_run("gpt-6.1-sol", "skills", DEFAULT_INSTRUCTION, ff_steps=9)
+            self.start_run("gpt-6.1-sol", "direct", DEFAULT_INSTRUCTION, ff_steps=9, lessons=self.lessons_enabled)
         elif name == "bench":
             self.start_bench(MODEL_IDS, 5, DEFAULT_INSTRUCTION, "skills", ff_runs=7)
         elif name == "paused":
@@ -1091,7 +1303,9 @@ class Mock:
                 "calibration": dict(self.calibration),
                 "scene": w.state(now, used),
                 "models": MODELS, "model": "gpt-6.1-sol",
-                "modes": MODES, "mode": "skills",
+                "modes": MODES, "mode": "direct",
+                "recording": self.recording_view(),
+                "lessons": {"enabled": self.lessons_enabled, "count": len(self.lessons)},
                 "default_instruction": DEFAULT_INSTRUCTION,
                 "busy": self.busy,
                 "run": copy.deepcopy(public(run)) if run else None,
@@ -1165,18 +1379,24 @@ class Handler(BaseHTTPRequestHandler):
         if self.verbose:
             super().log_message(fmt, *args)
 
-    def send(self, code, body, ctype="application/json", cache="no-store"):
+    def send(self, code, body, ctype="application/json", cache="no-store", headers=None):
         data = json.dumps(body).encode() if ctype == "application/json" else body
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", cache)
+        for k, v in (headers or {}).items():
+            self.send_header(k, v)
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(data)
 
     def err(self, code, msg):
         self.send(code, {"error": msg})
+
+    def mp4(self, name):
+        self.send(200, mock_mp4(), "video/mp4", "no-store",
+                  {"Content-Disposition": f'attachment; filename="{name}"'})
 
     def body(self):
         n = int(self.headers.get("Content-Length") or 0)
@@ -1220,6 +1440,28 @@ class Handler(BaseHTTPRequestHandler):
                     r = m.runs.get(mm.group(1))
                     out = copy.deepcopy(public(r)) if r else None
                 return self.send(200, out) if out else self.err(404, f"No run with id {mm.group(1)}.")
+            mm = re.fullmatch(r"/api/runs/([^/]+)/video\.mp4", path)
+            if mm:
+                with m.lock:
+                    r = m.runs.get(mm.group(1))
+                    v = r and r.get("video")
+                if not r:
+                    return self.err(404, f"No run with id {mm.group(1)}.")
+                if not v or v["state"] != "ready":
+                    return self.err(404, f"Run {mm.group(1)} has no video ready ({v['state'] if v else 'none'}).")
+                return self.mp4(f"{mm.group(1)}.mp4")
+            if path == "/api/recordings":
+                with m.lock:
+                    recs = [{**r, "url": f"api/recordings/{r['id']}.mp4"} for r in m.recordings]
+                return self.send(200, {"recordings": recs})
+            mm = re.fullmatch(r"/api/recordings/([^/]+)\.mp4", path)
+            if mm:
+                with m.lock:
+                    known = any(r["id"] == mm.group(1) for r in m.recordings)
+                return self.mp4(f"{mm.group(1)}.mp4") if known else self.err(404, f"No recording {mm.group(1)}.")
+            if path == "/api/lessons":
+                with m.lock:
+                    return self.send(200, m.lessons_view())
             mm = re.fullmatch(r"/api/runs/([^/]+)/([^/]+)", path)
             if mm:
                 jpg = m.run_image(mm.group(1), mm.group(2))
@@ -1283,6 +1525,30 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 raise ValueError('Send {"text": "..."} (not empty) or {"reset": true}.')
             return self.send(200, {"ok": True, "text": m.context, "default": m.context_default})
+        if path == "/api/record":
+            on = body.get("on")
+            if not isinstance(on, bool):
+                raise ValueError('Send {"on": true} or {"on": false}.')
+            return self.send(200, {"ok": True, "recording": m.record(on)})
+        if path == "/api/lessons":
+            did = False
+            if "enabled" in body:
+                if not isinstance(body["enabled"], bool):
+                    raise ValueError("enabled must be true or false.")
+                m.lessons_enabled, did = body["enabled"], True
+            if "text" in body:
+                if not isinstance(body["text"], str):
+                    raise ValueError("text must be a string, one lesson per line.")
+                old = {x["text"]: x for x in m.lessons}
+                lines = [ln.strip() for ln in body["text"].splitlines() if ln.strip()]
+                m.lessons = [old.get(ln) or {"text": ln, "source_run": None, "when": round(time.time(), 2),
+                                             "score": None} for ln in dict.fromkeys(lines)]
+                did = True
+            if body.get("clear") is True:
+                m.lessons, did = [], True
+            if not did:
+                raise ValueError('Send {"enabled": true|false}, {"text": "..."} or {"clear": true}.')
+            return self.send(200, {"ok": True, **m.lessons_view()})
         if path == "/api/bench/resume":
             if not m.bench or m.bench["state"] != "paused":
                 return self.err(409, "The benchmark isn't paused.")
@@ -1307,10 +1573,13 @@ class Handler(BaseHTTPRequestHandler):
             model = body.get("model", "gpt-6.1-sol")
             if model not in MODEL_IDS:
                 raise ValueError(f"Unknown model {model!r}.")
-            mode = body.get("mode", "skills")
+            mode = body.get("mode", "direct")
             if mode not in MODE_IDS:
                 raise ValueError(f"Unknown mode {mode!r}.")
-            return self.send(200, {"ok": True, "id": m.start_run(model, mode, instr.strip())})
+            lessons = body.get("lessons", m.lessons_enabled)
+            if not isinstance(lessons, bool):
+                raise ValueError("lessons must be true or false.")
+            return self.send(200, {"ok": True, "id": m.start_run(model, mode, instr.strip(), lessons=lessons)})
         if path == "/api/bench/start":
             models, n, instr = body.get("models"), body.get("runs_per_model"), body.get("instruction")
             if not isinstance(models, list) or not models or any(x not in MODEL_IDS for x in models):
@@ -1319,10 +1588,13 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError("runs_per_model must be a whole number from 1 to 100.")
             if not isinstance(instr, str) or not instr.strip():
                 raise ValueError("instruction is required.")
-            mode = body.get("mode", "skills")
+            mode = body.get("mode", "direct")
             if mode not in MODE_IDS:
                 raise ValueError(f"Unknown mode {mode!r}.")
-            m.start_bench(models, n, instr.strip(), mode)
+            lessons = body.get("lessons", False)
+            if not isinstance(lessons, bool):
+                raise ValueError("lessons must be true or false.")
+            m.start_bench(models, n, instr.strip(), mode, lessons=lessons)
             return self.send(200, {"ok": True})
         if path == "/api/home":
             m._arm_job("home", [HOME], 3.0, after=lambda: setattr(m.world, "above", "nothing"))

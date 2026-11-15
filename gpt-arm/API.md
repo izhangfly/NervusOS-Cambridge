@@ -22,7 +22,10 @@ Times are Unix seconds; lengths are millimetres in the arm's base frame (+x forw
 - `decision`: the model chose `skill` (+ `target`), with its `note`; `ok` false means the governor refused
   it or it failed, and `detail` says why
 - `info`, `error`: text in `note`
-- `verdict`: the automatic check at the end (`ok` = success, `note` = why)
+- `verdict`: the automatic check at the end (`ok` = success, `note` = why). For a free instruction (see
+  "Free instructions" below) `ok` is null
+- `lesson`: after the verdict, what the run learned (see "Lessons"): `note` holds the lessons, one per line;
+  `detail` is optional (for example "2 new, 14 kept in all"); `llm_s` and `tokens` as for a decision
 
 Fields that don't apply are absent or null. `images` names files under the run (see GET file).
 
@@ -52,8 +55,21 @@ Fields that don't apply are absent or null. `images` names files under the run (
  "pending": null, "steps": [Step, ...]}
 ```
 
-`state`: `running` | `done` | `failed` | `stopped`. `outcome.success` is null until the verdict. In list
-endpoints `steps` is left out.
+`state`: `running` | `done` | `failed` | `stopped`. `outcome.success` is null until the verdict, and stays
+null for a free instruction (`outcome.reason` is then `"not_checked"`). In list endpoints `steps` is left out.
+
+Two later additions to Run (both optional: the portal works without them):
+
+```json
+{"checked": true, "lessons_used": 7,
+ "video": {"file": "video.mp4", "state": "recording", "seconds": 42.0, "size_mb": 4.6}}
+```
+
+- `checked`: whether the automatic bottle check applies (true only for the default instruction)
+- `lessons_used`: how many lessons from earlier runs the model was given (0 when the run has lessons off)
+- `video`: null when the run is not recorded, else `file` (the name under the run, see
+  `GET /api/runs/<id>/video.mp4`), `state` `recording` | `ready` | `failed` | `off`, `seconds` (length so
+  far, then final), `size_mb`. It goes `recording` -> `ready` (or `failed`) shortly after the run ends.
 
 ## Endpoints
 
@@ -61,7 +77,7 @@ endpoints `steps` is left out.
 |---|---|
 | `GET /api/status` | Everything the portal's main screen needs (below). Poll at 1 Hz. |
 | `GET /api/camera/overhead.jpg`, `GET /api/camera/wrist.jpg` | Latest frame. `?annotated=1` on overhead draws detections (bottle, basket, start spot, tool point). 404 with `{"error"}` if there is no frame. |
-| `POST /api/run` `{"instruction": str, "model": str}` | Start one run. 409 `{"error"}` if something is running or the arm/cameras aren't ready. Returns `{"ok": true, "id": str}`. |
+| `POST /api/run` `{"instruction": str, "model": str, "mode": str, "lessons": bool}` | Start one run. `mode` and `lessons` are optional (`mode` defaults to `status.mode`, `lessons` to `status.lessons.enabled`). 409 `{"error"}` if something is running or the arm/cameras aren't ready. Returns `{"ok": true, "id": str}`. |
 | `POST /api/stop` | Stop the run or benchmark; the arm holds with motors on. Always accepted. |
 | `POST /api/estop` | The driver's emergency stop. Always accepted. |
 | `POST /api/home` | Move the arm to its look pose (out of the camera's way). 409 while running. |
@@ -69,11 +85,16 @@ endpoints `steps` is left out.
 | `GET /api/runs?limit=50` | `{"runs": [Run without steps, newest first]}` |
 | `GET /api/runs/<id>` | One Run with steps. |
 | `GET /api/runs/<id>/<file>` | An image of that run (JPEG). |
-| `POST /api/bench/start` `{"models": [str], "runs_per_model": int, "instruction": str}` | Start a benchmark (runs interleaved across models). 409 if busy. |
+| `GET /api/runs/<id>/video.mp4` | The run's video (see "Video"). 404 `{"error"}` until `video.state` is `ready`. |
+| `POST /api/bench/start` `{"models": [str], "runs_per_model": int, "instruction": str, "mode": str, "lessons": bool}` | Start a benchmark (runs interleaved across models). `lessons` is optional and defaults to **false**, so benchmark runs start with no memory unless chosen. 409 if busy. |
 | `POST /api/bench/resume` | Continue after a pause (the scene was reset by hand). |
 | `GET /api/bench` | Bench (below). |
 | `POST /api/calibrate` | Run the automatic overhead-camera calibration (the arm moves). 409 while running. |
-| `GET /api/context`, `POST /api/context` `{"text": str}` or `{"reset": true}` | The editable arm context (Markdown) given to the model. |
+| `GET /api/context?mode=direct`, `POST /api/context` `{"text": str, "mode": str}` or `{"reset": true, "mode": str}` | The editable arm context (Markdown) given to the model; each mode has its own (`mode` defaults to `direct`). |
+| `POST /api/record` `{"on": bool}` | Start or stop a free recording (see "Video"). Allowed while busy. 400 if `on` is not a boolean. |
+| `GET /api/recordings` | The finished free recordings (see "Video"). |
+| `GET /api/recordings/<id>.mp4` | One free recording, as an attachment. |
+| `GET /api/lessons`, `POST /api/lessons` | The lessons (see "Lessons"). |
 
 Errors are `{"error": "sentence"}` with 400 (bad request), 409 (not now) or 500.
 
@@ -103,6 +124,20 @@ Errors are `{"error": "sentence"}` with 400 (bad request), 409 (not now) or 500.
 
 `busy`: null | `run` | `bench` | `calibrate` | `home`. `run` is the current or most recent run, with steps.
 
+Later additions to status (optional; the portal hides the matching controls when they are missing):
+
+```json
+{"modes": [{"id": "direct", "label": "Direct (model moves the arm)"}, {"id": "skills", "label": "Skills (AgileX style)"}],
+ "mode": "direct",
+ "recording": {"id": "rec-20261115-142233", "started": 1794700000.0, "seconds": 12.4, "file": "rec-20261115-142233.mp4"},
+ "lessons": {"enabled": true, "count": 14}}
+```
+
+- `modes`, `mode`: the control modes and the default one (`direct`: the model moves the arm itself)
+- `recording`: the free recording in progress, or null (see "Video"). The key is present whenever the
+  service can record
+- `lessons`: whether new runs read lessons by default, and how many are kept (see "Lessons")
+
 ### Bench
 
 ```json
@@ -115,9 +150,74 @@ Errors are `{"error": "sentence"}` with 400 (bad request), 409 (not now) or 500.
 ```
 
 `state`: `idle` | `running` | `paused` | `done` | `stopped`. `paused` means the scene needs resetting by hand
-(`message` says what to do); the portal shows it prominently with a Resume button.
+(`message` says what to do); the portal shows it prominently with a Resume button. A bench may also carry
+`mode` and `lessons` (bool), echoing what it was started with.
+
+## Free instructions
+
+The instruction is free text: the model reads it, looks at both cameras and acts, whatever it asks ("Wave
+hello", "Point at the basket", "Look around and tell me what is on the table"). Only the default bottle task
+(`status.default_instruction`, compared after trimming spaces) is checked automatically. For any other
+instruction the run still ends with a `verdict` step, but:
+
+```json
+{"kind": "verdict", "ok": null, "note": "The model says it is done. Free instructions are not checked automatically."}
+```
+
+(`detail` may repeat the model's last note) and the Run has `"checked": false` and
+`"outcome": {"success": null, "reason": "not_checked", "checks": {}}` (`checks` may be empty or all null),
+with `state` `done`. A free run can still fail on its own (`state` `failed`, or `outcome.success` false with a
+reason such as `step_limit`, `model_unavailable`, `arm_fault`). The model's answer is the `note` of its last
+`decision` step whose `skill` is `done`; the portal shows it as "The model says", which is how a question
+gets answered.
+
+## Video
+
+Every run is recorded: both cameras side by side in one MP4, each frame captioned with the current step.
+While it records, `run.video.state` is `recording` and `seconds` grows; when the run ends the file is
+closed and the state becomes `ready` (or `failed`, with the run unaffected). `off` means recording is
+switched off on this service. Videos live next to the run: `~/gptarm-runs/<id>/video.mp4`.
+
+`GET /api/runs/<id>/video.mp4` serves it with `Content-Type: video/mp4` and
+`Content-Disposition: attachment; filename="<id>.mp4"`, so a click downloads it (the desktop app saves to
+`~/Downloads`).
+
+Free recording, outside runs or across several, uses the same camera layout:
+
+- `POST /api/record {"on": true}` starts one (if one is already running it is returned unchanged);
+  `{"on": false}` stops and saves it (a no-op when nothing records). Reply:
+  `{"ok": true, "recording": {"id": str, "started": float, "seconds": float, "file": str} | null}`,
+  the recording in progress after the call (null after a stop)
+- `status.recording` is the same object, or null
+- `GET /api/recordings` -> `{"recordings": [{"id": str, "started": float, "seconds": float | null, "size_mb": float | null,
+  "url": "api/recordings/<id>.mp4"}]}`, newest first (`seconds` may be null when the service does not
+  measure the file). `url` is relative to the portal page
+- `GET /api/recordings/<id>.mp4`: the file, served like a run's video (attachment, `video/mp4`)
+
+## Lessons
+
+Learning from experience: after a run's verdict, the model writes a few short lessons from what happened
+(what was refused, what missed, what worked); later runs are given the kept lessons with their prompt.
+A run with lessons on reads them before its first decision and writes new ones after its verdict, as a
+step of kind `lesson`; a run with lessons off does neither. `run.lessons_used` says how many it was given.
+
+- `status.lessons = {"enabled": bool, "count": int}`. `enabled` is the default for new runs
+- `GET /api/lessons` ->
+  `{"text": str, "enabled": bool, "count": int, "items": [{"text": str, "source_run": str | null, "when": float | null, "score": float | null}]}`.
+  `text` is every lesson, one per line (what the editor shows); `items` is the same list, newest first,
+  with the run that wrote each one (null for a lesson typed by hand), when, and `score`, the service's own
+  measure of how useful the lesson has been (higher is better; null if not known)
+- `POST /api/lessons` with any of, in one body:
+  - `{"enabled": bool}`: the default for new runs
+  - `{"text": str}`: replace all lessons, one per line (blank lines dropped; a line that matches an
+    existing lesson keeps its source run and score). An empty string leaves none
+  - `{"clear": true}`: remove all lessons
+
+  Reply: `{"ok": true, ...the GET body}`. 400 if the body has none of these, or a value of the wrong type
+- `POST /api/run {"lessons": bool}` overrides `enabled` for that run. `POST /api/bench/start` takes
+  `"lessons"` too, but defaults to false: benchmark runs start with no memory unless chosen
 
 ## Files on disk
 
-Runs live under `~/gptarm-runs/<id>/`: `run.json` (the Run with steps) and the step images. Benchmarks under
+Runs live under `~/gptarm-runs/<id>/`: `run.json` (the Run with steps), the step images and `video.mp4`. Benchmarks under
 `~/gptarm-runs/bench-<stamp>/bench.json` listing run ids. The report generator reads only these.

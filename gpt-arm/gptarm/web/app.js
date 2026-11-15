@@ -39,6 +39,13 @@
       const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
       return h ? `${h}:${pad(m)}:${pad(x)}` : `${m}:${pad(x)}`;
     },
+    /* mm:ss for the recording indicators (h:mm:ss past an hour) */
+    mmss(s) {
+      s = Math.max(0, Math.floor(s || 0));
+      const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
+      return h ? `${h}:${pad(m)}:${pad(x)}` : `${pad(m)}:${pad(x)}`;
+    },
+    mb: (v) => (v == null || !isFinite(v) ? DASH : v >= 100 ? `${Math.round(v)} MB` : `${Number(v).toFixed(1)} MB`),
     clock(t) {
       if (!t) return DASH;
       const d = new Date(t * 1000);
@@ -100,6 +107,18 @@
 
   const runFile = (id, f) => `api/runs/${encodeURIComponent(id)}/${encodeURIComponent(f)}`;
 
+  /* A download link for a run's video (both cameras, side by side). The service sends it as an attachment;
+     the download attribute also names the file in a browser. */
+  function videoLink(run, label, short) {
+    const v = run && run.video;
+    if (!v || v.state !== 'ready') return null;
+    return el('a', {
+      class: 'btn small video-dl', href: runFile(run.id, v.file || 'video.mp4'), download: `${run.id}.mp4`,
+      title: `Both cameras, ${fmt.dur(v.seconds)} long${v.size_mb != null ? `, ${fmt.mb(v.size_mb)}` : ''}`,
+      text: `${label || 'Download video'}${v.size_mb != null && !short ? ` (${fmt.mb(v.size_mb)})` : ''}`,
+    });
+  }
+
   // ------------------------------------------------------------------ app state
   const app = {
     s: null,                 // last /api/status
@@ -113,6 +132,8 @@
     runs: [], runsAt: 0, runsKey: '',
     benchLast: null,         // GET /api/bench when status.bench is null
     ctxLoaded: false, ctxDirty: false,
+    recordings: null, wasRecording: false,
+    lessons: null, lessonsEditing: false, lessonsCount: null, learnBusy: false,
     sigs: {},                // render signatures, to skip unchanged DOM work
   };
   const labelOf = (id) => ((app.s && app.s.models) || []).find((m) => m.id === id)?.label || id || DASH;
@@ -130,6 +151,17 @@
       el('span', { text: msg }), el('span', { class: 'count' }),
       el('button', { class: 'btn small', text: 'Dismiss', onclick: () => row.remove() }));
     box.append(row);
+  }
+
+  /* A short notice at the bottom right (not an error). */
+  let toastTimer = 0;
+  function toast(msg, ...extra) {
+    const t = $('toast');
+    t.textContent = '';
+    put(t, el('span', { text: msg }), extra, el('button', { class: 'btn small', text: 'OK', onclick: () => { t.hidden = true; } }));
+    t.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { t.hidden = true; }, 8000);
   }
 
   function setOnline(on) {
@@ -248,6 +280,8 @@
       if (!app.model || !(s.models || []).some((m) => m.id === app.model)) app.model = s.model || (s.models[0] && s.models[0].id);
       fillSelect($('model'), s.models || [], app.model);
       buildBenchModels(s.models || []);
+      app.sigs.runsTab = null;   // the runs list may have been drawn before the model labels were known
+      if (app.runs.length) renderRunsTab();
     }
     const modes = Array.isArray(s.modes) && s.modes.length ? s.modes : null;
     $('mode-wrap').hidden = !modes;
@@ -257,12 +291,63 @@
       fillSelect($('mode'), modes, app.mode);
       fillSelect($('bench-mode'), modes, app.mode);
     }
+    renderRecord(s);
+    renderLearn(s);
     renderButtons();
+  }
+
+  /* The Record toggle: free recording of both cameras outside runs. Hidden if the service has no recorder. */
+  function renderRecord(s) {
+    const b = $('btn-rec'), has = 'recording' in s;
+    b.hidden = !has;
+    if (!has) return;
+    const r = s.recording, on = !!r;
+    const secs = on ? (r.started ? s.time - r.started : r.seconds) : 0;
+    const text = on ? `REC ${fmt.mmss(secs)}` : 'Record';
+    if (b.textContent !== text) b.textContent = text;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', on);
+    b.title = on ? 'Recording both cameras. Press to stop and save the video.' : 'Record both cameras side by side until you press it again';
+    $('rec-card').hidden = false;
+    if (app.recordings == null && app.tab === 'runs') loadRecordings();   // the page opened on #runs
+    if (app.wasRecording && !on) loadRecordings();
+    app.wasRecording = on;
+  }
+
+  async function toggleRecord() {
+    const on = !(app.s && app.s.recording);
+    const r = await act('api/record', { on }, on ? 'Start recording' : 'Stop recording');
+    if (r && !on) {
+      loadRecordings();
+      toast('Recording saved.', el('button', { class: 'btn small', text: 'Show recordings', onclick: async () => { $('toast').hidden = true; setTab('runs'); await Promise.all([loadRuns(), loadRecordings()]); $('rec-card').scrollIntoView({ block: 'nearest' }); } }));
+    }
+  }
+
+  /* The "Learn from earlier runs" switches mirror status.lessons; flipping one sets it on the service. */
+  function renderLearn(s) {
+    const L = s.lessons;
+    $('learn-wrap').hidden = $('bench-learn-wrap').hidden = $('bench-learn-hint').hidden = $('lessons-card').hidden = !L;
+    if (!L) return;
+    if (!app.learnBusy) $('learn').checked = $('lessons-enabled').checked = !!L.enabled;
+    $('learn-count').textContent = L.count == null ? '' : `${L.count} saved`;
+    if (app.lessonsCount !== L.count) {   // also the first status, when the page opened on #context
+      app.lessonsCount = L.count;
+      if (app.tab === 'context') loadLessons();
+    }
+  }
+
+  async function setLearning(on) {
+    app.learnBusy = true;
+    $('learn').checked = $('lessons-enabled').checked = on;
+    await act('api/lessons', { enabled: on }, on ? 'Turn learning on' : 'Turn learning off');
+    app.learnBusy = false;
+    if (app.s) renderLearn(app.s);
   }
 
   function renderButtons() {
     const s = app.s, busy = !s || !!s.busy || !app.online;
     for (const id of ['btn-look', 'btn-home', 'btn-cal', 'btn-run', 'btn-bench-start']) $(id).disabled = busy;
+    $('btn-rec').disabled = !app.online;
     const b = s && (s.bench || app.benchLast);
     const bs = b && b.state;
     $('btn-bench-stop').disabled = !(bs === 'running' || bs === 'paused');
@@ -352,7 +437,7 @@
   }
 
   // ------------------------------------------------------------------ the run log
-  const KIND = { user: 'Instruction', perception: 'Perception', decision: 'Decision', info: 'Info', error: 'Error', verdict: 'Verdict' };
+  const KIND = { user: 'Instruction', perception: 'Perception', decision: 'Decision', info: 'Info', error: 'Error', verdict: 'Verdict', lesson: 'Learned' };
   let logKey = null, logCount = 0, logLastSig = '';
 
   function nearBottom() { const sc = $('log-scroll'); return sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 48; }
@@ -361,6 +446,7 @@
   function stepNode(run, st, i) {
     const kind = st.kind || 'info';
     if (kind === 'verdict') return verdictNode(run, st);
+    if (kind === 'lesson') return lessonNode(st, i);
     const refused = kind === 'decision' && st.ok === false;
     const retry = kind === 'info' && /^retry\b/i.test(st.note || '');
     const li = el('li', { class: `step k-${kind}${refused ? ' refused' : ''}${retry ? ' k-retry' : ''}` });
@@ -392,8 +478,36 @@
     return li;
   }
 
+  /* What the run learned, one lesson per line of the note. */
+  function lessonNode(st, i) {
+    const lines = String(st.note || '').split('\n').map((x) => x.replace(/^\s*(?:[-*\u2022]|\d+[.)])\s*/, '').trim()).filter(Boolean);
+    const body = el('div', { class: 'body' },
+      lines.length > 1 ? el('ul', { class: 'lesson-list' }, lines.map((t) => el('li', { text: t })))
+        : el('p', { class: 'note', text: lines[0] || 'Nothing new to learn from this run.' }),
+      st.detail ? el('p', { class: 'detail', text: st.detail }) : null);
+    return el('li', { class: 'step k-lesson' }, el('span', { class: 'n', text: st.n ?? i }), el('span', { class: 'kind', text: KIND.lesson }),
+      body, el('div', { class: 'metrics' },
+        st.llm_s != null ? el('span', { text: `LLM ${fmt.num(st.llm_s, 1)} s` }) : null,
+        st.tokens != null ? el('span', { text: `${fmt.tok(st.tokens)} tok` }) : null,
+        st.t ? el('time', { text: fmt.clock(st.t) }) : null));
+  }
+
+  /* The note of the model's own "done" decision: its answer, for instructions that ask a question. */
+  function answerOf(run) {
+    const steps = run.steps || [];
+    for (let i = steps.length - 1; i >= 0; i--) {
+      const x = steps[i];
+      if (x.kind === 'decision' && x.skill === 'done' && x.ok !== false) return x.note || null;
+    }
+    return null;
+  }
+  const notChecked = (run) => !!(run && run.outcome && run.outcome.success == null && run.state !== 'running' && run.state !== 'stopped'
+    && (run.outcome.reason === 'not_checked' || run.checked === false));
+
   function verdictNode(run, st) {
     const ok = st.ok === true, fail = st.ok === false;
+    const neutral = st.ok == null && notChecked(run);
+    const answer = answerOf(run);
     const checks = (run.outcome && run.outcome.checks) || {};
     const chips = [];
     for (const [k, v] of Object.entries(checks)) {
@@ -403,8 +517,10 @@
       else if (k === 'upright') chips.push(el('span', { class: v ? 'pass' : 'miss', text: v ? 'upright' : 'not upright' }));
       else chips.push(el('span', { text: `${fmt.words(k)}: ${typeof v === 'boolean' ? (v ? 'yes' : 'no') : v}` }));
     }
-    return el('li', { class: 'verdict-li' }, el('div', { class: `verdict ${ok ? 'ok' : fail ? 'fail' : ''}` },
-      el('span', { class: 'big', text: ok ? '✓ Success' : fail ? '✕ Failure' : 'No verdict' }),
+    return el('li', { class: 'verdict-li' },
+      answer ? el('div', { class: 'answer' }, el('b', { text: 'The model says' }), el('p', { text: answer })) : null,
+      el('div', { class: `verdict ${ok ? 'ok' : fail ? 'fail' : neutral ? 'neutral' : ''}` },
+      el('span', { class: 'big', text: ok ? '✓ Success' : fail ? '✕ Failure' : neutral ? 'Done (not checked)' : 'No verdict' }),
       el('span', { class: 'why', text: st.note || run.outcome?.reason || '' }),
       el('time', { text: fmt.clock(st.t) }),
       el('div', { class: 'checks' }, chips)));
@@ -418,6 +534,7 @@
     if (run.state === 'failed') return el('span', { class: 'state failed', text: 'failed' });
     if (succ === true) return el('span', { class: 'state success', text: 'success' });
     if (succ === false) return el('span', { class: 'state failure', text: 'failure' });
+    if (notChecked(run)) return el('span', { class: 'state', title: 'Free instructions are not checked automatically', text: 'done, not checked' });
     return el('span', { class: 'state', text: run.state || DASH });
   }
 
@@ -439,8 +556,23 @@
       stat('Tokens', fmt.tok(u.tokens)),
       stat('LLM', `${fmt.num(u.llm_s, 0)} s`, 'Time spent waiting for the model'),
       stat('Motion', `${fmt.num(u.motion_s, 0)} s`, 'Time the arm spent moving'),
+      run.lessons_used != null ? stat('Lessons', String(run.lessons_used), 'Lessons from earlier runs given to the model') : null,
       stat('Started', fmt.clock(run.started)),
+      videoBadge(run, now),
       run.instruction ? el('div', { class: 'instr', text: '“' + run.instruction + '”' }) : null);
+  }
+
+  /* REC mm:ss while the run is recorded, then a download button. */
+  function videoBadge(run, now) {
+    const v = run.video;
+    if (!v || v.state === 'off') return null;
+    if (v.state === 'recording') {
+      return run.state === 'running'
+        ? el('span', { class: 'rec-badge', title: 'This run is being recorded: both cameras, side by side', text: `REC ${fmt.mmss(now - (v.started || run.started))}` })
+        : el('span', { class: 'video-note', text: 'Saving the video…' });
+    }
+    if (v.state === 'failed') return el('span', { class: 'video-note', text: 'The video could not be recorded.' });
+    return videoLink(run);
   }
 
   function renderPending(run, now) {
@@ -457,6 +589,7 @@
       if (pd.target) p.append(el('span', { class: 'arrow', text: '→' }), el('span', { class: 'target', text: String(pd.target) }));
       if (pd.note) p.append(el('span', { text: pd.note }));
     } else if (stage === 'perception') p.append(el('b', { text: 'Looking' }), 'photographing the table and detecting');
+    else if (stage === 'lessons') p.append(el('b', { text: 'Learning' }), 'writing short lessons from this run');
     else p.append(el('b', { text: String(stage || 'Working') }));
     if (pd.since) p.append(el('span', { class: 'since', text: `${fmt.num(Math.max(0, now - pd.since), 0)} s` }));
   }
@@ -556,16 +689,19 @@
   function outcomeCell(r) {
     const badge = runStateBadge(r);
     const why = r.outcome && r.outcome.reason;
-    return el('td', {}, badge, why && r.state !== 'running' ? el('span', { class: 'reason', title: why, text: why }) : null);
+    return el('td', {}, badge, why && r.state !== 'running' && !notChecked(r) ? el('span', { class: 'reason', title: why, text: fmt.words(why) }) : null);
   }
   function runRow(r, extra) {
     const steps = r.n_steps ?? (r.usage && r.usage.llm_calls);
     const dur = r.ended ? r.ended - r.started : (app.s ? app.s.time - r.started : null);
-    const tr = el('tr', { class: 'click', onclick: (e) => { if (!e.target.closest('button')) openRun(r.id); } },
+    const tr = el('tr', { class: 'click', onclick: (e) => { if (!e.target.closest('button, a')) openRun(r.id); } },
       extra != null ? el('td', { class: 'num', text: extra }) : null,
       el('td', {}, el('button', { class: 'open', text: r.id, title: 'Open this run', onclick: () => openRun(r.id) })),
+      // The video comes second so it stays in view when the table is wider than the window.
+      el('td', { class: 'nowrap' }, videoLink(r, 'Download', true) || (r.video && r.video.state === 'recording' ? el('span', { class: 'video-note', text: 'recording' }) : null)),
       el('td', { class: 'nowrap', text: fmt.date(r.started) }),
-      el('td', { class: 'nowrap', text: labelOf(r.model) + (r.mode ? ` · ${modeLabel(r.mode)}` : '') }),
+      // The mode id, not its long label, keeps the table narrow enough to show the Video column.
+      el('td', { class: 'nowrap', title: r.mode ? modeLabel(r.mode) : null }, labelOf(r.model), r.mode ? dim(` · ${r.mode}`) : null),
       // A benchmark's runs all share one instruction, so its table (the one with an index) leaves it out.
       extra != null ? null : el('td', { class: 'instr-cell', title: r.instruction || '', text: r.instruction || DASH }),
       outcomeCell(r),
@@ -577,7 +713,7 @@
   function runsHead(table, withIndex) {
     const th = (t, num) => el('th', { scope: 'col', class: num ? 'num' : null, text: t });
     table.tHead.textContent = '';
-    table.tHead.append(el('tr', {}, withIndex ? th('#', true) : null, th('Run'), th('Started'), th('Model'), withIndex ? null : th('Instruction'),
+    table.tHead.append(el('tr', {}, withIndex ? th('#', true) : null, th('Run'), th('Video'), th('Started'), th('Model'), withIndex ? null : th('Instruction'),
       th('Outcome'), th('Steps', true), th('Time', true), th('Tokens', true)));
   }
 
@@ -597,8 +733,82 @@
     if (!t.tHead.childElementCount) runsHead(t, false);
     const tb = t.tBodies[0];
     tb.textContent = '';
-    if (!app.runs.length) tb.append(el('tr', {}, el('td', { colspan: 8, class: 'empty', text: 'No runs yet.' })));
+    if (!app.runs.length) tb.append(el('tr', {}, el('td', { colspan: 9, class: 'empty', text: 'No runs yet.' })));
     for (const r of app.runs) tb.append(runRow(r));
+  }
+
+  // ------------------------------------------------------------------ recordings (Record button)
+  async function loadRecordings() {
+    if (!app.s || !('recording' in app.s)) return;
+    if (app.recordings == null) app.recordings = [];
+    try {
+      const d = await api('api/recordings');
+      app.recordings = (d && d.recordings) || [];
+      renderRecordings();
+    } catch (e) { if (!e.offline) showError('Recordings: ' + e.message); }
+  }
+
+  function renderRecordings() {
+    if (!changed('recordings', app.recordings)) return;
+    const tb = $('rec-table').tBodies[0];
+    tb.textContent = '';
+    const list = app.recordings || [];
+    if (!list.length) tb.append(el('tr', {}, el('td', { colspan: 5, class: 'hint', text: 'No recordings yet. Press Record in the top bar to start one.' })));
+    for (const r of list) {
+      tb.append(el('tr', {},
+        el('td', { class: 'mono', text: r.id }),
+        el('td', { class: 'nowrap', text: fmt.date(r.started) }),
+        el('td', { class: 'num', text: fmt.dur(r.seconds) }),
+        el('td', { class: 'num', text: fmt.mb(r.size_mb) }),
+        el('td', {}, r.url ? el('a', { class: 'btn small', href: r.url, download: `${r.id}.mp4`, text: 'Download' }) : dim(DASH))));
+    }
+  }
+
+  // ------------------------------------------------------------------ lessons (learning from earlier runs)
+  async function loadLessons() {
+    if (app.lessonsEditing) return;
+    try {
+      app.lessons = await api('api/lessons');
+      renderLessons();
+    } catch (e) { if (!e.offline) showError('Lessons: ' + e.message); }
+  }
+
+  function renderLessons() {
+    const d = app.lessons || {}, items = Array.isArray(d.items) ? d.items : [];
+    const list = $('lessons-list');
+    list.textContent = '';
+    for (const it of items) {
+      const sc = it.score;
+      list.append(el('li', {},
+        el('div', { class: 'text', text: it.text || '' }),
+        el('div', { class: 'meta' },
+          it.source_run ? el('span', {}, 'from ', el('button', { class: 'open', text: it.source_run, title: 'Open that run', onclick: () => openRun(it.source_run) })) : el('span', { text: 'written by hand' }),
+          it.when ? el('span', { text: fmt.date(it.when) }) : null,
+          sc != null ? el('span', { title: 'How useful the lesson has been, by the service\'s own measure', text: `score ${typeof sc === 'number' && !Number.isInteger(sc) ? sc.toFixed(2) : sc}` }) : null)));
+    }
+    const editing = app.lessonsEditing;
+    list.hidden = editing || !items.length;
+    $('lessons-empty').hidden = editing || items.length > 0;
+    $('lessons-text').hidden = !editing;
+    $('btn-lessons-edit').hidden = editing;
+    $('btn-lessons-save').hidden = $('btn-lessons-cancel').hidden = !editing;
+    $('btn-lessons-clear').disabled = editing || !items.length;
+  }
+
+  function editLessons(on) {
+    app.lessonsEditing = on;
+    if (on) { $('lessons-text').value = (app.lessons && app.lessons.text) || ''; $('lessons-state').textContent = 'One lesson per line.'; }
+    else $('lessons-state').textContent = '';
+    renderLessons();
+    if (on) $('lessons-text').focus(); else loadLessons();
+  }
+
+  async function saveLessons() {
+    const r = await act('api/lessons', { text: $('lessons-text').value }, 'Save lessons');
+    if (!r) return;
+    app.lessonsEditing = false;
+    if (r.items) { app.lessons = r; renderLessons(); } else loadLessons();
+    $('lessons-state').textContent = `Saved at ${fmt.clock(Date.now() / 1000)}`;
   }
 
   // ------------------------------------------------------------------ benchmark
@@ -673,7 +883,7 @@
       if (!t.tHead.childElementCount) runsHead(t, true);
       const tb = t.tBodies[0];
       tb.textContent = '';
-      if (!rows.length) tb.append(el('tr', {}, el('td', { colspan: 9, class: 'hint', text: 'No runs in this benchmark yet.' })));
+      if (!rows.length) tb.append(el('tr', {}, el('td', { colspan: 10, class: 'hint', text: 'No runs in this benchmark yet.' })));
       for (const [i, r] of rows) tb.append(runRow(r, i));
     }
   }
@@ -710,13 +920,13 @@
       $('tab-' + b.dataset.tab).hidden = !on;
     }
     history.replaceState(null, '', hash || (tab === 'live' && app.view ? '#run/' + encodeURIComponent(app.view) : '#' + tab));
-    if (tab === 'runs') loadRuns();
+    if (tab === 'runs') { loadRuns(); loadRecordings(); }
     if (tab === 'bench') {
       if (Date.now() - app.runsAt > 3000) loadRuns();
       if (app.s && !app.s.bench) api('api/bench').then((b) => { app.benchLast = b; renderBench(app.s); renderButtons(); }).catch(() => {});
       renderBench(app.s);
     }
-    if (tab === 'context' && !app.ctxLoaded) loadContext();
+    if (tab === 'context') { if (!app.ctxLoaded) loadContext(); if (app.s && app.s.lessons) loadLessons(); }
     if (tab === 'live') { logKey = null; renderLive(app.s); }
   }
 
@@ -737,7 +947,7 @@
     // First status: prefill the instruction boxes.
     if (!app.prefilled && s.default_instruction) {
       app.prefilled = true;
-      if (!$('instr').value) $('instr').value = s.default_instruction;
+      // The instruction box starts empty: it takes any instruction. The bottle task is one of the examples.
       if (!$('bench-instr').value) $('bench-instr').value = s.default_instruction;
       buildChips(s.default_instruction);
     }
@@ -745,10 +955,12 @@
 
   function buildChips(def) {
     const chips = [
-      ['Full cycle', def],
-      ['Into the basket', 'Put the bottle in the basket'],
-      ['Back to the start', 'Take the bottle out of the basket and stand it where it started'],
-      ['Look and report', 'Look at the table and tell me where the bottle is. Do not move it.'],
+      ['Full bottle cycle (checked)', def],
+      ['Wave hello', 'Wave hello'],
+      ['Point at the basket', 'Point at the basket'],
+      ['Pick up the bottle and hold it up high', 'Pick up the bottle and hold it up high'],
+      ['Push the basket 10 cm to the left', 'Push the basket 10 cm to the left'],
+      ['Look around and tell me what is on the table', 'Look around and tell me what is on the table'],
     ];
     const box = $('chips');
     box.textContent = '';
@@ -766,6 +978,7 @@
     // The selects are the source of truth: they are what the operator sees.
     const body = { instruction: text, model: $('model').value || app.model };
     if (!$('mode-wrap').hidden && $('mode').value) body.mode = $('mode').value;
+    if (app.s && app.s.lessons) body.lessons = $('learn').checked;
     app.view = null; app.archived = null;
     act('api/run', body, 'Run').then((r) => { if (r) { setTab('live'); toBottom(); } });
   }
@@ -784,6 +997,19 @@
     $('mode').addEventListener('change', (e) => { app.mode = e.target.value; $('bench-mode').value = app.mode; });
 
     $('btn-stop').addEventListener('click', () => act('api/stop', {}, 'Stop'));
+    $('btn-rec').addEventListener('click', toggleRecord);
+    $('btn-rec-refresh').addEventListener('click', loadRecordings);
+    $('learn').addEventListener('change', (e) => setLearning(e.target.checked));
+    $('lessons-enabled').addEventListener('change', (e) => setLearning(e.target.checked));
+    $('btn-lessons-edit').addEventListener('click', () => editLessons(true));
+    $('btn-lessons-cancel').addEventListener('click', () => editLessons(false));
+    $('btn-lessons-save').addEventListener('click', saveLessons);
+    $('lessons-text').addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); saveLessons(); } });
+    $('btn-lessons-clear').addEventListener('click', async () => {
+      if (!(await confirmBox('Clear all lessons?', 'Later runs will start with no memory of earlier ones. This cannot be undone.', 'Clear lessons'))) return;
+      const r = await act('api/lessons', { clear: true }, 'Clear lessons');
+      if (r) loadLessons();
+    });
     $('btn-estop').addEventListener('click', () => act('api/estop', {}, 'E-stop'));
     $('btn-home').addEventListener('click', () => act('api/home', {}, 'Home'));
     $('btn-look').addEventListener('click', () => act('api/look', {}, 'Look'));
@@ -832,6 +1058,7 @@
       if (!instruction) return showError('Benchmark: type an instruction.');
       const body = { models, runs_per_model: n, instruction };
       if (!$('bench-mode').hidden && $('bench-mode').value) body.mode = $('bench-mode').value;
+      if (app.s && app.s.lessons) body.lessons = $('bench-lessons').checked;
       app.benchLast = null;
       act('api/bench/start', body, 'Start benchmark');
     });

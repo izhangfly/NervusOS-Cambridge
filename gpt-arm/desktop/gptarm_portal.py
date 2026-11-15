@@ -5,6 +5,9 @@ Opening it starts the service (gptarm.service, a systemd user unit) if it isn't 
 http://127.0.0.1:8800 answers, then shows the portal in its own window. Closing the window does not stop a run
 or a benchmark (the service keeps going); use the portal's Stop or E-stop for that.
 
+Downloads (run videos, recordings) are saved to ~/Downloads under the name the service suggests, with -1, -2
+added rather than overwriting a file; a note at the bottom of the window says where each one went.
+
     gptarm-portal [--url http://127.0.0.1:8800]
 
 Needs python3-gi and gir1.2-webkit2-4.1 (both on Ubuntu 24.04 desktops). Install for the desktop user:
@@ -14,6 +17,7 @@ Needs python3-gi and gir1.2-webkit2-4.1 (both on Ubuntu 24.04 desktops). Install
     install -Dm644 gpt-arm/desktop/gptarm.desktop ~/.local/share/applications/gptarm.desktop
 """
 import argparse
+import os
 import subprocess
 import threading
 import time
@@ -28,6 +32,24 @@ from gi.repository import Gdk, GLib, Gtk, WebKit2  # noqa: E402
 
 START_TIMEOUT_S = 30
 UNIT = "gptarm.service"
+TOAST_S = 8
+
+
+def downloads_dir() -> str:
+    d = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_DOWNLOAD) or os.path.expanduser("~/Downloads")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def free_path(folder: str, name: str) -> str:
+    """folder/name, or folder/name-1.ext, name-2.ext, ... if that exists."""
+    name = os.path.basename(name or "").strip().lstrip(".") or "download"
+    stem, ext = os.path.splitext(name)
+    path, n = os.path.join(folder, name), 1
+    while os.path.exists(path):
+        path = os.path.join(folder, f"{stem}-{n}{ext}")
+        n += 1
+    return path
 
 
 def answering(url: str) -> bool:
@@ -72,7 +94,28 @@ class Window(Gtk.Window):
         self.web.connect("load-failed", self.on_load_failed)
         self.web.connect("decide-policy", self.on_policy)
         self.stack.add_named(self.web, "portal")
-        self.add(self.stack)
+
+        # Downloads: a note at the bottom of the window says where each file went.
+        self.toast = Gtk.Revealer(halign=Gtk.Align.CENTER, valign=Gtk.Align.END, margin_bottom=22)
+        bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        bar.get_style_context().add_class("app-notification")
+        self.toast_label = Gtk.Label(xalign=0)
+        self.toast_label.set_line_wrap(True)
+        self.toast_open = Gtk.Button(label="Show in folder")
+        self.toast_open.connect("clicked", self.on_show_folder)
+        close = Gtk.Button.new_from_icon_name("window-close-symbolic", Gtk.IconSize.BUTTON)
+        close.set_relief(Gtk.ReliefStyle.NONE)
+        close.connect("clicked", lambda *_: self.toast.set_reveal_child(False))
+        for w in (self.toast_label, self.toast_open, close):
+            bar.pack_start(w, False, False, 0)
+        self.toast.add(bar)
+        self.toast_timer = 0
+        self.toast_folder = None
+        overlay = Gtk.Overlay()
+        overlay.add(self.stack)
+        overlay.add_overlay(self.toast)
+        self.add(overlay)
+        self.watch_downloads()
         self.start()
 
     def start(self):
@@ -115,6 +158,14 @@ class Window(Gtk.Window):
         return True
 
     def on_policy(self, _view, decision, kind):
+        # A video or anything the view can't show is downloaded (WebKit does that for attachments by itself;
+        # this also covers a service that forgets Content-Disposition).
+        if kind == WebKit2.PolicyDecisionType.RESPONSE:
+            mime = decision.get_response().get_mime_type() or ""
+            if mime.startswith("video/") or not decision.is_mime_type_supported():
+                decision.download()
+                return True
+            return False
         # Stay on the service: anything else (there should be nothing) opens in the default browser.
         if kind == WebKit2.PolicyDecisionType.NAVIGATION_ACTION:
             uri = decision.get_navigation_action().get_request().get_uri()
@@ -123,6 +174,76 @@ class Window(Gtk.Window):
                 Gtk.show_uri_on_window(self, uri, Gdk.CURRENT_TIME)
                 return True
         return False
+
+    # ---- downloads (WebKit2GTK 4.1: WebContext::download-started, Download::decide-destination) -------------
+    def watch_downloads(self):
+        ctx = self.web.get_context()
+        try:
+            ctx.connect("download-started", self.on_download)
+        except TypeError:
+            # A WebKitGTK without the WebContext signal: the network session has it instead.
+            self.web.get_network_session().connect("download-started", self.on_download)
+
+    def on_download(self, _source, download):
+        state = {"path": None, "failed": False}       # per download, shared by its three handlers
+        download.connect("decide-destination", self.on_decide_destination, state)
+        download.connect("failed", self.on_download_failed, state)
+        download.connect("finished", self.on_download_finished, state)
+
+    def on_decide_destination(self, download, suggested, state):
+        if not suggested:
+            uri = download.get_request().get_uri()
+            suggested = GLib.uri_unescape_string(uri.split("?")[0].rstrip("/").rsplit("/", 1)[-1], None) or "download"
+        path = free_path(downloads_dir(), suggested)
+        download.set_allow_overwrite(False)
+        download.set_destination(GLib.filename_to_uri(path, None))  # 4.1 takes a URI (6.0 takes a path)
+        state["path"] = path
+        self.show_toast(f"Downloading {os.path.basename(path)} to {self.short(os.path.dirname(path))}…", None)
+        return True
+
+    def on_download_failed(self, _download, error, state):
+        state["failed"] = True
+        try:
+            cancelled = error.matches(WebKit2.download_error_quark(), WebKit2.DownloadError.CANCELLED_BY_USER)
+        except (AttributeError, TypeError):
+            cancelled = False
+        if not cancelled:
+            self.show_toast(f"Download failed: {error.message}", None)
+
+    def on_download_finished(self, download, state):
+        # "finished" also follows "failed"; only a clean finish is reported as saved.
+        if state["failed"]:
+            return
+        dest = download.get_destination()
+        path = state["path"] or (GLib.filename_from_uri(dest)[0] if dest else None)
+        if path:
+            self.show_toast(f"Saved {os.path.basename(path)} to {self.short(os.path.dirname(path))}", os.path.dirname(path))
+
+    @staticmethod
+    def short(folder):
+        home = os.path.expanduser("~")
+        return "~" + folder[len(home):] if folder.startswith(home) else folder
+
+    def show_toast(self, text, folder):
+        self.toast_label.set_text(text)
+        self.toast_folder = folder
+        self.toast_open.set_visible(bool(folder))
+        self.toast.show_all()
+        self.toast_open.set_visible(bool(folder))
+        self.toast.set_reveal_child(True)
+        if self.toast_timer:
+            GLib.source_remove(self.toast_timer)
+        self.toast_timer = GLib.timeout_add_seconds(TOAST_S, self.hide_toast)
+
+    def hide_toast(self):
+        self.toast.set_reveal_child(False)
+        self.toast_timer = 0
+        return False
+
+    def on_show_folder(self, *_):
+        if self.toast_folder:
+            Gtk.show_uri_on_window(self, GLib.filename_to_uri(self.toast_folder, None), Gdk.CURRENT_TIME)
+        self.hide_toast()
 
     def on_key(self, _w, ev):
         ctrl = ev.state & Gdk.ModifierType.CONTROL_MASK
