@@ -9,7 +9,9 @@ Point it at another service (the real backend) with an environment variable:
 
 Against anything but the mock, only read-only checks run: starting a run, a benchmark, home, calibrate, stop
 and e-stop act on the real arm (the owner's rule: no arm motion in tests). Set GPTARM_CONTRACT_MUTATE=1 to
-run those too, and only with a fake or simulated driver behind the service. Context edits are restored.
+run those too, and only with a fake or simulated driver behind the service. Context and lesson edits are
+restored (lessons as text: their source runs and scores are not kept). The newer parts of the contract (run videos, free recordings, lessons, free instructions that end
+"not checked") are optional: their checks run only when the service has them, so an older backend still passes.
 Works with pytest as well; needs only the standard library.
 """
 import json
@@ -32,7 +34,8 @@ EXTERNAL = os.environ.get("GPTARM_URL", "").rstrip("/")
 MUTATE = not EXTERNAL or os.environ.get("GPTARM_CONTRACT_MUTATE") == "1"
 URL = EXTERNAL
 
-STEP_KINDS = {"user", "perception", "decision", "info", "error", "verdict"}
+STEP_KINDS = {"user", "perception", "decision", "info", "error", "verdict", "lesson"}
+VIDEO_STATES = {"recording", "ready", "failed", "off"}
 RUN_STATES = {"running", "done", "failed", "stopped"}
 BENCH_STATES = {"idle", "running", "paused", "done", "stopped"}
 BUSY = {None, "run", "bench", "calibrate", "home"}
@@ -51,6 +54,16 @@ def call(method, path, body=None, timeout=10):
     except urllib.error.HTTPError as e:
         with e:
             return e.code, e.headers.get("Content-Type", ""), e.read()
+
+
+def call_headers(path, timeout=20):
+    """(status, headers, bytes) of a GET. Never raises on HTTP errors."""
+    try:
+        with urllib.request.urlopen(URL + path, timeout=timeout) as r:
+            return r.status, r.headers, r.read()
+    except urllib.error.HTTPError as e:
+        with e:
+            return e.code, e.headers, e.read()
 
 
 def get_json(path):
@@ -159,6 +172,25 @@ class Shapes(unittest.TestCase):
             f("ok", opt(lambda v: isinstance(v, bool)))
         if kind == "user":
             f("note", lambda v: isinstance(v, str) and v)
+        if kind == "lesson":  # contract addition: what the run learned, one lesson per line
+            f("note", lambda v: isinstance(v, str))
+
+    def check_video(self, v, where):
+        """Run.video: null, or {"file", "state", "seconds", "size_mb"} (contract addition)."""
+        if v is None:
+            return
+        self.obj(v, where)
+        self.field(v, "file", lambda x: isinstance(x, str) and x and "/" not in x, where)
+        self.field(v, "state", lambda x: x in VIDEO_STATES, where)
+        self.field(v, "seconds", opt(num), where)
+        self.field(v, "size_mb", opt(num), where)
+
+    def check_mp4(self, path, where):
+        code, headers, raw = call_headers(path)
+        self.assertEqual(code, 200, f"{where}: {path}")
+        self.assertIn("video/mp4", headers.get("Content-Type", ""), where)
+        self.assertIn("attachment", headers.get("Content-Disposition", ""), f"{where}: must download, not play")
+        self.assertEqual(raw[4:8], b"ftyp", f"{where}: not an MP4")
 
     def check_run(self, r, where, with_steps):
         self.obj(r, where)
@@ -173,6 +205,13 @@ class Shapes(unittest.TestCase):
         o = f("outcome", lambda v: isinstance(v, dict))
         self.field(o, "success", opt(lambda v: isinstance(v, bool)), where + ".outcome")
         self.field(o, "reason", lambda v: isinstance(v, str), where + ".outcome")
+        if "video" in r:  # contract additions
+            self.check_video(r["video"], where + ".video")
+        f("lessons_used", lambda v: is_int(v) and v >= 0, required=False)
+        checked = f("checked", lambda v: isinstance(v, bool), required=False)
+        if o["success"] is None and o["reason"] == "not_checked":
+            self.assertIn(r["state"], ("done", "failed"), f"{where}: not_checked on a run that has not ended")
+            self.assertNotEqual(checked, True, f"{where}: not_checked but checked is true")
         self.field(o, "checks", lambda v: isinstance(v, dict), where + ".outcome")
         u = f("usage", lambda v: isinstance(v, dict))
         self.field(u, "llm_calls", is_int, where + ".usage")
@@ -275,6 +314,33 @@ class Shapes(unittest.TestCase):
         else:
             f("bench", lambda v: v is None)
         f("specs", lambda v: isinstance(v, dict))
+        if "recording" in s:  # contract addition: the free recording in progress, or null
+            rec = s["recording"]
+            if rec is not None:
+                self.obj(rec, "status.recording")
+                self.field(rec, "id", lambda v: isinstance(v, str) and v, "status.recording")
+                self.field(rec, "started", num, "status.recording")
+                self.field(rec, "seconds", opt(num), "status.recording")
+                self.field(rec, "file", opt(lambda v: isinstance(v, str)), "status.recording")
+        if "lessons" in s:  # contract addition
+            le = self.obj(s["lessons"], "status.lessons")
+            self.field(le, "enabled", lambda v: isinstance(v, bool), "status.lessons")
+            self.field(le, "count", lambda v: is_int(v) and v >= 0, "status.lessons")
+
+    def check_lessons(self, d, where):
+        self.obj(d, where)
+        self.field(d, "text", lambda v: isinstance(v, str), where)
+        self.field(d, "enabled", lambda v: isinstance(v, bool), where)
+        self.field(d, "count", lambda v: is_int(v) and v >= 0, where)
+        items = self.field(d, "items", lambda v: isinstance(v, list), where)
+        self.assertEqual(len(items), d["count"], f"{where}: count and items disagree")
+        for i, it in enumerate(items):
+            w = f"{where}.items[{i}]"
+            self.obj(it, w)
+            self.field(it, "text", lambda v: isinstance(v, str) and v, w)
+            self.field(it, "source_run", opt(lambda v: isinstance(v, str)), w)
+            self.field(it, "when", opt(num), w)
+            self.field(it, "score", opt(num), w)
 
 
 # ---------------------------------------------------------------------------------------------------- set-up
@@ -405,6 +471,45 @@ class ReadOnly(Shapes):
         self.assertEqual(code, 200)
         self.assertIsInstance(d.get("text"), str)
 
+    def test_run_video_download(self):
+        code, d = get_json("/api/runs?limit=50")
+        ready = [r for r in d["runs"] if (r.get("video") or {}).get("state") == "ready"]
+        if not ready:
+            self.skipTest("no run with a ready video")
+        r = ready[0]
+        self.check_mp4(f"/api/runs/{r['id']}/{r['video']['file']}", "run video")
+        missing = [x for x in d["runs"] if x.get("video") is None and "video" in x]
+        for x in missing[:1]:
+            code, _, raw = call("GET", f"/api/runs/{x['id']}/video.mp4")
+            self.assertEqual(code, 404, "a run without a video must answer 404")
+            self.assertIsInstance(json.loads(raw).get("error"), str)
+
+    def test_recordings_list(self):
+        code, d = get_json("/api/recordings")
+        if code == 404 and "recording" not in get_json("/api/status")[1]:
+            self.skipTest("this service has no recorder")
+        self.assertEqual(code, 200)
+        recs = self.field(d, "recordings", lambda v: isinstance(v, list), "recordings")
+        for i, r in enumerate(recs):
+            w = f"recordings[{i}]"
+            self.obj(r, w)
+            self.field(r, "id", lambda v: isinstance(v, str) and v and "/" not in v, w)
+            self.field(r, "started", num, w)
+            self.field(r, "seconds", opt(num), w)
+            self.field(r, "size_mb", opt(num), w)
+            self.field(r, "url", lambda v: v == f"api/recordings/{r['id']}.mp4", w)
+        starts = [r["started"] for r in recs]
+        self.assertEqual(starts, sorted(starts, reverse=True), "recordings are not newest first")
+        if recs:
+            self.check_mp4("/" + recs[0]["url"], "recording")
+
+    def test_lessons_get(self):
+        code, d = get_json("/api/lessons")
+        if code == 404 and "lessons" not in get_json("/api/status")[1]:
+            self.skipTest("this service keeps no lessons")
+        self.assertEqual(code, 200)
+        self.check_lessons(d, "lessons")
+
 
 # ---------------------------------------------------------------------------------------------------- actions
 
@@ -473,8 +578,99 @@ class Actions(Shapes):
         self.check_run(r, "run", with_steps=True)
         self.assertIn(r["state"], ("done", "failed"))
         self.assertEqual(r["steps"][0]["kind"], "user")
-        self.assertEqual(r["steps"][-1]["kind"], "verdict")
-        self.assertIsInstance(r["outcome"]["success"], bool)
+        kinds = [st["kind"] for st in r["steps"]]
+        self.assertIn("verdict", kinds)
+        self.assertTrue(all(k == "lesson" for k in kinds[kinds.index("verdict") + 1:]),
+                        "only lesson steps may follow the verdict")
+        o = r["outcome"]
+        # "Put the bottle in the basket" is not the default task: newer services leave it unchecked.
+        self.assertTrue(isinstance(o["success"], bool) or (o["success"] is None and o["reason"] == "not_checked"), o)
+
+    def test_free_instruction_not_checked(self):
+        s = get_json("/api/status")[1]
+        if "lessons" not in s and EXTERNAL:
+            self.skipTest("the service predates free instructions and lessons")
+        body = {"instruction": "Wave hello", "model": s["model"], "lessons": True}
+        code, d = post_json("/api/run", body)
+        self.assertEqual(code, 200, d)
+        self.assertTrue(wait_for(lambda: get_json("/api/status")[1]["busy"] is None, 120, 0.5), "the run did not finish")
+        r = get_json("/api/runs/" + d["id"])[1]
+        self.check_run(r, "run", with_steps=True)
+        self.assertEqual(r["state"], "done")
+        verdict = [st for st in r["steps"] if st["kind"] == "verdict"][-1]
+        self.assertIsNone(verdict.get("ok"))
+        self.assertIsNone(r["outcome"]["success"])
+        self.assertEqual(r["outcome"]["reason"], "not_checked")
+        done = [st for st in r["steps"] if st["kind"] == "decision" and st.get("skill") == "done"]
+        self.assertTrue(done and done[-1].get("note"), "the model's done decision carries its answer in note")
+        self.assertIsInstance(r.get("lessons_used"), int)
+        if not EXTERNAL:
+            self.assertEqual(r["steps"][-1]["kind"], "lesson", "a run with lessons on writes them after the verdict")
+            self.assertEqual(r["video"]["state"], "ready")
+            self.check_mp4(f"/api/runs/{r['id']}/video.mp4", "run video")
+
+    def test_run_lessons_flag(self):
+        s = get_json("/api/status")[1]
+        if "lessons" not in s:
+            self.skipTest("this service keeps no lessons")
+        code, d = post_json("/api/run", {"instruction": "Wave hello", "model": s["model"], "lessons": "yes"})
+        self.assertEqual(code, 400, "lessons must be a boolean")
+        code, d = post_json("/api/run", {"instruction": "Wave hello", "model": s["model"], "lessons": False})
+        self.assertEqual(code, 200, d)
+        self.assertEqual(get_json("/api/status")[1]["run"].get("lessons_used"), 0, "lessons off: none used")
+        post_json("/api/stop")
+        self.assertTrue(wait_for(lambda: get_json("/api/status")[1]["busy"] is None, 30))
+
+    def test_record_roundtrip(self):
+        s = get_json("/api/status")[1]
+        if "recording" not in s:
+            self.skipTest("this service has no recorder")
+        if s["recording"]:
+            post_json("/api/record", {"on": False})
+        code, d = post_json("/api/record", {"on": "yes"})
+        self.assertEqual(code, 400)
+        self.assertIsInstance(d.get("error"), str)
+        code, d = post_json("/api/record", {"on": True})
+        self.assertEqual(code, 200, d)
+        self.assertTrue(d.get("ok"))
+        rec = d.get("recording")
+        self.assertIsInstance(rec, dict)
+        s = get_json("/api/status")[1]
+        self.check_status(s)
+        self.assertEqual(s["recording"]["id"], rec["id"])
+        time.sleep(1.2)
+        code, d = post_json("/api/record", {"on": False})
+        self.assertEqual(code, 200, d)
+        self.assertIsNone(d.get("recording"))
+        self.assertIsNone(get_json("/api/status")[1]["recording"])
+        recs = wait_for(lambda: [r for r in get_json("/api/recordings")[1]["recordings"] if r["id"] == rec["id"]], 30, 0.5)
+        self.assertTrue(recs, "the stopped recording is not listed")
+        self.check_mp4("/" + recs[0]["url"], "recording")
+
+    def test_lessons_roundtrip(self):
+        code, before = get_json("/api/lessons")
+        if code == 404 and "lessons" not in get_json("/api/status")[1]:
+            self.skipTest("this service keeps no lessons")
+        try:
+            code, d = post_json("/api/lessons", {"text": "Contract test lesson one\n\nContract test lesson two\n"})
+            self.assertEqual(code, 200, d)
+            d = get_json("/api/lessons")[1]
+            self.check_lessons(d, "lessons")
+            self.assertEqual(sorted(it["text"] for it in d["items"]), ["Contract test lesson one", "Contract test lesson two"])
+            self.assertEqual(get_json("/api/status")[1]["lessons"]["count"], 2)
+            code, d = post_json("/api/lessons", {"enabled": not before["enabled"]})
+            self.assertEqual(code, 200, d)
+            self.assertEqual(get_json("/api/status")[1]["lessons"]["enabled"], not before["enabled"])
+            code, d = post_json("/api/lessons", {"enabled": "no"})
+            self.assertEqual(code, 400)
+            code, d = post_json("/api/lessons", {})
+            self.assertEqual(code, 400)
+            self.assertIsInstance(d.get("error"), str)
+            code, d = post_json("/api/lessons", {"clear": True})
+            self.assertEqual(code, 200, d)
+            self.assertEqual(get_json("/api/lessons")[1]["count"], 0)
+        finally:
+            post_json("/api/lessons", {"text": before["text"], "enabled": before["enabled"]})
 
     def test_bench_lifecycle(self):
         s = get_json("/api/status")[1]
@@ -483,8 +679,10 @@ class Actions(Shapes):
         self.assertEqual(code, 409, "resume when not paused")
         code, d = post_json("/api/bench/start", {"models": [], "runs_per_model": 2, "instruction": "x"})
         self.assertEqual(code, 400)
-        code, d = post_json("/api/bench/start", {"models": ids[:2], "runs_per_model": 2,
-                                                 "instruction": s["default_instruction"]})
+        body = {"models": ids[:2], "runs_per_model": 2, "instruction": s["default_instruction"]}
+        if "lessons" in s:
+            body["lessons"] = False  # contract addition: benchmark runs start with no memory unless chosen
+        code, d = post_json("/api/bench/start", body)
         self.assertEqual(code, 200, d)
         s = get_json("/api/status")[1]
         self.check_status(s)

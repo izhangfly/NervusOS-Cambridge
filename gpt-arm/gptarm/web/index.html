@@ -13,7 +13,7 @@
 <header class="topbar">
   <div class="brand">
     <svg viewBox="0 0 32 32" width="28" height="28" aria-hidden="true"><rect width="32" height="32" rx="8" fill="var(--brand-bg)"/><path d="M7 25h10M12 25v-7l7-7 5 3" fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="18" r="1.9" fill="var(--warm)"/><circle cx="19" cy="11" r="1.9" fill="var(--warm)"/></svg>
-    <div><strong>GPT Arm</strong><span>AgileX PiPER, bottle and basket</span></div>
+    <div><strong>GPT Arm</strong><span>AgileX PiPER, told in plain words</span></div>
   </div>
   <nav class="tabs" role="tablist" aria-label="Views">
     <button role="tab" id="t-live" data-tab="live" aria-controls="tab-live">Live</button>
@@ -25,6 +25,7 @@
   <label class="sel"><span>Model</span><select id="model" autocomplete="off"></select></label>
   <label class="sel" id="mode-wrap" hidden><span>Control</span><select id="mode" autocomplete="off"></select></label>
   <span id="pill" class="pill" data-state="idle" role="status" aria-live="polite">idle</span>
+  <button id="btn-rec" class="btn rec" aria-pressed="false" hidden title="Record both cameras side by side until you press it again">Record</button>
   <div class="arm-actions" role="group" aria-label="Arm actions">
     <button id="btn-look" class="btn" title="Photograph the table and refresh the scene flags">Look</button>
     <button id="btn-home" class="btn" title="Move the arm to its look pose, out of the camera's way">Home</button>
@@ -83,12 +84,19 @@
   <!-- Live: instruction and the run log -->
   <section class="panel" id="tab-live" role="tabpanel" aria-labelledby="t-live">
     <form class="card instruct" id="instruct" autocomplete="off">
-      <label for="instr" class="label">Instruction</label>
-      <textarea id="instr" rows="3" autocomplete="off" spellcheck="true" placeholder="Tell the model what to do with the bottle"></textarea>
+      <div class="instruct-head">
+        <label for="instr" class="instruct-title">Tell the arm what to do</label>
+        <span class="hint">Anything, in plain words. The model sees both cameras and works out every move itself.</span>
+      </div>
+      <textarea id="instr" rows="3" autocomplete="off" spellcheck="true" placeholder="For example: wave hello, point at the basket, put the bottle in the basket, or ask what is on the table"></textarea>
+      <div class="chips" id="chips" role="group" aria-label="Examples: click one to put it in the box"></div>
       <div class="instruct-row">
-        <div class="chips" id="chips" aria-label="Example instructions"></div>
+        <label class="switch learn" id="learn-wrap" hidden title="Give the model the lessons written after earlier runs, and let it write new ones after this run">
+          <input type="checkbox" id="learn"> <span>Learn from earlier runs</span> <span class="count" id="learn-count"></span>
+        </label>
+        <div class="grow"></div>
         <span class="hint">Enter runs, Shift+Enter for a new line</span>
-        <button type="submit" class="btn primary" id="btn-run">Run</button>
+        <button type="submit" class="btn primary big" id="btn-run">Run</button>
       </div>
     </form>
     <div class="card log-card">
@@ -121,6 +129,8 @@
         <select id="bench-mode" autocomplete="off"></select>
         <label class="label" for="bench-instr">Instruction</label>
         <textarea id="bench-instr" rows="4"></textarea>
+        <label class="switch bench-learn" id="bench-learn-wrap" hidden><input type="checkbox" id="bench-lessons"> <span>Learn from earlier runs</span></label>
+        <p class="hint" id="bench-learn-hint" hidden>Off by default, so every benchmark run starts with no memory and models are compared fairly.</p>
         <p class="hint">Runs are interleaved across models. The benchmark pauses when the scene needs a hand reset.</p>
         <div class="row">
           <button type="submit" class="btn primary" id="btn-bench-start">Start</button>
@@ -153,10 +163,19 @@
       <div class="card-head"><h2>Past runs</h2><button class="btn small" id="btn-runs-refresh">Refresh</button></div>
       <div class="table-wrap"><table class="table runs" id="runs-table"><thead></thead><tbody></tbody></table></div>
     </div>
+    <div class="card" id="rec-card" hidden>
+      <div class="card-head"><h2>Recordings <span class="sub">made with the Record button; each run's own video is in its row above</span></h2><button class="btn small" id="btn-rec-refresh">Refresh</button></div>
+      <div class="table-wrap">
+        <table class="table" id="rec-table">
+          <thead><tr><th scope="col">Recording</th><th scope="col">Started</th><th scope="col" class="num">Length</th><th scope="col" class="num">Size</th><th scope="col">Video</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
   </section>
 
   <!-- Context -->
-  <section class="panel" id="tab-context" role="tabpanel" aria-labelledby="t-context" hidden>
+  <section class="panel scroll" id="tab-context" role="tabpanel" aria-labelledby="t-context" hidden>
     <div class="card context-card">
       <div class="card-head">
         <h2>Arm context <span class="sub">Markdown given to the model with every call</span></h2>
@@ -170,6 +189,23 @@
         <button class="btn" id="btn-ctx-reset">Reset to default</button>
       </div>
     </div>
+    <div class="card lessons-card" id="lessons-card" hidden>
+      <div class="card-head">
+        <h2>Lessons <span class="sub">written by the model after each run, read by later runs when learning is on</span></h2>
+        <label class="switch"><input type="checkbox" id="lessons-enabled"> <span>Use lessons in new runs</span></label>
+      </div>
+      <ol class="lessons" id="lessons-list"></ol>
+      <p class="hint" id="lessons-empty" hidden>No lessons yet. They appear after a run with learning on.</p>
+      <textarea id="lessons-text" rows="9" spellcheck="true" aria-label="Lessons, one per line" hidden></textarea>
+      <div class="row">
+        <button class="btn" id="btn-lessons-edit">Edit as text</button>
+        <button class="btn primary" id="btn-lessons-save" hidden>Save</button>
+        <button class="btn" id="btn-lessons-cancel" hidden>Cancel</button>
+        <span id="lessons-state" class="hint"></span>
+        <div class="grow"></div>
+        <button class="btn" id="btn-lessons-clear">Clear all</button>
+      </div>
+    </div>
   </section>
 </main>
 
@@ -181,6 +217,8 @@
     </figcaption>
   </figure>
 </dialog>
+
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
 <dialog id="confirm">
   <form method="dialog">

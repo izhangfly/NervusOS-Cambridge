@@ -127,6 +127,19 @@ textarea { width: 100%; resize: vertical; line-height: 1.5; }
 .pill[data-state=calibrating], .pill[data-state=homing] { color: var(--violet); border-color: var(--violet); }
 .pill[data-state=offline] { color: var(--bad); border-color: var(--bad); }
 
+/* ---------- recording */
+.btn.rec { display: inline-flex; align-items: center; gap: 7px; }
+.btn.rec::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--estop); }
+.btn.rec.on { background: var(--estop); border-color: var(--estop); color: #fff; font-family: var(--mono); font-weight: 700; letter-spacing: .03em; }
+.btn.rec.on::before { background: #fff; }
+.rec-badge {
+  display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 13px; font-weight: 700; letter-spacing: .05em;
+  color: #fff; background: #c42525; padding: 3px 10px; border-radius: 5px; font-variant-numeric: tabular-nums;
+}
+.rec-badge::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #fff; }
+a.btn { text-decoration: none; display: inline-block; }
+.video-note { font-size: 12.5px; color: var(--faint); }
+
 /* ---------- banners */
 .banner { display: flex; align-items: center; gap: 14px; padding: 9px 16px; border-bottom: 1px solid var(--line); }
 .banner.offline { background: var(--bad-bg); color: var(--text); border-left: 4px solid var(--bad); }
@@ -196,10 +209,19 @@ details.card summary::before { content: "+"; color: var(--muted); font-family: v
 details.card[open] summary::before { content: "-"; }
 details.card[open] summary { margin-bottom: 10px; }
 
-/* ---------- instruction */
-.instruct textarea { font-size: 15px; min-height: 64px; }
-.instruct-row { display: flex; align-items: center; gap: 12px; margin-top: 9px; }
-.chips { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; }
+/* ---------- instruction: the main control */
+.instruct { border: 1px solid color-mix(in srgb, var(--accent) 50%, var(--line)); padding: 14px 16px; }
+.instruct-head { display: flex; align-items: baseline; gap: 6px 14px; flex-wrap: wrap; margin-bottom: 8px; }
+.instruct-title { font-size: 18px; font-weight: 700; color: var(--text); }
+.instruct textarea { font-size: 17px; min-height: 86px; }
+.instruct textarea:focus { border-color: var(--accent); }
+.instruct .chips { margin-top: 9px; }
+.instruct-row { display: flex; align-items: center; gap: 12px; margin-top: 10px; flex-wrap: wrap; }
+.btn.big { padding: 8px 22px; font-size: 15px; }
+.switch.learn { font-size: 13px; color: var(--text); }
+.switch .count { color: var(--faint); font-size: 12px; }
+.bench-learn { margin: 10px 0 2px; font-size: 13px; color: var(--text); }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .chip {
   font: inherit; font-size: 12.5px; color: var(--muted); background: var(--panel-2); border: 1px solid var(--line);
   border-radius: 99px; padding: 3px 11px; cursor: pointer;
@@ -266,6 +288,16 @@ details.card[open] summary { margin-bottom: 10px; }
 .verdict .checks span { font-size: 12px; padding: 1px 8px; border-radius: 4px; background: var(--panel); border: 1px solid var(--line-2); font-variant-numeric: tabular-nums; }
 .verdict .checks .pass { color: var(--ok); }
 .verdict .checks .miss { color: var(--bad); }
+.verdict.neutral { background: var(--info-bg); border-color: color-mix(in srgb, var(--info) 45%, transparent); }
+.verdict.neutral .big { color: var(--info); font-size: 19px; }
+.answer { margin: 12px 16px 0; padding: 11px 16px; border-left: 4px solid var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--panel)); border-radius: 0 10px 10px 0; }
+.answer b { display: block; font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; font-weight: 650; }
+.answer p { margin: 3px 0 0; font-size: 16.5px; line-height: 1.5; white-space: pre-line; overflow-wrap: anywhere; }
+/* What the model learned after the run: calm violet edge, a plain list */
+.k-lesson { border-left-color: var(--violet); background: color-mix(in srgb, var(--violet) 6%, transparent); }
+.k-lesson .kind { color: var(--violet); }
+.lesson-list { margin: 0; padding-left: 18px; }
+.lesson-list li + li { margin-top: 3px; }
 .verdict time { grid-row: span 2; color: var(--faint); font-size: 12px; }
 .pending { margin: 8px 16px 0; padding: 9px 12px; border: 1px dashed var(--line-2); border-radius: 8px; color: var(--muted); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .pending b { color: var(--text); font-weight: 600; }
@@ -284,8 +316,9 @@ details.card[open] summary { margin-bottom: 10px; }
 .table .open { font-family: var(--mono); font-size: 12px; background: none; border: 0; color: var(--info); padding: 0; cursor: pointer; text-align: left; white-space: nowrap; }
 .table .nowrap { white-space: nowrap; }
 .table .open:hover { text-decoration: underline; }
-.table .instr-cell { max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
-.table .reason { display: block; font-size: 12px; color: var(--faint); max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.table .dim { color: var(--faint); }
+.table .instr-cell { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.table .reason { display: block; font-size: 12px; color: var(--faint); max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rate { display: flex; align-items: center; gap: 8px; min-width: 150px; }
 .rate .bar { flex: 1; height: 8px; border-radius: 4px; background: var(--panel-2); border: 1px solid var(--line); overflow: hidden; }
 .rate .bar i { display: block; height: 100%; background: var(--accent); }
@@ -310,9 +343,26 @@ details.card[open] summary { margin-bottom: 10px; }
 .bench-paused { margin-top: 12px; padding: 12px 14px; border-radius: 8px; background: var(--warn); color: #1c1400; display: flex; gap: 14px; align-items: center; justify-content: space-between; font-size: 14.5px; }
 .bench-paused .btn { background: #1c1400; color: #ffe2a8; border-color: #1c1400; }
 
-/* ---------- context */
-.context-card { flex: 1; display: flex; flex-direction: column; min-height: 0; gap: 10px; }
+/* ---------- context and lessons */
+.context-card { flex: 1 0 auto; display: flex; flex-direction: column; min-height: 420px; gap: 10px; }
 #ctx { flex: 1; min-height: 300px; font-family: var(--mono); font-size: 13px; resize: none; }
+.lessons-card { display: flex; flex-direction: column; gap: 10px; }
+.lessons-card .card-head { margin-bottom: 0; }
+.lessons { list-style: none; margin: 0; padding: 0; }
+.lessons li { padding: 8px 10px; border-left: 3px solid var(--violet); background: var(--panel-2); border-radius: 0 6px 6px 0; }
+.lessons li + li { margin-top: 6px; }
+.lessons .text { overflow-wrap: anywhere; }
+.lessons .meta { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--faint); margin-top: 2px; }
+.lessons .meta .open { font-family: var(--mono); font-size: 12px; background: none; border: 0; color: var(--info); padding: 0; cursor: pointer; }
+.lessons .meta .open:hover { text-decoration: underline; }
+#lessons-text { font-size: 13.5px; }
+
+/* ---------- toast */
+.toast {
+  position: fixed; right: 18px; bottom: 18px; z-index: 20; max-width: min(460px, 90vw); display: flex; gap: 12px; align-items: center;
+  background: var(--panel); border: 1px solid var(--line-2); border-left: 4px solid var(--accent); border-radius: 8px; padding: 10px 12px 10px 14px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, .35);
+}
 
 /* ---------- dialogs */
 dialog { background: var(--panel); color: var(--text); border: 1px solid var(--line-2); border-radius: 12px; padding: 0; max-width: min(92vw, 1400px); }
