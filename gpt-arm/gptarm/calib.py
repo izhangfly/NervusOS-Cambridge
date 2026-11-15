@@ -28,7 +28,7 @@ from . import arm as A
 HOME = Path(os.environ.get("GPTARM_HOME", "~/.config/gptarm")).expanduser()
 CAL_PATH = HOME / "calibration.json"
 
-DIFF_MIN = 60            # grey levels: fingers change by 80-110, their shadows by about 30
+DARKER = 0.5             # the fingers are under half the table's brightness; their shadow is not
 MARKER_MM = 105.0        # first guess: flange to the middle of the fingers' visible length
 MARKER_RANGE = (80.0, 130.0)
 
@@ -158,31 +158,32 @@ def fit(points, size, search=True):
 
 
 # ---- finding the fingers -----------------------------------------------------------------------------------
-def gripper_marker(open_img, closed_img, open_again=None, near=None, radius=260.0):
-    """The centre of what changed between a gripper-open and a gripper-closed photograph: (u, v), pixel count.
-    None if nothing believable changed. With a third photograph (open again), only pixels that changed AND
-    changed back count: a phone screen lighting up or a person moving at the table's edge does neither on
-    cue. `near`: where the gripper is expected (pixels), once a calibration exists."""
-    def diff(p, q):
-        return cv2.GaussianBlur(cv2.absdiff(p, q).max(axis=2), (5, 5), 0)
+def gripper_marker(open_img, closed_img, open_again, near=None, radius=260.0):
+    """Where the closed fingers are, from three photographs (gripper open, closed, open again): (u, v), pixels.
+    None if they are not seen.
 
-    mask = diff(open_img, closed_img) > DIFF_MIN
-    if open_again is not None:
-        mask &= diff(closed_img, open_again) > DIFF_MIN
-        busy = (diff(open_img, open_again) > DIFF_MIN // 2).astype(np.uint8)
-        mask &= cv2.dilate(busy, np.ones((9, 9), np.uint8)) == 0
+    The closed finger pair sits on the tool axis, and it is the one thing that is dark in the closed
+    photograph and table in both open ones. The open fingers are not used: from above, the wrist camera's
+    body hides one of them at many poses, and a centre taken from the other alone is 2 cm off to its side.
+    Everything is relative to the table's own brightness there, so the test holds in a dim room as in a
+    bright one, and a pixel that differs between the two open photographs (a person moving at the table's
+    edge, a screen lighting up) is not counted. `near`: where the gripper is expected, once a fit exists.
+    """
+    ga, gb, gc = (cv2.GaussianBlur(cv2.cvtColor(i, cv2.COLOR_BGR2GRAY), (5, 5), 0).astype(np.float32)
+                  for i in (open_img, closed_img, open_again))
+    ref = np.minimum(ga, gc)
+    mask = ((ref - gb) / (ref + 8.0) > DARKER) & (ref - gb > 14.0) & (np.abs(ga - gc) / (np.maximum(ga, gc) + 8.0) < 0.2)
     mask = cv2.morphologyEx(mask.astype(np.uint8), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
     n, lab, stats, cent = cv2.connectedComponentsWithStats(mask)
-    comps = [(int(stats[i, cv2.CC_STAT_AREA]), cent[i], i) for i in range(1, n) if stats[i, cv2.CC_STAT_AREA] >= 30]
+    comps = [(int(stats[i, cv2.CC_STAT_AREA]), cent[i], i) for i in range(1, n) if stats[i, cv2.CC_STAT_AREA] >= 60]
     if near is not None:
         comps = [c for c in comps if np.linalg.norm(c[1] - np.asarray(near)) < radius]
     if not comps:
         return None
     anchor = max(comps, key=lambda c: c[0])[1]
-    kept = [c for c in comps if np.linalg.norm(c[1] - anchor) < 150.0]
-    sel = np.isin(lab, [c[2] for c in kept])
-    ys, xs = np.nonzero(sel)
-    if not 150 <= len(xs) <= 40000 or max(np.ptp(xs), np.ptp(ys)) > 330:
+    kept = [c for c in comps if np.linalg.norm(c[1] - anchor) < 70.0]
+    ys, xs = np.nonzero(np.isin(lab, [c[2] for c in kept]))
+    if not 150 <= len(xs) <= 20000 or max(np.ptp(xs), np.ptp(ys)) > 220:
         return None
     return (float(xs.mean()), float(ys.mean())), int(len(xs))
 

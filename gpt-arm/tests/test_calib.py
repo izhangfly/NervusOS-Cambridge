@@ -67,11 +67,17 @@ class CalibTest(unittest.TestCase):
         b = a.copy()
         a[300:340, 380:392] = 20
         a[300:340, 440:452] = 20          # open fingers
-        b[300:340, 410:422] = 20          # closed
-        (u, v), n = C.gripper_marker(a, b)
+        b[290:340, 405:427] = 20          # closed
+        b[100:160, 600:660] = 20          # something else that moved and did not move back
+        c = a.copy()
+        c[100:160, 600:660] = 20
+        (u, v), n = C.gripper_marker(a, b, c)
         self.assertLess(abs(u - 415.5), 3)
-        self.assertLess(abs(v - 319.5), 3)
-        self.assertIsNone(C.gripper_marker(a, a))
+        self.assertLess(abs(v - 314.5), 3)
+        self.assertIsNone(C.gripper_marker(a, a, a))
+        dim = lambda i: (i * 0.3).astype(np.uint8)      # the same in a dim room
+        (u, v), n = C.gripper_marker(dim(a), dim(b), dim(c))
+        self.assertLess(abs(u - 415.5), 3)
 
     def test_stage_points_are_reachable(self):
         for name, zs, xs, ys, margin in C.STAGES:
