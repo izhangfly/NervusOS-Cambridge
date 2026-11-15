@@ -8,6 +8,7 @@ wrist:    the Orbbec Dabai DC1's colour stream on the gripper, opened here by it
 from __future__ import annotations
 
 import glob
+import json
 import os
 import threading
 import time
@@ -37,6 +38,59 @@ class Overhead:
         if img is None:
             raise CameraError("overhead camera sent a broken frame")
         return img
+
+    def info(self) -> dict:
+        try:
+            with urllib.request.urlopen(self.url + "/info", timeout=3.0) as r:
+                return json.loads(r.read())
+        except (OSError, ValueError) as e:
+            raise CameraError(f"overhead camera: {getattr(e, 'reason', e)}") from None
+
+    def set_exposure(self, exposure_us, gain) -> dict:
+        req = urllib.request.Request(self.url + "/controls", json.dumps({"exposure_us": exposure_us, "gain": gain}).encode(),
+                                     {"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=5.0) as r:
+                out = json.loads(r.read())
+        except (OSError, ValueError) as e:
+            raise CameraError(f"overhead camera: {getattr(e, 'reason', e)}") from None
+        t_end = time.time() + 15.0                      # the camera restarts: wait for frames made after it
+        time.sleep(2.5)
+        while time.time() < t_end:
+            try:
+                if (self.info().get("age_s") or 9) < 1.0 and self.info().get("frames", 0) >= 4:
+                    return out
+            except CameraError:
+                pass
+            time.sleep(0.5)
+        raise CameraError("the overhead camera did not come back after an exposure change")
+
+    def tune(self, mask=None, target=170.0, log=None) -> dict:
+        """Set a fixed exposure that puts the table at `target` grey. mask: the table's pixels (once a
+        calibration says where it is); without one the whole picture's median is used, aiming lower.
+        The exposure time goes up before the gain (less noise). Returns {"exposure_us", "gain", "level"}."""
+        def level():
+            g = cv2.cvtColor(self.settled(2, 0.3), cv2.COLOR_BGR2GRAY)
+            return float(np.median(g[mask > 0]) if mask is not None else np.median(g))
+
+        goal = float(target) if mask is not None else 0.6 * float(target)
+        i = self.info()
+        (e_lo, e_hi), (g_lo, g_hi) = i["limits"]["exposure_us"], i["limits"]["gain"]
+        exp, gain, lv = float(i["exposure_us"]), float(i["gain"]), level()
+        for _ in range(6):
+            if abs(lv - goal) <= 0.08 * goal:
+                break
+            k = min(2.5, max(0.4, goal / max(lv, 4.0))) * exp * gain      # light gathered, to scale
+            exp2 = min(e_hi, max(e_lo, k / g_lo)) if k / g_lo <= e_hi else e_hi
+            gain2 = min(g_hi, max(g_lo, k / exp2))
+            if abs(exp2 - exp) < 1 and abs(gain2 - gain) < 0.02:
+                break                                   # at a limit
+            exp, gain = exp2, gain2
+            self.set_exposure(exp, gain)
+            lv = level()
+            if log:
+                log(f"overhead camera: exposure {exp / 1000:.0f} ms, gain {gain:.1f}, table at {lv:.0f}")
+        return {"exposure_us": int(exp), "gain": round(gain, 2), "level": round(lv, 1)}
 
     def settled(self, n=3, gap_s=0.25) -> np.ndarray:
         """The median of n frames: steadier for differencing and colour thresholds."""
