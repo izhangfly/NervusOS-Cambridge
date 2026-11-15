@@ -47,6 +47,9 @@ SKILLS = {
     "open_gripper": "Open the fingers: lets go of a held bottle, or reopens after a grasp that caught nothing. "
                     "Only when gripper is closed.",
     "lift": "Raise the gripper straight up to carry height. Only when height is not carry.",
+    "stand_up": "Stand a bottle that lies on its side on the table back up: the gripper takes it near the cap, "
+                "lifts so that it hangs base down, sets it on its base and lets go. Only when the bottle lies on the "
+                "table (bottle.upright is false), the gripper is open and empty, and height is carry.",
     "done": "The whole task is complete: stop. The result is then checked by the cameras and by touch.",
 }
 TARGETS = ("bottle", "basket", "start_spot", "none")
@@ -98,6 +101,9 @@ class Config:
     max_steps: int = 40
     park: tuple = ((160.0, 0.0, 330.0), (110.0, 230.0, 300.0))    # where the arm waits during a look: back over its base, else left
     feel: bool = True               # check "upright" by closing the fingers on the cap
+    stand_grip_from_centre: float = 25.0   # stand_up grips this far from a lying bottle's middle, towards the cap
+    stand_effort: int = 1500        # firm enough to hold it, loose enough that it swings to hang
+    bottle_length: float = 125.0    # base to the top of the cap
 
     @classmethod
     def load(cls):
@@ -244,6 +250,8 @@ class World:
                 raise Refused("move_above only travels at carry height: lift first")
             if target == "bottle" and s["holding"]:
                 raise Refused("the bottle is in the gripper: it cannot be a place to go to")
+            if target == "bottle" and s["bottle"] and s["bottle"]["where"] == "table" and s["bottle"]["upright"] is False:
+                raise Refused("the bottle is lying on its side: stand_up first")
             if self._target_xy(target) is None:
                 raise Refused(f"the position of {target} is not known: look first")
         if skill == "lower":
@@ -270,6 +278,16 @@ class World:
             raise Refused("the gripper is already open")
         if skill == "lift" and carry:
             raise Refused("already at carry height")
+        if skill == "stand_up":
+            b = s["bottle"]
+            if not b or b["where"] != "table" or b["upright"] is not False:
+                raise Refused("stand_up is for a bottle lying on the table, and it is not lying there")
+            if s["holding"] or s["gripper"] != "open":
+                raise Refused("stand_up needs an open, empty gripper")
+            if not carry:
+                raise Refused("stand_up starts from carry height: lift first")
+            if self.bottle.get("axis_deg") is None:
+                raise Refused("which way the bottle lies is not known: look first")
 
     # ---- the skills -----------------------------------------------------------------------------------
     def do(self, skill, target="none"):
@@ -297,7 +315,8 @@ class World:
             if sc.basket:
                 self.basket = {"xy": sc.basket["xy"], "t": now, "size_mm": sc.basket["size_mm"]}
             if sc.bottle and not self.holding:
-                self.bottle = {"where": sc.bottle["where"], "xy": sc.bottle["xy"], "upright": sc.bottle.get("upright"), "t": now}
+                self.bottle = {"where": sc.bottle["where"], "xy": sc.bottle["xy"], "upright": sc.bottle.get("upright"), "t": now,
+                               **{k: sc.bottle[k] for k in ("axis_deg", "length_mm") if k in sc.bottle}}
                 if sc.bottle["where"] == "basket":
                     self.entered_basket = True
                 found = sc.bottle
@@ -365,6 +384,46 @@ class World:
             return "lifted" + (" with the bottle" if self.holding else "")
         # the gripper is free and something may have changed: look now, while the arm is up
         return "lifted. " + self._look()
+
+    def _stand_up(self, _target=None):
+        """A lying bottle, stood up by letting it hang: grip it across the body near the cap end (the fingers
+        close across its axis), lift until it swings down to hang base first, set the base on the table, let
+        go. Its axis runs along the tool's lean direction, so either of the two directions along it will do."""
+        c, b = self.cfg, self.bottle
+        a = math.radians(b["axis_deg"])
+        gx, gy = b["xy"][0] + c.stand_grip_from_centre * math.cos(a), b["xy"][1] + c.stand_grip_from_centre * math.sin(a)
+        hang = c.bottle_length / 2.0 + c.stand_grip_from_centre        # grip point to the base, hanging
+        low = P.LYING_AXIS_Z + 2.0
+        yaw = None
+        for cand in sorted((b["axis_deg"], b["axis_deg"] + 180.0),
+                           key=lambda y: abs(((y - math.degrees(math.atan2(gy, gx))) + 180.0) % 360.0 - 180.0)):
+            if A.min_lean(gx, gy, low, cand) is not None and A.min_lean(gx, gy, c.travel_z, cand) is not None:
+                yaw = cand
+                break
+        if yaw is None:
+            raise A.ArmError(f"the arm cannot reach down to the lying bottle at ({gx:.0f}, {gy:.0f}) with its fingers across it")
+        floor = self.arm.floor_z_mm
+        try:
+            self._go(gx, gy, c.travel_z, yaw_deg=yaw, min_tip_z=c.travel_z - 60.0)
+            self.arm.floor_z_mm = 4.0                            # the fingertips go down to the table here
+            self._go(gx, gy, low, yaw_deg=yaw, min_tip_z=low - 25.0)
+            self.arm.grip(0.0, effort=c.stand_effort)
+            if not self.arm.holding():
+                self.arm.grip(A.GRIPPER_OPEN_MM)
+                self._go(gx, gy, c.travel_z, yaw_deg=yaw)
+                self.missed = True
+                return "stand_up: the fingers closed on nothing; the bottle is still lying"
+            self.gripper, self.holding = "closed", True
+            self._go(gx, gy, hang + 45.0, yaw_deg=yaw, speed=max(8, c.speed // 2))     # it swings down to hang
+            time.sleep(1.5)
+            self._go(gx, gy, hang + 4.0, yaw_deg=yaw, speed=max(8, c.speed // 2))      # base onto the table
+            self.arm.grip(A.GRIPPER_OPEN_MM)
+            self.gripper, self.holding = "open", False
+            time.sleep(0.5)
+            self._go(gx, gy, c.travel_z, yaw_deg=yaw, min_tip_z=hang - 30.0)
+        finally:
+            self.arm.floor_z_mm = floor
+        return "stand_up: set down on its base and let go. " + self._look()
 
     def _done(self, _target=None):
         return "the model says the task is complete"
@@ -453,6 +512,8 @@ def oracle(state):
         return "lift", "none", "get to carry height"
     if b is None or b["where"] == "unknown" or b.get("xy_mm") is None:
         return ("look", "none", "where is the bottle?") if carry else ("lift", "none", "up, to look")
+    if b["where"] == "table" and b.get("upright") is False:
+        return ("stand_up", "none", "the bottle is lying: stand it up") if carry else ("lift", "none", "up first")
     if s["bottle_has_been_in_basket"] and b["where"] == "table":
         return ("done", "none", "the bottle went in and is back on the table") if carry else ("lift", "none", "finish high")
     if s["above"] == "bottle" or (b["where"] == "basket" and s["above"] == "basket"):

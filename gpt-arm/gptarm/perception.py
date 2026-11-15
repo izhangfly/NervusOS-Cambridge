@@ -114,10 +114,11 @@ def look(img, cam, joints_deg=None, bottle_height=BOTTLE_HEIGHT_MM, basket_rim=1
         caps.append(c)
     if caps:
         c = min(caps, key=lambda c: abs(math.log(c["area"] / cap_area)))
+        c["lab"] = lab == c["i"]
         u, v = float(c["c"][0]), float(c["c"][1])
         s.bottle = {"where": "table", "px": [round(u, 1), round(v, 1)], "upright": None,
                     "xy": [round(q, 1) for q in cam.ground(u, v, bottle_height)], "cap_px_area": c["area"]}
-        s.bottle["upright"] = _upright(g, level, cam, s.bottle, bottle_height)
+        s.bottle.update(_pose(img, g, level, cam, c, arm, bottle_height))
         if len(caps) > 1:
             s.notes.append(f"{len(caps)} cap-like blobs; took the best")
     elif basket_px is not None:
@@ -135,27 +136,63 @@ def look(img, cam, joints_deg=None, bottle_height=BOTTLE_HEIGHT_MM, basket_rim=1
     return s
 
 
-def _upright(g, level, cam, bottle, height):
-    """Is the bottle on the table standing? A standing bottle's cap is seen from above: a disc, with the body
-    below it reaching to where the base stands, a short way towards the point under the camera. A fallen one
-    shows its cap side-on, and its body runs a full bottle's length along the table."""
-    x, y = bottle["xy"]
-    top, base = cam.project([x, y, height]), cam.project([x, y, 0.0])
-    lean = np.asarray(base) - np.asarray(top)              # where the body should appear, if standing
-    k = px_per_mm(cam, [x, y, height / 2.0])
-    # the body is paler than the cap and a little darker or tinted against the table: measure "not table"
-    # along the standing direction and across it, just past the cap
-    r_cap = CAP_DIAMETER_MM / 2.0 * k
-    def strip(direction, length):
-        d = direction / (np.linalg.norm(direction) + 1e-6)
-        vals = []
-        for t in np.linspace(r_cap * 1.3, r_cap * 1.3 + length, 12):
-            u, v = np.asarray(top) + d * t
-            if 2 <= u < g.shape[1] - 2 and 2 <= v < g.shape[0] - 2:
-                vals.append(float(g[int(v) - 2:int(v) + 3, int(u) - 2:int(u) + 3].mean()))
-        return np.array(vals) if vals else np.array([level])
-    along = strip(lean, max(8.0, float(np.linalg.norm(lean))))
-    return bool(np.linalg.norm(lean) < 6.0 or along.mean() < 0.97 * level) if False else None
+LYING_AXIS_Z = 22.0           # a lying bottle's axis above the table (its radius)
+
+
+def _pose(img, g, level, cam, cap, arm, bottle_height):
+    """Standing or lying, from the cap and the pale body around it. Returns a dict to merge into the
+    bottle: {"upright": bool} and, lying, {"xy" (body centre), "axis_deg" (base to cap, table frame),
+    "length_mm"}. A standing bottle shows its cap as a full disc, with a short, roundish piece of body
+    beside it; a lying one shows the cap side-on (smaller) and a long body running along the table."""
+    u, v = (float(q) for q in cap["c"])
+    lab_b = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)[..., 2].astype(np.float32)
+    h, w = g.shape
+    y0, y1, x0, x1 = max(0, int(v) - 200), min(h, int(v) + 200), max(0, int(u) - 200), min(w, int(u) + 200)
+    yy, xx = np.mgrid[y0:y1, x0:x1]
+    r = np.hypot(xx - u, yy - v)
+    bb, gg, aa = lab_b[y0:y1, x0:x1], g[y0:y1, x0:x1], arm[y0:y1, x0:x1]
+    ring = (r > 110) & (r < 170) & ~aa & (gg > DARK * level)
+    if ring.sum() < 200:
+        return {"upright": None}
+    tint = bb - float(np.median(bb[ring]))
+    body = ((tint > 5.0) & (r < 190) & ~aa).astype(np.uint8)
+    capm = np.zeros_like(body)
+    capm[(cap["lab"][y0:y1, x0:x1])] = 1
+    near = cv2.dilate(capm, np.ones((31, 31), np.uint8))
+    n, lab, st, _ = cv2.connectedComponentsWithStats(body)
+    keep = [i for i in range(1, n) if st[i, cv2.CC_STAT_AREA] >= 40 and (near[lab == i]).any()]
+    def shape(mask):
+        ys, xs = np.nonzero(mask)
+        if len(xs) < 30:
+            return None
+        pts = np.c_[xs + x0, ys + y0].astype(float)
+        c = pts.mean(axis=0)
+        _, evecs = np.linalg.eigh(np.cov((pts - c).T))
+        along, across = (pts - c) @ evecs[:, 1], (pts - c) @ evecs[:, 0]
+        return (c, evecs[:, 1], float(np.percentile(along, 98) - np.percentile(along, 2)),
+                float(np.percentile(across, 98) - np.percentile(across, 2)) + 1e-6)
+
+    body_only = shape(np.isin(lab, keep))
+    whole = shape(np.isin(lab, keep) | (capm > 0))
+    if whole is None:
+        return {"upright": None}
+    c, ax, length, _ = whole
+    k = px_per_mm(cam, [*cam.ground(u, v, bottle_height), bottle_height])
+    cap_ratio = cap["area"] / (math.pi * (CAP_DIAMETER_MM / 2.0 * k) ** 2)
+    aspect = body_only[2] / body_only[3] if body_only else 1.0
+    lying = aspect > 1.6 or cap_ratio < 0.72
+    out = {"upright": not lying, "shape": {"aspect": round(aspect, 2), "cap_ratio": round(cap_ratio, 2)}}
+    if lying:
+        z = LYING_AXIS_Z
+        cx, cy = cam.ground(c[0], c[1], z)
+        e1 = np.array(cam.ground(*(c + ax * length / 2.0), z))
+        e0 = np.array(cam.ground(*(c - ax * length / 2.0), z))
+        d = e1 - e0
+        if np.dot(np.array(cam.ground(u, v, z)) - np.array([cx, cy]), d) < 0:
+            d = -d                                          # point from the base to the cap
+        out.update(xy=[round(cx, 1), round(cy, 1)], axis_deg=round(math.degrees(math.atan2(d[1], d[0])), 1),
+                   length_mm=round(float(np.linalg.norm(d)), 1))
+    return out
 
 
 def draw(img, cam, scene, tool_xyz=None, start_xy=None):
@@ -168,7 +205,8 @@ def draw(img, cam, scene, tool_xyz=None, start_xy=None):
     if scene.bottle:
         u, v = (int(q) for q in scene.bottle["px"])
         cv2.circle(out, (u, v), 26, (0, 220, 255), 2, cv2.LINE_AA)
-        label = "bottle" + (" (in basket)" if scene.bottle["where"] == "basket" else "")
+        label = "bottle" + (" (in basket)" if scene.bottle["where"] == "basket" else
+                            " (lying)" if scene.bottle.get("upright") is False else "")
         cv2.putText(out, label, (u + 30, v + 6), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 220, 255), 2, cv2.LINE_AA)
     if start_xy is not None:
         u, v = (int(q) for q in cam.project([start_xy[0], start_xy[1], 0.0]))
