@@ -3,6 +3,7 @@
     look.py [--no-move]      writes /tmp/gptarm-explore/look.jpg (annotated), look-raw.jpg and wrist.jpg
 """
 import json
+import time
 import sys
 from pathlib import Path
 
@@ -41,3 +42,5 @@ try:
 except Exception as e:
     print("wrist:", e)
 print(json.dumps(w.state()))
+wrist.close()
+time.sleep(0.5)
