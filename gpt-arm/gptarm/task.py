@@ -87,7 +87,8 @@ Say done only when the whole instruction has been carried out.
 class Config:
     speed: int = 20                 # percent of the arm's speed
     carry_z: float = 250.0          # tool point height for travelling (raised if the basket needs more)
-    grasp_z: float = 75.0           # tool point height when gripping the standing bottle on the table
+    grasp_z: float = 58.0           # tool point height when gripping the standing bottle (mid-body, near its centre of mass)
+    grip_effort: int = 2500         # gripper effort, 0.001 N*m (0.6 let the bottle slip on the lift)
     release_extra: float = 4.0      # let go this far above where it was gripped
     basket_rim: float = 110.0       # height of the basket's rim above the table
     basket_floor: float = 10.0      # the basket's inside floor above the table
@@ -323,7 +324,7 @@ class World:
         return f"lowered to {z:.0f} mm above {above}"
 
     def _close_gripper(self, _target=None):
-        w = self.arm.grip(0.0)
+        w = self.arm.grip(0.0, effort=self.cfg.grip_effort)
         self.gripper = "closed"
         self.holding = self.arm.holding()
         if self.holding:
