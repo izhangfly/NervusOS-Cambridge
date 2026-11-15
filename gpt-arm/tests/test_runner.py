@@ -184,5 +184,36 @@ class FreeAndLessonsTest(unittest.TestCase):
         self.assertNotIn("# Lessons from earlier runs", prompts[n])
 
 
+class JudgeTest(unittest.TestCase):
+    def test_a_failed_check_gives_one_more_go(self):
+        from gptarm import judge as J, direct as D
+        tmp = tempfile.TemporaryDirectory()
+        t, make = setup()
+        prompts, verdicts = [], iter(["fail", "success"])
+        done = {"action": "done", "x": None, "y": None, "z": None, "lean": None, "yaw": None, "joints": None,
+                "gripper_mm": None, "skill": None, "expect": None, "note": "Waved."}
+
+        def ask(p, images, schema):
+            prompts.append(p)
+            if schema is J.SCHEMA:
+                st = next(verdicts)
+                self.assertIn("before", images)
+                return ({"before": "b", "after": "a", "changes": "none", "status": st, "failure_kind": None if st == "success" else "no wave",
+                         "explanation": "x", "critique": None if st == "success" else "move the gripper side to side", "confidence": 0.8},
+                        {"tokens": 7, "seconds": 0})
+            if schema is D.PLAN_SCHEMA:
+                return {"stages": [{"goal": "wave", "done_when": "waved"}]}, {"tokens": 3, "seconds": 0}
+            return done, {"tokens": 5, "seconds": 0}
+
+        m = type("Real", (object,), {"ask": lambda self, p, i, s: ask(p, i, s)})()
+        run = runner.Run("m", "Wave hello", "direct", root=Path(tmp.name))
+        d = runner.run_cycle(make(), m, "Wave hello", "ctx", run, threading.Event(), mode="direct", record=False)
+        self.assertEqual((d["outcome"]["success"], d["outcome"]["reason"]), (True, ""))
+        self.assertIn("move the gripper side to side", prompts[-2])
+        self.assertEqual(sum(1 for s in d["steps"] if s.get("note", "").startswith("Checker:")), 2)
+        self.assertEqual(d["plan"][0]["goal"], "wave")
+        tmp.cleanup()
+
+
 if __name__ == "__main__":
     unittest.main()

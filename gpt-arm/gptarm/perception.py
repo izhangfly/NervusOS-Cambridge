@@ -112,16 +112,18 @@ def look(img, cam, joints_deg=None, bottle_height=BOTTLE_HEIGHT_MM, basket_rim=1
         if basket_px is not None and cv2.dilate(basket_px, np.ones((15, 15), np.uint8))[int(c["c"][1]), int(c["c"][0])]:
             continue
         caps.append(c)
-    if caps:
-        c = min(caps, key=lambda c: abs(math.log(c["area"] / cap_area)))
+    # the best cap-sized dark blob that has the pale body of a bottle attached (a fold of the basket has none)
+    for c in sorted(caps, key=lambda c: abs(math.log(c["area"] / cap_area))):
         c["lab"] = lab == c["i"]
+        pose = _pose(img, g, level, cam, c, arm, bottle_height)
+        if pose.get("no_body"):
+            continue
         u, v = float(c["c"][0]), float(c["c"][1])
         s.bottle = {"where": "table", "px": [round(u, 1), round(v, 1)], "upright": None,
                     "xy": [round(q, 1) for q in cam.ground(u, v, bottle_height)], "cap_px_area": c["area"]}
-        s.bottle.update(_pose(img, g, level, cam, c, arm, bottle_height))
-        if len(caps) > 1:
-            s.notes.append(f"{len(caps)} cap-like blobs; took the best")
-    elif basket_px is not None:
+        s.bottle.update(pose)
+        break
+    if s.bottle is None and basket_px is not None:
         # the bottle in the basket: something pale inside the dark shape
         inside = cv2.erode(basket_px, np.ones((15, 15), np.uint8)) > 0
         pale = (inside & ~arm & (g > PALE * level)).astype(np.uint8)
@@ -179,9 +181,12 @@ def _pose(img, g, level, cam, cap, arm, bottle_height):
     c, ax, length, _ = whole
     k = px_per_mm(cam, [*cam.ground(u, v, bottle_height), bottle_height])
     cap_ratio = cap["area"] / (math.pi * (CAP_DIAMETER_MM / 2.0 * k) ** 2)
-    aspect = body_only[2] / body_only[3] if body_only else 1.0
+    if body_only is None:
+        return {"upright": None, "no_body": True}         # a dark blob with no pale body attached: not the bottle
+    aspect = body_only[2] / body_only[3]
     lying = aspect > 1.6 or cap_ratio < 0.72
-    out = {"upright": not lying, "shape": {"aspect": round(aspect, 2), "cap_ratio": round(cap_ratio, 2)}}
+    out = {"upright": not lying, "shape": {"aspect": round(aspect, 2), "cap_ratio": round(cap_ratio, 2),
+                                           "body_px": int(np.isin(lab, keep).sum())}}
     if lying:
         z = LYING_AXIS_Z
         cx, cy = cam.ground(c[0], c[1], z)
