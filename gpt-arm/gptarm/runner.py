@@ -128,8 +128,7 @@ def run_cycle(world, llm, instruction, context, run, stop_event):
                 ans, use = llm.ask(T.prompt(instruction, context, state, history), images, T.SCHEMA)
             except L.LLMError as e:
                 run.step("error", note=f"The model could not be asked: {e}")
-                if e.fatal or True:
-                    return finish("failed", "model_unavailable")
+                return finish("failed", "model_unavailable")
             d["usage"]["llm_calls"] += 1
             d["usage"]["tokens"] += int(use.get("tokens", 0))
             d["usage"]["llm_s"] = round(d["usage"]["llm_s"] + float(use.get("seconds", 0.0)), 2)
@@ -239,8 +238,6 @@ def tidy(world, stop_event, log, limit=30):
     """Put the scene back with no model: the scripted policy takes the bottle out of the basket (or sets a
     held one down). Returns True when the bottle stands on the table afterwards. A fallen bottle is left."""
     try:
-        if world.arm.state()["gripper_mm"] is not None and not world.arm.holding() and world.gripper == "open":
-            pass
         tool, _ = world.tool()
         if tool[2] < world.cfg.travel_z - 15.0:
             world._go(tool[0], tool[1], world.cfg.travel_z, min_tip_z=tool[2] - 30.0)
