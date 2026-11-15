@@ -129,7 +129,7 @@ class Shapes(unittest.TestCase):
             self.field(k, "seen_s_ago", opt(num), where + ".basket")
         f("start_spot_xy_mm", opt(vec(2)))
         f("above", one_of("bottle", "basket", "start_spot", "nothing", None))
-        f("height", one_of("carry", "grasp", "release", "between", None))
+        f("height", one_of("carry", "working", "grasp", "release", "between", None))
         f("steps_used", opt(is_int))
         f("steps_left", opt(is_int))
 

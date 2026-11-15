@@ -85,6 +85,7 @@ class SimArm:
 
     def move_tool(self, x, y, z, lean=None, yaw_deg=None, tol_mm=4.0, timeout=60.0, speed=None, min_tip_z=None):
         self._check()
+        self.enable()                     # as arm.Arm does: a new move after an e-stop re-enables
         use = A.min_lean(x, y, z, yaw_deg, at_least=lean or 0.0)
         if use is None:
             raise A.ArmError(f"({x:.0f}, {y:.0f}, {z:.0f}) mm is out of the arm's reach")
@@ -106,6 +107,7 @@ class SimArm:
 
     def move_joints(self, q, max_deg_s=30.0, timeout=30.0):
         self._check()
+        self.enable()
         for i, (v, (lo, hi)) in enumerate(zip(q, A.JOINT_LIMITS_DEG)):
             if not lo <= v <= hi:
                 raise A.ArmError(f"J{i + 1} = {v:.1f} deg is outside its range ({lo:.0f} to {hi:.0f})")

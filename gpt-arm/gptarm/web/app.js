@@ -690,14 +690,14 @@
   // ------------------------------------------------------------------ context
   async function loadContext() {
     try {
-      const d = await api('api/context');
+      const d = await api('api/context?mode=' + encodeURIComponent(app.mode || 'direct'));
       $('ctx').value = (d && d.text) || '';
       app.ctxLoaded = true; app.ctxDirty = false;
       $('ctx-state').textContent = d && d.default ? 'Default context' : 'Edited context (saved)';
     } catch (e) { showError('Context: ' + e.message); }
   }
   async function saveContext() {
-    const r = await act('api/context', { text: $('ctx').value }, 'Save context');
+    const r = await act('api/context', { text: $('ctx').value, mode: app.mode || 'direct' }, 'Save context');
     if (r) { app.ctxDirty = false; $('ctx-state').textContent = `Saved at ${fmt.clock(Date.now() / 1000)}`; }
   }
 
@@ -846,7 +846,7 @@
     $('btn-ctx-reload').addEventListener('click', loadContext);
     $('btn-ctx-reset').addEventListener('click', async () => {
       if (!(await confirmBox('Reset the arm context?', 'This replaces the context with the default text. Your edits will be lost.', 'Reset'))) return;
-      const r = await act('api/context', { reset: true }, 'Reset context');
+      const r = await act('api/context', { reset: true, mode: app.mode || 'direct' }, 'Reset context');
       if (r) loadContext();
     });
 

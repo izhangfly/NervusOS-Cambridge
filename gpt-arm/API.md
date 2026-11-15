@@ -39,7 +39,7 @@ Fields that don't apply are absent or null. `images` names files under the run (
 - `gripper`: `open` | `closed`
 - `bottle.where`: `table` | `basket` | `gripper` | `unknown`
 - `above`: `bottle` | `basket` | `start_spot` | `nothing`
-- `height`: `carry` | `grasp` | `release` | `between`
+- `height`: `carry` (travelling height) | `working` (down at the bottle, or where a held bottle is let go) | `between`
 - any of `bottle`, `basket`, `start_spot_xy_mm` can be null (not seen yet)
 
 ### Run

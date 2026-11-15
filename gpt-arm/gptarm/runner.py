@@ -30,7 +30,11 @@ def _write(path: Path, obj):
 
 
 def scripted_policy(prompt, _images, _schema):
-    """The scripted stand-in for a model: reads the state out of the prompt and applies task.oracle."""
+    """The scripted stand-in for a model: reads the state out of the prompt and applies task.oracle.
+    (Skills mode only: in direct mode it says done at once.)"""
+    if "# State\n" not in prompt:
+        return {"action": "done", "x": None, "y": None, "z": None, "lean": None, "yaw": None, "joints": None,
+                "gripper_mm": None, "note": "the scripted stand-in only knows the skills"}
     text = prompt.split("# State\n", 1)[1].split("\n\n# What happened", 1)[0]
     skill, target, note = T.oracle(json.loads(text))
     return {"skill": skill, "target": target, "note": note}
@@ -170,9 +174,12 @@ def run_cycle(world, llm, instruction, context, run, stop_event, mode="skills"):
             world.steps_used += 1
             d["usage"]["motion_s"] = round(d["usage"]["motion_s"] + dt, 2)
             history.append((D.describe(ans), ok, detail) if direct else (skill, target, note, ok, detail))
+            rec = state
+            if direct:                    # the standard State (API.md), and exactly what the model was given
+                rec = {**world.state(), "model_saw": state}
             run.step("decision", skill=skill, target=None if target == "none" else target, note=note, ok=ok, detail=detail,
                      llm_s=round(float(use.get("seconds", 0.0)), 2), tokens=int(use.get("tokens", 0)), motion_s=round(dt, 2),
-                     state=state, images={"overhead": oname, "wrist": wname})
+                     state=rec, images={"overhead": oname, "wrist": wname})
             st = world.arm.state()
             if not st["enabled"] or st.get("guard"):
                 run.step("error", note=f"The arm stopped itself ({st.get('guard') or 'not enabled'}).")
