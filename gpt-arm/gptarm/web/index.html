@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>GPT Arm</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="app.css">
+<script src="app.js" defer></script>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <svg viewBox="0 0 32 32" width="28" height="28" aria-hidden="true"><rect width="32" height="32" rx="8" fill="var(--brand-bg)"/><path d="M7 25h10M12 25v-7l7-7 5 3" fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="18" r="1.9" fill="var(--warm)"/><circle cx="19" cy="11" r="1.9" fill="var(--warm)"/></svg>
+    <div><strong>GPT Arm</strong><span>AgileX PiPER, bottle and basket</span></div>
+  </div>
+  <nav class="tabs" role="tablist" aria-label="Views">
+    <button role="tab" id="t-live" data-tab="live" aria-controls="tab-live">Live</button>
+    <button role="tab" id="t-bench" data-tab="bench" aria-controls="tab-bench">Benchmark</button>
+    <button role="tab" id="t-runs" data-tab="runs" aria-controls="tab-runs">Runs</button>
+    <button role="tab" id="t-context" data-tab="context" aria-controls="tab-context">Context</button>
+  </nav>
+  <div class="grow"></div>
+  <label class="sel"><span>Model</span><select id="model" autocomplete="off"></select></label>
+  <label class="sel" id="mode-wrap" hidden><span>Control</span><select id="mode" autocomplete="off"></select></label>
+  <span id="pill" class="pill" data-state="idle" role="status" aria-live="polite">idle</span>
+  <div class="arm-actions" role="group" aria-label="Arm actions">
+    <button id="btn-look" class="btn" title="Photograph the table and refresh the scene flags">Look</button>
+    <button id="btn-home" class="btn" title="Move the arm to its look pose, out of the camera's way">Home</button>
+    <button id="btn-cal" class="btn" title="Automatic overhead-camera calibration (the arm moves)">Calibrate</button>
+  </div>
+  <button id="btn-stop" class="btn stop" title="Stop the run or benchmark; the arm holds with motors on">Stop</button>
+  <button id="btn-estop" class="btn estop" title="The driver's emergency stop">E-stop</button>
+</header>
+
+<div id="offline" class="banner offline" role="alert" hidden>
+  <strong>Service unreachable.</strong> <span id="offline-msg">The GPT Arm service is not answering.</span>
+  Retrying by itself.
+</div>
+<div id="paused" class="banner paused" role="alert" hidden>
+  <div><strong>Benchmark paused: reset the scene by hand.</strong> <span id="paused-msg"></span></div>
+  <button id="btn-resume-top" class="btn primary">Resume benchmark</button>
+</div>
+<div id="errors" class="errors" aria-live="assertive"></div>
+
+<main class="layout">
+  <aside class="side" aria-label="Cameras and arm">
+    <section class="cam" id="cam-overhead">
+      <header>
+        <h2>Overhead</h2>
+        <label class="switch"><input type="checkbox" id="annotated"> <span>Annotated</span></label>
+        <span class="age" data-age></span>
+      </header>
+      <button class="frame" data-cam="overhead" aria-label="Open the overhead camera larger">
+        <img alt="Overhead camera view" data-img>
+        <span class="cam-err" data-err hidden></span>
+      </button>
+    </section>
+    <section class="cam" id="cam-wrist">
+      <header><h2>Wrist</h2><span class="age" data-age></span></header>
+      <button class="frame" data-cam="wrist" aria-label="Open the wrist camera larger">
+        <img alt="Wrist camera view" data-img>
+        <span class="cam-err" data-err hidden></span>
+      </button>
+    </section>
+
+    <section class="card readout">
+      <h2>Scene</h2>
+      <dl class="kv" id="scene"></dl>
+    </section>
+    <section class="card readout">
+      <h2>Arm <span id="arm-flag" class="flag"></span></h2>
+      <dl class="kv" id="arm"></dl>
+      <div class="joints" id="joints" aria-label="Joint angles"></div>
+    </section>
+    <details class="card readout" id="specs-box">
+      <summary><h2>Specs and calibration</h2></summary>
+      <dl class="kv" id="specs"></dl>
+    </details>
+  </aside>
+
+  <!-- Live: instruction and the run log -->
+  <section class="panel" id="tab-live" role="tabpanel" aria-labelledby="t-live">
+    <form class="card instruct" id="instruct" autocomplete="off">
+      <label for="instr" class="label">Instruction</label>
+      <textarea id="instr" rows="3" autocomplete="off" spellcheck="true" placeholder="Tell the model what to do with the bottle"></textarea>
+      <div class="instruct-row">
+        <div class="chips" id="chips" aria-label="Example instructions"></div>
+        <span class="hint">Enter runs, Shift+Enter for a new line</span>
+        <button type="submit" class="btn primary" id="btn-run">Run</button>
+      </div>
+    </form>
+    <div class="card log-card">
+      <div class="archive-bar" id="archive-bar" hidden>
+        <span>Viewing a past run, read-only.</span>
+        <button class="btn small" id="btn-back-live">Back to live</button>
+      </div>
+      <div class="run-head" id="run-head"></div>
+      <div class="log-scroll" id="log-scroll">
+        <ol class="log" id="log"></ol>
+        <div class="pending" id="pending" hidden></div>
+        <p class="empty" id="log-empty" hidden>No run yet. Type an instruction above and press Enter.</p>
+      </div>
+      <button class="btn small jump" id="btn-jump" hidden>Jump to newest</button>
+    </div>
+  </section>
+
+  <!-- Benchmark -->
+  <section class="panel scroll" id="tab-bench" role="tabpanel" aria-labelledby="t-bench" hidden>
+    <div class="bench-grid">
+      <form class="card bench-form" id="bench-form" autocomplete="off">
+        <h2>New benchmark</h2>
+        <fieldset>
+          <legend class="label">Models</legend>
+          <div id="bench-models" class="model-checks"></div>
+        </fieldset>
+        <label class="label" for="bench-n">Runs per model</label>
+        <input type="number" id="bench-n" min="1" max="100" value="10">
+        <label class="label" for="bench-mode" id="bench-mode-label">Control</label>
+        <select id="bench-mode" autocomplete="off"></select>
+        <label class="label" for="bench-instr">Instruction</label>
+        <textarea id="bench-instr" rows="4"></textarea>
+        <p class="hint">Runs are interleaved across models. The benchmark pauses when the scene needs a hand reset.</p>
+        <div class="row">
+          <button type="submit" class="btn primary" id="btn-bench-start">Start</button>
+          <button type="button" class="btn" id="btn-bench-stop">Stop</button>
+          <button type="button" class="btn" id="btn-bench-resume">Resume</button>
+        </div>
+      </form>
+      <div class="bench-main">
+        <div class="card" id="bench-status"></div>
+        <div class="card">
+          <h2>Results per model</h2>
+          <div class="table-wrap">
+            <table class="table" id="bench-results">
+              <thead><tr><th scope="col">Model</th><th scope="col" class="num">Runs</th><th scope="col" class="num">Successes</th><th scope="col">Success rate</th><th scope="col" class="num">Mean steps</th><th scope="col" class="num">Mean time</th><th scope="col" class="num">Tokens</th><th scope="col">Failure reasons</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Runs in this benchmark</h2>
+      <div class="table-wrap"><table class="table runs" id="bench-runs"><thead></thead><tbody></tbody></table></div>
+    </div>
+  </section>
+
+  <!-- Runs -->
+  <section class="panel scroll" id="tab-runs" role="tabpanel" aria-labelledby="t-runs" hidden>
+    <div class="card">
+      <div class="card-head"><h2>Past runs</h2><button class="btn small" id="btn-runs-refresh">Refresh</button></div>
+      <div class="table-wrap"><table class="table runs" id="runs-table"><thead></thead><tbody></tbody></table></div>
+    </div>
+  </section>
+
+  <!-- Context -->
+  <section class="panel" id="tab-context" role="tabpanel" aria-labelledby="t-context" hidden>
+    <div class="card context-card">
+      <div class="card-head">
+        <h2>Arm context <span class="sub">Markdown given to the model with every call</span></h2>
+        <span id="ctx-state" class="hint"></span>
+      </div>
+      <textarea id="ctx" spellcheck="false" aria-label="Arm context"></textarea>
+      <div class="row">
+        <button class="btn primary" id="btn-ctx-save">Save</button>
+        <button class="btn" id="btn-ctx-reload">Discard edits</button>
+        <div class="grow"></div>
+        <button class="btn" id="btn-ctx-reset">Reset to default</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<dialog id="lightbox" aria-label="Image">
+  <figure>
+    <img id="lb-img" alt="">
+    <figcaption><span id="lb-cap"></span>
+      <span class="lb-nav"><button class="btn small" id="lb-prev" aria-label="Previous image">Prev</button><button class="btn small" id="lb-next" aria-label="Next image">Next</button><button class="btn small" id="lb-close">Close</button></span>
+    </figcaption>
+  </figure>
+</dialog>
+
+<dialog id="confirm">
+  <form method="dialog">
+    <h2 id="cf-title"></h2>
+    <p id="cf-body"></p>
+    <div class="row end">
+      <button class="btn" value="cancel" id="cf-cancel">Cancel</button>
+      <button class="btn danger" value="ok" id="cf-ok">OK</button>
+    </div>
+  </form>
+</dialog>
+</body>
+</html>
