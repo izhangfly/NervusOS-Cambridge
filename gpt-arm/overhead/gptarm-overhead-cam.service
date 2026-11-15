@@ -1,0 +1,13 @@
+[Unit]
+Description=GPT Arm: overhead camera server (Surface rear camera on 127.0.0.1:8798)
+
+[Service]
+User=ian
+SupplementaryGroups=video
+ExecStart=/usr/bin/python3 /opt/gptarm/overhead_cam.py
+Restart=always
+RestartSec=3s
+SyslogIdentifier=gptarm-overhead
+
+[Install]
+WantedBy=multi-user.target
