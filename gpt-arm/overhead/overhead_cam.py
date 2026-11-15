@@ -25,12 +25,14 @@ ENV = dict(os.environ, LD_LIBRARY_PATH="/usr/local/lib/x86_64-linux-gnu",
            GST_PLUGIN_PATH="/usr/local/lib/x86_64-linux-gnu/gstreamer-1.0")
 
 
-def pipeline(camera: str, width: int, height: int, fps: int) -> subprocess.Popen:
+def pipeline(camera: str, width: int, height: int, fps: int, controls: str = "") -> subprocess.Popen:
     os.makedirs(DIR, exist_ok=True)
     for f in glob.glob(DIR + "/f*.jpg"):
         os.remove(f)
     # gst-launch unescapes backslashes in values, and the camera id starts with one.
-    cmd = ["gst-launch-1.0", "-q", "libcamerasrc", "camera-name=\\" + camera,
+    # controls: libcamerasrc properties, e.g. "ae-enable=false exposure-time=8000 analogue-gain=2". A fixed
+    # exposure keeps the white table from clipping (auto-exposure meters the dark floor) and every run alike.
+    cmd = ["gst-launch-1.0", "-q", "libcamerasrc", "camera-name=\\" + camera, *controls.split(),
            "!", f"video/x-raw,width={width},height={height}", "!", "videorate", "!", f"video/x-raw,framerate={fps}/1",
            "!", "videoconvert", "!", "jpegenc", "quality=85",
            "!", "multifilesink", f"location={DIR}/f%06d.jpg", "max-files=6"]
@@ -51,7 +53,7 @@ def newest():
 
 def keep_running(args):
     while True:
-        p = pipeline(args.camera, args.width, args.height, args.fps)
+        p = pipeline(args.camera, args.width, args.height, args.fps, args.controls)
         p.wait()
         time.sleep(2.0)             # the camera was busy or the pipeline died: try again
 
@@ -92,6 +94,8 @@ def main():
     ap.add_argument("--height", type=int, default=1200)
     ap.add_argument("--fps", type=int, default=5)
     ap.add_argument("--port", type=int, default=8798)
+    ap.add_argument("--controls", default=os.environ.get("OVERHEAD_CONTROLS", ""),
+                    help="libcamerasrc properties (gst-inspect-1.0 libcamerasrc), space separated")
     args = ap.parse_args()
     threading.Thread(target=keep_running, args=(args,), daemon=True).start()
     srv = ThreadingHTTPServer(("127.0.0.1", args.port), H)
