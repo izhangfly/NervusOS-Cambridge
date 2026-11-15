@@ -300,7 +300,8 @@ class World:
         return getattr(self, "_" + skill)(target)
 
     def _go(self, x, y, z, **kw):
-        return self.arm.move_tool(x, y, z, speed=self.cfg.speed, **kw)
+        kw.setdefault("speed", self.cfg.speed)
+        return self.arm.move_tool(x, y, z, **kw)
 
     def _look(self, _target=None, parks=None):
         found = None
@@ -415,7 +416,7 @@ class World:
                 self.arm.grip(A.GRIPPER_OPEN_MM)
                 self._go(gx, gy, c.travel_z, yaw_deg=yaw)
                 self.missed = True
-                return "stand_up: the fingers closed on nothing; the bottle is still lying"
+                raise A.ArmError("stand_up: the fingers closed on nothing; the bottle is still lying")
             self.gripper, self.holding = "closed", True
             self._go(gx, gy, hang + 45.0, yaw_deg=yaw, speed=max(8, c.speed // 2))     # it swings down to hang
             time.sleep(1.5)

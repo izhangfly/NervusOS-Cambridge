@@ -133,7 +133,7 @@ class SimArm:
         self.grip_cmd = float(width_mm)
         if width_mm < 3.0:
             floor = t.floor_at(b["xy"])
-            near = math.dist(self.tool[:2], b["xy"]) < 14.0
+            near = math.dist(self.tool[:2], b["xy"]) < (14.0 if b["upright"] else 45.0)
             tall = P.BOTTLE_HEIGHT_MM if b["upright"] else P.BOTTLE_DIAMETER_MM
             around = (floor + 25.0 <= self.tool[2] <= floor + tall - 5.0) if b["upright"] else (floor + 10.0 <= self.tool[2] <= floor + tall)
             if near and around and not b["held"] and t.miss <= 0:
