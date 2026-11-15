@@ -68,13 +68,15 @@ class Service:
             self.arm = A.Arm(speed=self.cfg.speed, stop_event=self.stop_event)
             self.overhead = Overhead()
             self.wrist = Wrist()
+            from . import depth as Dp
+            self.depth, self.mount = Dp.WristDepth(), Dp.Mount.load()
 
     # ---- the world a run starts from: new each time, nothing carried over ----------------------------------
     def make_world(self):
         cfg = T.Config.load()
         self.arm.speed = cfg.speed
         self.arm.floor_z_mm = 20.0
-        kw = {"perceive": sim.perceive(self.table)} if self.sim else {}
+        kw = {"perceive": sim.perceive(self.table)} if self.sim else {"depth": self.depth, "mount": self.mount}
         w = T.World(self.arm, self.overhead, self.wrist, self.cam, cfg, log=lambda m: None, **kw)
         self.world = w
         return w
@@ -247,6 +249,10 @@ class Service:
         werr = getattr(self.wrist, "error", None)
         cams["wrist"] = {"ok": werr is None and time.time() - wt < 3, "age_s": round(time.time() - wt, 2),
                          "error": werr, "size": [1280, 720]}
+        if not self.sim:
+            dt = getattr(self.depth, "t", 0.0)
+            cams["wrist_depth"] = {"ok": self.depth.error is None and time.time() - dt < 3, "age_s": round(time.time() - dt, 2),
+                                   "error": self.depth.error, "size": [640, 480], "calibrated": self.mount is not None}
         cal = {"ok": self.cam is not None, "points": len(self.cam.points) if self.cam else 0,
                "residual_px": self.cam.residual_px if self.cam else None, "when": self.cam.when if self.cam else None}
         scene = None

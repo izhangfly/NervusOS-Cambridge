@@ -150,8 +150,9 @@ class Refused(Exception):
 class World:
     """What is known about the scene, the skills that change it, and the governor."""
 
-    def __init__(self, arm, overhead, wrist, cam, cfg=None, log=None, perceive=None):
+    def __init__(self, arm, overhead, wrist, cam, cfg=None, log=None, perceive=None, depth=None, mount=None):
         self.arm, self.overhead, self.wrist, self.cam = arm, overhead, wrist, cam
+        self.depth, self.mount = depth, mount      # the wrist depth camera and where it sits (depth.py), if any
         self.cfg = cfg or Config.load()
         # (photograph, joints) -> perception.Scene; the simulator passes its own
         self.perceive = perceive or (lambda img, joints: P.look(img, self.cam, joints, self.cfg.bottle_height, self.cfg.basket_rim))

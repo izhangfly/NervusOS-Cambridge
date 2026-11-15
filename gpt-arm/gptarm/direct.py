@@ -93,6 +93,12 @@ the arm's left, +z up. The table top is z = 0.
   shows where the arm's +x and +y point, and a cyan mark shows the point between the fingertips. Close to
   an object, 1 mm is roughly 3 to 4 pixels.
 
+- Wrist depth (`wrist_depth` in the state, when the depth camera is calibrated): measured, not guessed.
+  `surface_under_tool_z_mm` is the height of whatever is straight under the tool point and
+  `fingertips_above_it_mm` how far the fingertips are above it; `nearest_object` is the highest thing below
+  the gripper within 20 cm: its top's centre (x, y), its top height, its extent, and its offset from the tool
+  point. Trust it over the detector's guesses and over estimates from the pictures.
+
 Fill `expect` with what you expect to see after the motion; the next step shows it next to what happened.
 
 ## Things on the table
@@ -149,12 +155,20 @@ def state(world):
                                              "standing": b.get("upright")}
         det["basket"] = None if not w.scene.basket else {"xy_mm": [round(v) for v in w.scene.basket["xy"]],
                                                          "size_mm": w.scene.basket["size_mm"]}
+    wd = None
+    if getattr(w, "depth", None) is not None and getattr(w, "mount", None) is not None:
+        try:
+            from . import depth as Dp
+            wd = Dp.summary(w.depth.settled(3), st["flange"], w.mount)
+        except Exception as e:                               # noqa: BLE001 (no depth this step)
+            wd = {"seen": False, "error": str(e)[:120]}
     return {
         "joints_deg": [round(v, 1) for v in st["joints"]],
         "tool_point_mm": [round(v) for v in tool], "tool_lean_deg": round(lean), "tool_yaw_deg": round(yaw),
         "gripper_mm": None if st["gripper_mm"] is None else round(float(st["gripper_mm"]), 1),
         "holding": bool(w.holding),
         "detector_guess": det or None,
+        "wrist_depth": wd,
         "bottle_start_xy_mm": None if w.start_xy is None else [round(v) for v in w.start_xy],
         "steps_used": w.steps_used, "steps_left": max(0, w.cfg.max_steps_direct - w.steps_used),
     }
