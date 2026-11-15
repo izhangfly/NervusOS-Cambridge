@@ -90,6 +90,13 @@ REPOS = {
         "topics": ["robotics", "vla", "smolvla", "lerobot", "agilex-piper"],
         "paths": [("smolvla", ".")] + DRIVER_ONLY,
     },
+    "piper-gpt-arm": {
+        "description": "A large model drives an AgileX PiPER arm from two cameras: pick a bottle, put it in a basket, "
+                       "take it out and stand it back up. Skills mode (AgileX style) and direct mode (the model moves "
+                       "the arm itself), a desktop portal, and a benchmark across models.",
+        "topics": ["robotics", "llm", "vision-language-model", "agilex-piper", "benchmark", "openai"],
+        "paths": [("gpt-arm", ".")] + DRIVER_ONLY,
+    },
 }
 IGNORE = shutil.ignore_patterns("build", ".gradle", ".kotlin", "__pycache__", "*.pyc", ".pytest_cache",
                                 "*.pem", ".venv", "venv", ".DS_Store", "local.properties")

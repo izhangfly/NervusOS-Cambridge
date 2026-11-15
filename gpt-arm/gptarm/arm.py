@@ -27,8 +27,9 @@ from pathlib import Path
 import numpy as np
 
 # The driver's kinematics (FK, closed-form IK inside the joint limits): next to the driver, or in this repository.
-for _p in (Path(__file__).resolve().parents[2] / "hardware" / "piper", Path(__file__).resolve().parent / "vendor",
-           Path("/opt/nervus/piper")):
+for _p in (Path(__file__).resolve().parents[2] / "hardware" / "piper",   # the NervusOS-Cambridge monorepo
+           Path(__file__).resolve().parents[1] / "driver",               # the stand-alone repository
+           Path(__file__).resolve().parent / "vendor", Path("/opt/nervus/piper")):
     if (_p / "kinematics.py").exists():
         sys.path.insert(0, str(_p))
         break

@@ -1,0 +1,14 @@
+[Unit]
+Description=GPT Arm service: a model drives the PiPER arm (portal and API on 127.0.0.1:8800)
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/gpt-arm
+# A Python with numpy, opencv and the PiPER driver's kinematics (the driver's own venv works).
+ExecStart=/opt/nervus/act/venv/bin/python -m gptarm.server --port 8800
+Restart=on-failure
+RestartSec=3s
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target
