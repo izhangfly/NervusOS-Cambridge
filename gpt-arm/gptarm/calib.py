@@ -1,9 +1,9 @@
 """Where the overhead camera is: a projection from the arm's base frame (mm) to its pixels.
 
 There is no checkerboard and nothing is measured by hand. The arm is its own target: at each calibration
-pose it opens and closes the gripper, and the pixels that change between the two photographs are the
-fingers. Their centre is a point on the tool axis a fixed distance past the flange, which the driver knows
-in millimetres. Twenty or so such pairs give the 3x4 projection matrix by the direct linear transform; the
+pose it opens, closes and opens the gripper, and the pixels that go dark and come back are the closed
+fingers: a point on the tool axis a fixed distance past the flange, which the driver knows in millimetres.
+Twenty or so such pairs give a pinhole camera (focal length, position, direction, one radial term); the
 distance along the tool axis is the one unknown of the marker and is found by a one-dimensional search.
 
 The poses go from high to low. The first ones are above anything that can stand on the table; each fit then
@@ -39,8 +39,14 @@ class CalibrationError(Exception):
 
 # ---- the camera model --------------------------------------------------------------------------------------
 class Camera:
-    def __init__(self, P, size, marker_mm=MARKER_MM, points=None, residual_px=None, when=None):
-        self.P = np.asarray(P, float).reshape(3, 4)
+    """A pinhole camera: one focal length, the principal point at the image centre, one radial term."""
+
+    def __init__(self, K, dist, rvec, tvec, size, marker_mm=MARKER_MM, points=None, residual_px=None, when=None):
+        self.K = np.asarray(K, float).reshape(3, 3)
+        self.dist = np.asarray(dist, float).ravel()
+        self.rvec = np.asarray(rvec, float).reshape(3, 1)
+        self.tvec = np.asarray(tvec, float).reshape(3, 1)
+        self.R = cv2.Rodrigues(self.rvec)[0]
         self.size = tuple(size)                    # (width, height)
         self.marker_mm = float(marker_mm)
         self.points = points or []
@@ -49,26 +55,21 @@ class Camera:
 
     def project(self, xyz):
         """Base-frame mm -> pixels. One point (3,) -> (2,), or (N, 3) -> (N, 2)."""
-        X = np.atleast_2d(np.asarray(xyz, float))
-        h = np.hstack([X, np.ones((len(X), 1))]) @ self.P.T
-        uv = h[:, :2] / h[:, 2:3]
+        X = np.atleast_2d(np.asarray(xyz, float)).reshape(-1, 1, 3)
+        uv = cv2.projectPoints(X, self.rvec, self.tvec, self.K, self.dist)[0].reshape(-1, 2)
         return uv[0] if np.ndim(xyz) == 1 else uv
 
     def ground(self, u, v, z=0.0):
         """The point at height z (mm) that appears at pixel (u, v): (x, y)."""
-        P = self.P
-        a = np.array([[P[0, 0] - u * P[2, 0], P[0, 1] - u * P[2, 1]],
-                      [P[1, 0] - v * P[2, 0], P[1, 1] - v * P[2, 1]]])
-        b = -np.array([(P[0, 2] - u * P[2, 2]) * z + P[0, 3] - u * P[2, 3],
-                       (P[1, 2] - v * P[2, 2]) * z + P[1, 3] - v * P[2, 3]])
-        x, y = np.linalg.solve(a, b)
-        return float(x), float(y)
+        n = cv2.undistortPoints(np.array([[[float(u), float(v)]]]), self.K, self.dist).reshape(2)
+        d = self.R.T @ np.array([n[0], n[1], 1.0])
+        c = self.centre()
+        k = (z - c[2]) / d[2]
+        return float(c[0] + k * d[0]), float(c[1] + k * d[1])
 
     def centre(self):
         """The camera's own position (mm)."""
-        _, _, vt = np.linalg.svd(self.P)
-        c = vt[-1]
-        return c[:3] / c[3]
+        return (-self.R.T @ self.tvec).ravel()
 
     def mm_per_px(self, x, y, z=0.0):
         u, v = self.project([x, y, z])
@@ -76,52 +77,51 @@ class Camera:
         return math.hypot(x2 - x, y2 - y)
 
     def to_dict(self):
-        return {"P": self.P.tolist(), "size": list(self.size), "marker_mm": self.marker_mm,
+        return {"K": self.K.tolist(), "dist": self.dist.tolist(), "rvec": self.rvec.ravel().tolist(),
+                "tvec": self.tvec.ravel().tolist(), "size": list(self.size), "marker_mm": self.marker_mm,
                 "points": self.points, "residual_px": self.residual_px, "when": self.when,
-                "camera_mm": [round(float(v), 1) for v in self.centre()]}
+                "camera_mm": [round(float(v), 1) for v in self.centre()], "focal_px": round(float(self.K[0, 0]), 1)}
 
-    def save(self, path=CAL_PATH):
-        path = Path(path)
+    def save(self, path=None):
+        path = Path(path or CAL_PATH)
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(".tmp")
         tmp.write_text(json.dumps(self.to_dict(), indent=1))
         tmp.replace(path)
 
     @classmethod
-    def load(cls, path=CAL_PATH):
+    def load(cls, path=None):
         try:
-            d = json.loads(Path(path).read_text())
-        except (OSError, ValueError):
+            d = json.loads(Path(path or CAL_PATH).read_text())
+            return cls(d["K"], d["dist"], d["rvec"], d["tvec"], d["size"], d.get("marker_mm", MARKER_MM),
+                       d.get("points"), d.get("residual_px"), d.get("when"))
+        except (OSError, ValueError, KeyError):
             return None
-        return cls(d["P"], d["size"], d.get("marker_mm", MARKER_MM), d.get("points"), d.get("residual_px"), d.get("when"))
 
 
-def fit_dlt(world, pix):
-    """The projection matrix through N >= 6 points (not all in one plane), and each point's error in pixels."""
-    W, I = np.asarray(world, float), np.asarray(pix, float)
+def fit_pinhole(world, pix, size, radial=False):
+    """The camera through N >= 6 points: (K, dist, rvec, tvec, each point's error in pixels).
+
+    A free 3x4 projection (the direct linear transform) fits the points it is given and nothing else: from
+    points in a slab 5 cm thick, 25 cm above the table, it put the table a third too large. A real camera
+    has far fewer freedoms. With square pixels and the principal point at the centre there are seven (one
+    focal length, where it is, which way it looks), and the table comes out where it is."""
+    W = np.asarray(world, np.float32).reshape(-1, 3)
+    I = np.asarray(pix, np.float32).reshape(-1, 2)
     if len(W) < 6:
         raise CalibrationError("a fit needs at least 6 points")
-
-    def norm(X):
-        c = X.mean(axis=0)
-        s = math.sqrt(X.shape[1]) / (np.linalg.norm(X - c, axis=1).mean() + 1e-9)
-        T = np.eye(X.shape[1] + 1)
-        T[:-1, :-1] *= s
-        T[:-1, -1] = -s * c
-        return T
-
-    Tw, Ti = norm(W), norm(I)
-    Wn = (np.hstack([W, np.ones((len(W), 1))]) @ Tw.T)
-    In = (np.hstack([I, np.ones((len(I), 1))]) @ Ti.T)
-    rows = []
-    for X, (u, v, _) in zip(Wn, In):
-        rows.append(np.concatenate([X, np.zeros(4), -u * X]))
-        rows.append(np.concatenate([np.zeros(4), X, -v * X]))
-    _, _, vt = np.linalg.svd(np.asarray(rows))
-    P = np.linalg.inv(Ti) @ vt[-1].reshape(3, 4) @ Tw
-    h = np.hstack([W, np.ones((len(W), 1))]) @ P.T
-    err = np.linalg.norm(h[:, :2] / h[:, 2:3] - I, axis=1)
-    return P / np.linalg.norm(P[2, :3]), err
+    w, h = size
+    K0 = np.array([[0.78 * w, 0.0, w / 2.0], [0.0, 0.78 * w, h / 2.0], [0.0, 0.0, 1.0]])
+    flags = (cv2.CALIB_USE_INTRINSIC_GUESS | cv2.CALIB_FIX_PRINCIPAL_POINT | cv2.CALIB_FIX_ASPECT_RATIO
+             | cv2.CALIB_ZERO_TANGENT_DIST | cv2.CALIB_FIX_K2 | cv2.CALIB_FIX_K3)
+    if not radial:
+        flags |= cv2.CALIB_FIX_K1
+    try:
+        _, K, dist, rv, tv = cv2.calibrateCamera([W], [I], (int(w), int(h)), K0, None, flags=flags)
+    except cv2.error as e:
+        raise CalibrationError(f"the camera fit failed: {str(e).splitlines()[-1][:120]}") from None
+    proj = cv2.projectPoints(W.reshape(-1, 1, 3).astype(np.float64), rv[0], tv[0], K, dist)[0].reshape(-1, 2)
+    return K, dist.ravel()[:5], rv[0], tv[0], np.linalg.norm(proj - I, axis=1)
 
 
 def marker_point(flange_pose, marker_mm):
@@ -130,31 +130,31 @@ def marker_point(flange_pose, marker_mm):
 
 
 def fit(points, size, search=True):
-    """points: [{"flange": [6], "px": [u, v]}, ...] -> Camera. Drops gross outliers once."""
+    """points: [{"flange": [6], "px": [u, v]}, ...] -> Camera. Drops gross outliers once. With enough points
+    it also finds the marker's distance along the tool axis and one radial distortion term."""
     pts = list(points)
 
     def solve(pp, L):
-        P, err = fit_dlt([marker_point(q["flange"], L) for q in pp], [q["px"] for q in pp])
-        return P, err
+        return fit_pinhole([marker_point(q["flange"], L) for q in pp], [q["px"] for q in pp], size, radial=len(pp) >= 18)
 
     def best(pp):
-        if not search or len(pp) < 10:
+        if not search or len(pp) < 14:
             return (MARKER_MM, *solve(pp, MARKER_MM))
         out = None
         for L in np.arange(MARKER_RANGE[0], MARKER_RANGE[1] + 0.1, 2.5):
-            P, err = solve(pp, L)
-            if out is None or np.sqrt((err ** 2).mean()) < np.sqrt((out[2] ** 2).mean()):
-                out = (float(L), P, err)
+            r = solve(pp, L)
+            if out is None or np.sqrt((r[4] ** 2).mean()) < np.sqrt((out[5] ** 2).mean()):
+                out = (float(L), *r)
         return out
 
-    L, P, err = best(pts)
-    keep = err <= max(3.0 * np.median(err), 6.0)
+    L, K, dist, rv, tv, err = best(pts)
+    keep = err <= max(3.0 * np.median(err), 8.0)
     if len(pts) >= 10 and not keep.all() and keep.sum() >= 8:
         pts = [q for q, k in zip(pts, keep) if k]
-        L, P, err = best(pts)
+        L, K, dist, rv, tv, err = best(pts)
     for q, e in zip(pts, err):
         q["err_px"] = round(float(e), 1)
-    return Camera(P, size, L, pts, round(float(np.sqrt((err ** 2).mean())), 2))
+    return Camera(K, dist, rv, tv, size, L, pts, round(float(np.sqrt((err ** 2).mean())), 2))
 
 
 # ---- finding the fingers -----------------------------------------------------------------------------------
@@ -188,7 +188,7 @@ def gripper_marker(open_img, closed_img, open_again, near=None, radius=260.0):
     return (float(xs.mean()), float(ys.mean())), int(len(xs))
 
 
-TABLE_X, TABLE_Y = (40.0, 540.0), (-470.0, 470.0)      # the table top in front of the arm (mm), inside its edges
+TABLE_X, TABLE_Y = (20.0, 400.0), (-320.0, 320.0)      # the table top in front of the arm (mm), inside its edges
 
 
 def table_mask(cam, shape, x=TABLE_X, y=TABLE_Y):
@@ -216,7 +216,7 @@ def gripper_clear(cam, dark, x, y, z, lean, margin_px):
     """Would the gripper at this pose stay clear of every static dark thing in the image? Checked on the
     way down too (the descent is vertical). The fit is rough at this point, hence the generous margin."""
     h, w = dark.shape
-    for dz in (0.0, 50.0, 100.0):
+    for dz in (0.0, 45.0):
         pose = A.flange_pose(x, y, z + dz, lean)
         pts = A.tip_points(pose) + [np.array([x, y, z + dz]), np.asarray(pose[:3], float)]
         for u, v in cam.project(np.asarray(pts)):
@@ -233,8 +233,8 @@ LEANS = (40.0, 45.0, 50.0, 55.0)
 CARRY_Z = 250.0
 STAGES = [   # name, tool heights, x values, y values, clearance margin in pixels (None: above everything)
     ("high", (250.0, 300.0), (170.0, 250.0, 330.0), (-40.0, 100.0, 240.0), None),
-    ("middle", (185.0,), (220.0, 320.0, 420.0), (-60.0, 90.0, 240.0), 130),
-    ("low", (115.0,), (220.0, 300.0, 380.0), (-80.0, 40.0, 160.0, 280.0), 110),
+    ("middle", (185.0,), (200.0, 270.0, 340.0), (-100.0, 0.0, 100.0, 200.0, 300.0), 80),
+    ("low", (115.0,), (190.0, 250.0, 310.0, 370.0), (-100.0, -20.0, 60.0, 140.0, 220.0, 300.0), 65),
 ]
 
 
@@ -258,11 +258,11 @@ def run(arm, overhead, log=print, save=True, out_dir=None, stages=STAGES, min_po
     if resume and out_dir and (out_dir / "points.json").exists():
         points = json.loads((out_dir / "points.json").read_text())
         opens = [cv2.imread(str(f)) for f in sorted(out_dir.glob("p*-open.jpg"))]
-        done = {q["stage"] for q in points}
+        done = {tuple(q["at"]) for q in points if "at" in q}
         if opens and len(points) >= 6:
             size = (opens[0].shape[1], opens[0].shape[0])
             cam = fit(points, size, search=len(points) >= 14)
-            log(f"resuming after {sorted(done)}: {len(points)} points, {cam.residual_px} px rms")
+            log(f"resuming with {len(points)} points, {cam.residual_px} px rms")
 
     def measure(x, y, z, lean, stage):
         nonlocal size
@@ -285,14 +285,13 @@ def run(arm, overhead, log=print, save=True, out_dir=None, stages=STAGES, min_po
             log(f"  {stage} ({x:.0f}, {y:.0f}, {z:.0f}) lean {lean:.0f}: the gripper was not seen")
             return
         (u, v), n = hit
-        points.append({"flange": [round(f, 2) for f in flange], "px": [round(u, 1), round(v, 1)], "n": n, "stage": stage})
+        points.append({"flange": [round(f, 2) for f in flange], "px": [round(u, 1), round(v, 1)], "n": n, "stage": stage,
+                       "at": [x, y, z]})
         log(f"  {stage} ({x:.0f}, {y:.0f}, {z:.0f}) lean {lean:.0f}: seen at ({u:.0f}, {v:.0f}), {n} px")
 
     arm.enable()
     arm.grip(A.GRIPPER_OPEN_MM, wait_s=0.5)
     for name, zs, xs, ys, margin in stages:
-        if name in done:
-            continue
         log(f"{name} points")
         if margin is not None and cam is None:
             raise CalibrationError("too few of the high points were seen to go lower safely")
@@ -307,6 +306,8 @@ def run(arm, overhead, log=print, save=True, out_dir=None, stages=STAGES, min_po
         for i, x in enumerate(xs):
             for j, y in enumerate(ys if i % 2 == 0 else ys[::-1]):       # boustrophedon: short moves
                 z = zs[(i + j) % len(zs)]
+                if (x, y, z) in done:
+                    continue
                 lean = _lean_for(x, y, (z, CARRY_Z) if margin is not None else (z,), steep=(i + j) % 2 == 1)
                 if lean is None:
                     continue
@@ -350,11 +351,11 @@ def run(arm, overhead, log=print, save=True, out_dir=None, stages=STAGES, min_po
 def draw(cam, img):
     """The fit drawn on a photograph: a 100 mm grid on the table plane, the axes, and each point's error."""
     out = img.copy()
-    for x in range(0, 601, 100):
-        a, b = cam.project([x, -500.0, 0.0]), cam.project([x, 500.0, 0.0])
+    for x in range(0, 501, 100):
+        a, b = cam.project([x, -400.0, 0.0]), cam.project([x, 400.0, 0.0])
         cv2.line(out, tuple(map(int, a)), tuple(map(int, b)), (0, 200, 0) if x else (0, 0, 255), 1, cv2.LINE_AA)
-    for y in range(-500, 501, 100):
-        a, b = cam.project([0.0, y, 0.0]), cam.project([600.0, y, 0.0])
+    for y in range(-400, 401, 100):
+        a, b = cam.project([0.0, y, 0.0]), cam.project([500.0, y, 0.0])
         cv2.line(out, tuple(map(int, a)), tuple(map(int, b)), (0, 200, 0) if y else (255, 0, 0), 1, cv2.LINE_AA)
     for q in cam.points:
         u, v = q["px"]

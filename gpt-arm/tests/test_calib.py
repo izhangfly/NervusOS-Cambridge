@@ -23,16 +23,17 @@ def a_camera():
 
 
 class CalibTest(unittest.TestCase):
-    def test_dlt_recovers_a_camera(self):
+    def test_fit_recovers_a_camera(self):
         P, c = a_camera()
         rng = np.random.default_rng(1)
         W = np.column_stack([rng.uniform(150, 450, 20), rng.uniform(-300, 300, 20), rng.uniform(100, 320, 20)])
         h = np.hstack([W, np.ones((20, 1))]) @ P.T
         pix = h[:, :2] / h[:, 2:3]
-        P2, err = C.fit_dlt(W, pix)
-        self.assertLess(err.max(), 1e-6)
-        cam = C.Camera(P2, (1600, 1200))
-        np.testing.assert_allclose(cam.centre(), c, atol=1e-3)
+        K, dist, rv, tv, err = C.fit_pinhole(W, pix, (1600, 1200))
+        self.assertLess(err.max(), 0.05)
+        cam = C.Camera(K, dist, rv, tv, (1600, 1200))
+        np.testing.assert_allclose(cam.centre(), c, atol=1.0)
+        self.assertLess(abs(cam.K[0, 0] - 1100.0), 2.0)
         u, v = cam.project([400.0, 120.0, 0.0])
         x, y = cam.ground(u, v, 0.0)
         self.assertAlmostEqual(x, 400.0, places=4)
