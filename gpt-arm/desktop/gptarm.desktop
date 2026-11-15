@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=GPT Arm
+Comment=Watch and instruct a large model driving the PiPER arm: cameras, live run log, benchmark (starts the GPT Arm service)
+Exec=gptarm-portal
+Icon=gptarm
+Terminal=false
+Categories=Development;Robotics;
+Keywords=gpt;llm;piper;robot;arm;benchmark;
+StartupNotify=true
+StartupWMClass=gptarm-portal
