@@ -188,7 +188,7 @@ def gripper_marker(open_img, closed_img, open_again, near=None, radius=260.0):
     return (float(xs.mean()), float(ys.mean())), int(len(xs))
 
 
-TABLE_X, TABLE_Y = (20.0, 400.0), (-320.0, 320.0)      # the table top in front of the arm (mm), inside its edges
+TABLE_X, TABLE_Y = (90.0, 400.0), (-320.0, 320.0)      # the table top in front of the arm (mm), inside its edges
 
 
 def table_mask(cam, shape, x=TABLE_X, y=TABLE_Y):
