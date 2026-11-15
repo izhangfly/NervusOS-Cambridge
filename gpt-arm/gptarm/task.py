@@ -140,9 +140,11 @@ class Refused(Exception):
 class World:
     """What is known about the scene, the skills that change it, and the governor."""
 
-    def __init__(self, arm, overhead, wrist, cam, cfg=None, log=None):
+    def __init__(self, arm, overhead, wrist, cam, cfg=None, log=None, perceive=None):
         self.arm, self.overhead, self.wrist, self.cam = arm, overhead, wrist, cam
         self.cfg = cfg or Config.load()
+        # (photograph, joints) -> perception.Scene; the simulator passes its own
+        self.perceive = perceive or (lambda img, joints: P.look(img, self.cam, joints, self.cfg.bottle_height))
         self.log = log or (lambda *a: None)
         self.bottle = None            # {"where", "xy", "upright", "t"}
         self.basket = None            # {"xy", "t"}
@@ -153,6 +155,8 @@ class World:
         self.holding = False
         self.held_from = None         # "table" | "basket": where the held bottle was picked up
         self.grasped_z = None
+        self.missed = False           # the last close_gripper caught nothing (cleared by the next look)
+        self.just_released = False    # the bottle was let go and the gripper has not lifted away yet
         self.scene = None             # the last perception.Scene
         self.steps_used = 0
         self.last_frames = {}         # {"overhead": bgr, "wrist": bgr}
@@ -217,7 +221,8 @@ class World:
                 "seen_s_ago": seen(self.bottle)},
             "basket": None if not self.basket else {"xy_mm": [round(v) for v in self.basket["xy"]], "seen_s_ago": seen(self.basket)},
             "start_spot_xy_mm": None if self.start_xy is None else [round(v) for v in self.start_xy],
-            "bottle_has_been_in_basket": self.entered_basket,
+            "bottle_has_been_in_basket": self.entered_basket, "last_grasp_missed": self.missed,
+            "just_released": self.just_released,
             "above": self.above(tool), "height": self.height(tool),
             "steps_used": self.steps_used, "steps_left": max(0, self.cfg.max_steps - self.steps_used),
         }
@@ -258,6 +263,8 @@ class World:
                 raise Refused("the gripper is already closed")
             if not working:
                 raise Refused("closing in mid-air catches nothing: lower first")
+            if self.just_released:
+                raise Refused("the bottle was only just let go here: lift away before grasping it again")
         if skill == "open_gripper" and s["gripper"] != "closed":
             raise Refused("the gripper is already open")
         if skill == "lift" and carry:
@@ -281,14 +288,14 @@ class World:
             time.sleep(0.5)
             img = self.overhead.settled(3)
             joints = self.arm.state()["joints"]
-            sc = P.look(img, self.cam, joints, self.cfg.bottle_height)
+            sc = self.perceive(img, joints)
             self.last_frames["overhead"] = img
             self.scene = sc
+            self.missed = False
             now = time.time()
             if sc.basket:
                 self.basket = {"xy": sc.basket["xy"], "t": now, "size_mm": sc.basket["size_mm"]}
             if sc.bottle and not self.holding:
-                was = self.bottle
                 self.bottle = {"where": sc.bottle["where"], "xy": sc.bottle["xy"], "upright": sc.bottle.get("upright"), "t": now}
                 if sc.bottle["where"] == "basket":
                     self.entered_basket = True
@@ -324,6 +331,7 @@ class World:
             self.grasped_z = tool[2]
             self.held_from = "basket" if (self.bottle and self.bottle["where"] == "basket") else "table"
             return f"closed on something {w:.0f} mm wide: holding"
+        self.missed = True
         return "closed on nothing: the fingers met"
 
     def _open_gripper(self, _target=None):
@@ -333,6 +341,7 @@ class World:
         self.gripper, self.holding = "open", False
         if not was_holding:
             return "opened (it held nothing)"
+        self.just_released = True
         now = time.time()
         if above == "basket":
             self.entered_basket = True
@@ -345,6 +354,7 @@ class World:
     def _lift(self, _target=None):
         tool, st = self.tool()
         self._go(tool[0], tool[1], self.cfg.travel_z, lean=None, min_tip_z=tool[2] - 30.0)
+        self.just_released = False
         if self.gripper == "closed":
             still = self.arm.holding()
             if self.holding and not still:
@@ -436,6 +446,8 @@ def oracle(state):
         return ("move_above", dest, "carrying the bottle") if carry else ("lift", "none", "holding: up first")
     if s["gripper"] == "closed":
         return "open_gripper", "none", "closed on nothing"
+    if (s.get("last_grasp_missed") or s.get("just_released")) and not carry:
+        return "lift", "none", "go up and look again"
     if not carry and not (s["above"] in ("bottle", "basket") and s["height"] == "working"):
         return "lift", "none", "get to carry height"
     if b is None or b["where"] == "unknown" or b.get("xy_mm") is None:

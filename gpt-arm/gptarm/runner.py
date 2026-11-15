@@ -1,0 +1,356 @@
+"""One run (a cycle driven by a model) and a benchmark (many runs across models), recorded as API.md says.
+
+A run starts with nothing but the instruction and the context: a new World, an empty history. It ends when
+the model says done, when the step budget is spent, on a stop, or on a fault; then the result is checked by
+the cameras and by touch, not taken from the model. Everything is written to ~/gptarm-runs/<id>/ as it
+happens: run.json and the pictures the model was shown.
+"""
+from __future__ import annotations
+
+import json
+import math
+import os
+import threading
+import time
+from pathlib import Path
+
+from . import arm as A
+from . import llm as L
+from . import task as T
+from .cameras import to_jpeg
+
+RUNS = Path(os.environ.get("GPTARM_RUNS", "~/gptarm-runs")).expanduser()
+
+
+def _write(path: Path, obj):
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(obj))
+    tmp.replace(path)
+
+
+def scripted_policy(prompt, _images, _schema):
+    """The scripted stand-in for a model: reads the state out of the prompt and applies task.oracle."""
+    text = prompt.split("# State\n", 1)[1].split("\n\n# What happened", 1)[0]
+    skill, target, note = T.oracle(json.loads(text))
+    return {"skill": skill, "target": target, "note": note}
+
+
+def make_llm(model):
+    return L.Scripted(scripted_policy, model="scripted", delay_s=0.3) if model == "scripted" else L.client(model)
+
+
+class Run:
+    """The record of one run. `on_update` is called whenever it changes (the service keeps the latest)."""
+
+    def __init__(self, model, instruction, mode="skills", on_update=None, root=None):
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        self.dir = (root or RUNS) / f"{stamp}-{model}"
+        self.dir.mkdir(parents=True, exist_ok=True)
+        self.on_update = on_update
+        self.d = {"id": self.dir.name, "model": model, "mode": mode, "instruction": instruction, "state": "running",
+                  "started": time.time(), "ended": None,
+                  "outcome": {"success": None, "reason": "", "declared_done": False,
+                              "checks": {"entered_basket": None, "returned_mm": None, "upright": None}},
+                  "usage": {"llm_calls": 0, "tokens": 0, "llm_s": 0.0, "motion_s": 0.0, "failed_skills": 0, "refusals": 0},
+                  "pending": None, "steps": []}
+
+    def step(self, kind, **kw):
+        s = {"n": len(self.d["steps"]), "t": time.time(), "kind": kind, **{k: v for k, v in kw.items() if v is not None}}
+        self.d["steps"].append(s)
+        self.save()
+        return s
+
+    def pending(self, stage=None, **kw):
+        self.d["pending"] = None if stage is None else {"stage": stage, "since": time.time(), **kw}
+        self.save(disk=False)
+
+    def save(self, disk=True):
+        if disk:
+            _write(self.dir / "run.json", self.d)
+        if self.on_update:
+            self.on_update(self.d)
+
+    def image(self, name, img, max_side):
+        if img is None:
+            return None, None
+        data = to_jpeg(img, 80, max_side)
+        (self.dir / name).write_bytes(data)
+        return name, data
+
+
+def run_cycle(world, llm, instruction, context, run, stop_event):
+    """Drive one cycle. `world` must be new (no memory of earlier runs). Returns run.d."""
+    d, cfg = run.d, world.cfg
+    history = []
+    run.step("user", note=instruction)
+
+    def finish(state, reason=None):
+        d["state"], d["ended"], d["pending"] = state, time.time(), None
+        if reason is not None:
+            d["outcome"]["reason"] = reason
+            d["outcome"]["success"] = False if state != "stopped" else None
+        run.save()
+        return d
+
+    try:
+        # start from a known place: gripper open and empty, arm up, one look
+        t0 = time.time()
+        run.pending("perception", note="looking at the table")
+        if world.arm.state()["gripper_mm"] is not None and world.arm.state()["gripper_mm"] < A.GRIPPER_OPEN_MM - 8:
+            world.arm.grip(A.GRIPPER_OPEN_MM)
+        tool, _ = world.tool()
+        if tool[2] < cfg.travel_z - 15.0:
+            world._go(tool[0], tool[1], cfg.travel_z, min_tip_z=tool[2] - 30.0)
+        note = world._look()
+        d["usage"]["motion_s"] += time.time() - t0
+        ann, wrist = world.frames()
+        names = {"overhead": run.image("000-overhead.jpg", ann, 1024)[0], "wrist": run.image("000-wrist.jpg", wrist, 768)[0]}
+        run.step("perception", note=note, state=world.state(), images=names)
+        if not world.bottle or world.bottle["where"] != "table":
+            run.step("error", note="The run cannot start: the bottle is not standing on the table where the camera can see it.")
+            return finish("failed", "scene_not_ready")
+        if not world.basket:
+            run.step("error", note="The run cannot start: the basket is not in view.")
+            return finish("failed", "scene_not_ready")
+        world.start_xy = list(world.bottle["xy"])
+
+        declared = False
+        while world.steps_used < cfg.max_steps:
+            if stop_event.is_set():
+                raise A.Stop("stopped")
+            state = world.state()
+            ann, wrist = world.frames()
+            n = len(d["steps"])
+            (oname, odata), (wname, wdata) = run.image(f"{n:03d}-overhead.jpg", ann, 1024), run.image(f"{n:03d}-wrist.jpg", wrist, 768)
+            images = {k: v for k, v in (("overhead", odata), ("wrist", wdata)) if v}
+            run.pending("llm", note=f"waiting for {d['model']}")
+            try:
+                ans, use = llm.ask(T.prompt(instruction, context, state, history), images, T.SCHEMA)
+            except L.LLMError as e:
+                run.step("error", note=f"The model could not be asked: {e}")
+                if e.fatal or True:
+                    return finish("failed", "model_unavailable")
+            d["usage"]["llm_calls"] += 1
+            d["usage"]["tokens"] += int(use.get("tokens", 0))
+            d["usage"]["llm_s"] = round(d["usage"]["llm_s"] + float(use.get("seconds", 0.0)), 2)
+            skill, target, note = str(ans.get("skill")), str(ans.get("target") or "none"), str(ans.get("note") or "")
+            run.pending("motion", skill=skill, target=target, note=note)
+            t0 = time.time()
+            ok, detail = True, ""
+            try:
+                detail = world.do(skill, target)
+            except T.Refused as e:
+                ok, detail = False, f"refused: {e}"
+                d["usage"]["refusals"] += 1
+            except A.ArmError as e:
+                ok, detail = False, f"failed: {e}"
+                d["usage"]["failed_skills"] += 1
+                world.arm.hold()
+            dt = time.time() - t0
+            world.steps_used += 1
+            d["usage"]["motion_s"] = round(d["usage"]["motion_s"] + dt, 2)
+            history.append((skill, target, note, ok, detail))
+            run.step("decision", skill=skill, target=None if target == "none" else target, note=note, ok=ok, detail=detail,
+                     llm_s=round(float(use.get("seconds", 0.0)), 2), tokens=int(use.get("tokens", 0)), motion_s=round(dt, 2),
+                     state=state, images={"overhead": oname, "wrist": wname})
+            st = world.arm.state()
+            if not st["enabled"] or st.get("guard"):
+                run.step("error", note=f"The arm stopped itself ({st.get('guard') or 'not enabled'}).")
+                return finish("failed", "arm_fault")
+            if skill == "done" and ok:
+                declared = True
+                break
+        d["outcome"]["declared_done"] = declared
+        return _verdict(world, run, declared, finish)
+    except A.Stop:
+        world.arm.hold()
+        run.step("info", note="Stopped.")
+        return finish("stopped", "stopped")
+    except A.ArmError as e:
+        world.arm.hold()
+        run.step("error", note=f"The arm could not go on: {e}")
+        return finish("failed", "arm_fault")
+    except Exception as e:                                   # noqa: BLE001 (a bug must not leave a run "running")
+        world.arm.hold()
+        run.step("error", note=f"Internal error: {type(e).__name__}: {e}")
+        return finish("failed", "internal_error")
+
+
+def _verdict(world, run, declared, finish):
+    """Check the result with the cameras and by touch."""
+    d, cfg = run.d, world.cfg
+    run.pending("perception", note="checking the result")
+    t0 = time.time()
+    checks = d["outcome"]["checks"]
+    checks["entered_basket"] = bool(world.entered_basket)
+    note = ""
+    if world.holding:
+        note = "The bottle is still in the gripper."
+    else:
+        tool, _ = world.tool()
+        if tool[2] < cfg.travel_z - 15.0:
+            world._go(tool[0], tool[1], cfg.travel_z, min_tip_z=tool[2] - 30.0)
+        note = world._look()
+        b = world.bottle
+        if b and b["where"] == "table" and b.get("xy") and world.start_xy:
+            checks["returned_mm"] = round(math.dist(b["xy"], world.start_xy), 1)
+            checks["upright"] = world.feel_upright() if cfg.feel else b.get("upright")
+    d["usage"]["motion_s"] = round(d["usage"]["motion_s"] + time.time() - t0, 2)
+    b = world.bottle or {}
+    if not declared:
+        reason = "step_limit"
+    elif world.holding:
+        reason = "still_holding"
+    elif not checks["entered_basket"]:
+        reason = "never_entered"
+    elif b.get("where") == "basket":
+        reason = "left_in_basket"
+    elif b.get("where") != "table" or checks["returned_mm"] is None:
+        reason = "bottle_lost"
+    elif checks["upright"] is False:
+        reason = "tipped_over"
+    elif checks["returned_mm"] > cfg.return_tol:
+        reason = "not_returned"
+    elif checks["upright"] is None:
+        reason = "upright_unknown"
+    else:
+        reason = ""
+    ok = reason == ""
+    say = {"": "The bottle went into the basket and is back upright where it started.",
+           "step_limit": f"The step budget ({cfg.max_steps}) ran out before the model said done.",
+           "still_holding": "The model said done with the bottle still in the gripper.",
+           "never_entered": "The bottle never went into the basket.",
+           "left_in_basket": "The bottle is still in the basket.",
+           "bottle_lost": "The bottle was not found on the table at the end.",
+           "tipped_over": "The bottle is back on the table but not standing.",
+           "not_returned": f"The bottle stands {checks['returned_mm']} mm from where it started (allowed: {cfg.return_tol:.0f} mm).",
+           "upright_unknown": "The bottle is back, but whether it stands could not be checked."}[reason]
+    ann, wrist = world.frames()
+    n = len(d["steps"])
+    names = {"overhead": run.image(f"{n:03d}-overhead.jpg", ann, 1024)[0], "wrist": run.image(f"{n:03d}-wrist.jpg", wrist, 768)[0]}
+    d["outcome"]["success"], d["outcome"]["reason"] = ok, reason
+    run.step("verdict", ok=ok, note=say, detail=note, state=world.state(), images=names)
+    d["state"], d["ended"], d["pending"] = "done", time.time(), None
+    run.save()
+    return d
+
+
+def tidy(world, stop_event, log, limit=30):
+    """Put the scene back with no model: the scripted policy takes the bottle out of the basket (or sets a
+    held one down). Returns True when the bottle stands on the table afterwards. A fallen bottle is left."""
+    try:
+        if world.arm.state()["gripper_mm"] is not None and not world.arm.holding() and world.gripper == "open":
+            pass
+        tool, _ = world.tool()
+        if tool[2] < world.cfg.travel_z - 15.0:
+            world._go(tool[0], tool[1], world.cfg.travel_z, min_tip_z=tool[2] - 30.0)
+        world._look()
+        if world.bottle and world.bottle["where"] == "table":
+            return True
+        if not world.bottle or world.bottle["where"] != "basket" or not world.basket:
+            return False
+        world.entered_basket = True
+        world.basket_spot = world.basket_spot or (world.bottle["xy"][0], world.bottle["xy"][1], world.cfg.basket_floor + world.cfg.grasp_z)
+        world.start_xy = world.start_xy or [300.0, 180.0]
+        for _ in range(limit):
+            if stop_event.is_set():
+                return False
+            skill, target, _ = T.oracle(world.state())
+            if skill == "done":
+                break
+            log(f"tidying: {skill} {target if target != 'none' else ''}")
+            world.do(skill, target)
+        return bool(world.bottle and world.bottle["where"] == "table")
+    except (T.Refused, A.ArmError) as e:
+        log(f"tidying stopped: {e}")
+        world.arm.hold()
+        return False
+
+
+class Bench:
+    """N runs per model, interleaved, each from a clean start. Pauses when the scene needs a hand."""
+
+    def __init__(self, models, runs_per_model, instruction, mode="skills", root=None):
+        self.root = root or RUNS
+        self.dir = self.root / f"bench-{time.strftime('%Y%m%d-%H%M%S')}"
+        self.dir.mkdir(parents=True, exist_ok=True)
+        self.resume_event = threading.Event()
+        self.d = {"id": self.dir.name, "state": "running", "instruction": instruction, "mode": mode, "models": list(models),
+                  "runs_per_model": int(runs_per_model), "started": time.time(), "ended": None, "current": None,
+                  "message": "", "results": [], "run_ids": [], "skipped": {}}
+        self.runs = []
+        self._summarise()
+
+    def save(self):
+        _write(self.dir / "bench.json", self.d)
+
+    def _summarise(self):
+        out = []
+        for m in self.d["models"]:
+            rs = [r for r in self.runs if r["model"] == m and r["state"] in ("done", "failed")]
+            ok = [r for r in rs if r["outcome"]["success"]]
+            fails = {}
+            for r in rs:
+                if not r["outcome"]["success"]:
+                    fails[r["outcome"]["reason"] or "unknown"] = fails.get(r["outcome"]["reason"] or "unknown", 0) + 1
+            n = len(rs)
+            out.append({"model": m, "runs": n, "successes": len(ok), "rate": round(len(ok) / n, 3) if n else None,
+                        "mean_steps": round(sum(r["usage"]["llm_calls"] for r in rs) / n, 1) if n else None,
+                        "mean_s": round(sum((r["ended"] or r["started"]) - r["started"] for r in rs) / n, 1) if n else None,
+                        "tokens": sum(r["usage"]["tokens"] for r in rs), "failures": fails})
+        self.d["results"] = out
+        self.save()
+
+    def run(self, make_world, context, stop_event, on_run_update, log):
+        d = self.d
+        order = [(m, i + 1) for i in range(d["runs_per_model"]) for m in d["models"]]
+        need_check = True
+        try:
+            for model, index in order:
+                if stop_event.is_set():
+                    break
+                if model in d["skipped"]:
+                    continue
+                # a clean start: the bottle standing on the table
+                while True:
+                    world = make_world()
+                    ready = tidy(world, stop_event, log) if need_check else True
+                    if ready and need_check and world.cfg.feel:
+                        ready = world.feel_upright() is True
+                    if ready or stop_event.is_set():
+                        break
+                    d["state"], d["message"] = "paused", ("The scene needs a hand: stand the bottle upright on the table, "
+                                                         "clear of the basket, then press Resume.")
+                    self.save()
+                    self.resume_event.clear()
+                    while not self.resume_event.wait(0.5):
+                        if stop_event.is_set():
+                            break
+                    d["state"], d["message"] = "running", ""
+                if stop_event.is_set():
+                    break
+                run = Run(model, d["instruction"], d["mode"], on_update=on_run_update, root=self.root)
+                d["current"] = {"model": model, "index": index, "run_id": run.d["id"]}
+                d["run_ids"].append(run.d["id"])
+                self.save()
+                try:
+                    llm = make_llm(model)
+                except L.LLMError as e:
+                    d["skipped"][model] = str(e)
+                    continue
+                r = run_cycle(make_world(), llm, d["instruction"], context, run, stop_event)
+                self.runs.append(r)
+                self._summarise()
+                need_check = not r["outcome"]["success"]
+                if r["outcome"]["reason"] == "model_unavailable":
+                    d["skipped"][model] = next((s["note"] for s in reversed(r["steps"]) if s["kind"] == "error"), "unavailable")
+                    d["message"] = f"{model} is unavailable and was skipped: {d['skipped'][model]}"
+                if r["outcome"]["reason"] in ("arm_fault", "internal_error"):
+                    d["state"], d["message"] = "stopped", f"Stopped after run {r['id']}: {r['outcome']['reason']}."
+                    break
+        finally:
+            d["current"], d["ended"] = None, time.time()
+            if d["state"] == "running":
+                d["state"] = "stopped" if stop_event.is_set() else "done"
+            self._summarise()
+        return d
