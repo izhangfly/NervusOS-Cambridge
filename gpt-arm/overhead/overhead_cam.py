@@ -32,7 +32,7 @@ def pipeline(camera: str, width: int, height: int, fps: int) -> subprocess.Popen
     # gst-launch unescapes backslashes in values, and the camera id starts with one.
     cmd = ["gst-launch-1.0", "-q", "libcamerasrc", "camera-name=\\" + camera,
            "!", f"video/x-raw,width={width},height={height}", "!", "videorate", "!", f"video/x-raw,framerate={fps}/1",
-           "!", "videoconvert", "!", "jpegenc", "quality=90",
+           "!", "videoconvert", "!", "jpegenc", "quality=85",
            "!", "multifilesink", f"location={DIR}/f%06d.jpg", "max-files=6"]
     return subprocess.Popen(cmd, env=ENV, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
@@ -88,8 +88,8 @@ class H(BaseHTTPRequestHandler):
 def main():
     ap = argparse.ArgumentParser(description="Overhead camera server (Surface Pro 9 rear camera)")
     ap.add_argument("--camera", default="\\_SB_.PC00.I2C2.CAMR", help="libcamera id (cam -l)")
-    ap.add_argument("--width", type=int, default=1280)
-    ap.add_argument("--height", type=int, default=720)
+    ap.add_argument("--width", type=int, default=1600)
+    ap.add_argument("--height", type=int, default=1200)
     ap.add_argument("--fps", type=int, default=5)
     ap.add_argument("--port", type=int, default=8798)
     args = ap.parse_args()

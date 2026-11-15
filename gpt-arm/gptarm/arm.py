@@ -4,7 +4,9 @@ The driver (hardware/piper/piper_webctl.py, 127.0.0.1:8770) owns CAN, plans and 
 its own guards. This module adds what a pick-and-place needs on top:
 
   * a TOOL POINT between the finger pads, 120 mm past the wrist flange (the driver's pose is the flange), with
-    the tool pointing straight down and a yaw about the vertical (as piper-astra-jev's kinematics define it);
+    the tool pointing down. Where the wrist can't reach with a vertical tool (J5 only bends 70 deg), the tool
+    LEANS about the line the fingers close along, tips towards the target's side: the pads stay level, so a
+    bottle held upright between them keeps hanging upright (piper-astra-jev's `about_fingers` tilt);
   * blocking moves that keep the servo goal alive until the arm is there, and say why if it isn't;
   * the gripper, and "is it holding something" from where the fingers stopped;
   * a floor: the fingertips never go below `floor_z_mm`.
@@ -15,10 +17,27 @@ from __future__ import annotations
 
 import json
 import math
+import sys
 import threading
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
+
+import numpy as np
+
+# The driver's kinematics (FK, closed-form IK inside the joint limits): next to the driver, or in this repository.
+for _p in (Path(__file__).resolve().parents[2] / "hardware" / "piper", Path(__file__).resolve().parent / "vendor",
+           Path("/opt/nervus/piper")):
+    if (_p / "kinematics.py").exists():
+        sys.path.insert(0, str(_p))
+        break
+import kinematics as K  # noqa: E402
+
+KIN = K.PiperKinematics()
+R_DOWN = np.diag([-1.0, 1.0, -1.0])       # tool pointing straight down
+LEAN_STEP_DEG = 5.0
+LEAN_MAX_DEG = 65.0
 
 CLIENT = "gptarm"
 GRASP_OFFSET_MM = 120.0     # flange to the point between the finger pads
@@ -35,9 +54,55 @@ class Stop(Exception):
     """The run was stopped (STOP in the portal, or the watchdog)."""
 
 
-def tool_to_flange(x, y, z, yaw_deg=0.0):
-    """Flange pose [x, y, z, rx, ry, rz] (driver convention, static XYZ: R = Rz Ry Rx) for a vertical tool."""
-    return [float(x), float(y), float(z) + GRASP_OFFSET_MM, 0.0, 180.0, float(yaw_deg)]
+def _rz(a):
+    c, s = math.cos(a), math.sin(a)
+    return np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
+
+
+def _ry(a):
+    c, s = math.cos(a), math.sin(a)
+    return np.array([[c, 0.0, s], [0.0, 1.0, 0.0], [-s, 0.0, c]])
+
+
+def tool_rotation(yaw_deg: float, lean_deg: float) -> np.ndarray:
+    """Tool down, tips leaning `lean` towards the yaw direction; the fingers close across it, level."""
+    return _rz(math.radians(yaw_deg)) @ _ry(-math.radians(lean_deg)) @ R_DOWN
+
+
+def flange_pose(x, y, z, lean_deg=0.0, yaw_deg=None):
+    """Driver pose [x, y, z, rx, ry, rz] of the flange for a tool point at (x, y, z). yaw defaults to the
+    target's bearing from the base, so the lean points outward and the fingers close sideways."""
+    yaw = math.degrees(math.atan2(y, x)) if yaw_deg is None else float(yaw_deg)
+    R = tool_rotation(yaw, lean_deg)
+    p = np.array([x, y, z], float) - R @ np.array([0.0, 0.0, GRASP_OFFSET_MM])
+    return K.rt_to_pose(p, R)
+
+
+def reachable(x, y, z, lean_deg, yaw_deg=None) -> bool:
+    yaw = math.degrees(math.atan2(y, x)) if yaw_deg is None else float(yaw_deg)
+    R = tool_rotation(yaw, lean_deg)
+    p = np.array([x, y, z], float) - R @ np.array([0.0, 0.0, GRASP_OFFSET_MM])
+    return len(KIN.ik_all_rt(p, R)) > 0
+
+
+def min_lean(x, y, z, yaw_deg=None, at_least=0.0):
+    """The smallest lean (deg, in LEAN_STEP steps) that reaches the tool point, or None."""
+    lean = float(at_least)
+    while lean <= LEAN_MAX_DEG + 1e-6:
+        if reachable(x, y, z, lean, yaw_deg):
+            return lean
+        lean += LEAN_STEP_DEG
+    return None
+
+
+def tool_from_flange(pose):
+    """(tool point xyz, lean deg, yaw deg) from a driver flange pose."""
+    p, R = K.pose_to_rt(pose)
+    axis = R @ np.array([0.0, 0.0, 1.0])
+    tool = np.asarray(p, float) + axis * GRASP_OFFSET_MM
+    lean = math.degrees(math.acos(max(-1.0, min(1.0, -axis[2]))))
+    yaw = math.degrees(math.atan2(axis[1], axis[0])) if lean > 1.0 else math.degrees(math.atan2(-R[1, 0], -R[0, 0]))
+    return [round(float(v), 1) for v in tool], round(lean, 1), round(yaw, 1)
 
 
 class Arm:
@@ -74,8 +139,7 @@ class Arm:
             "enabled": bool(s.get("enabled")), "fresh": bool(s.get("feedback_fresh")),
             "status": s.get("arm_status"), "teaching": bool(s.get("teaching")),
             "flange": [round(v, 1) for v in p],
-            "tool": [round(p[0], 1), round(p[1], 1), round(p[2] - GRASP_OFFSET_MM, 1)],   # valid while vertical
-            "vertical": abs(abs(p[4]) - 180.0) < 6.0 or (abs(p[4]) < 6.0 and abs(abs(p[3]) - 180.0) < 6.0),
+            "tool": tool_from_flange(p)[0], "lean": tool_from_flange(p)[1],
             "joints": [round(v, 1) for v in s.get("current") or []],
             "gripper_mm": s.get("gripper_actual_mm"), "moving": bool((s.get("trajectory") or {}).get("moving")),
             "plan": (s.get("plan") or {}).get("kind"), "plan_reason": (s.get("plan") or {}).get("reason"),
@@ -114,12 +178,16 @@ class Arm:
         self._req("/api/stop", {})
         raise ArmError("the arm did not reach its ready pose in time")
 
-    def move_tool(self, x, y, z, yaw_deg=0.0, tol_mm=4.0, timeout=60.0, speed=None):
-        """Move the tool point to (x, y, z) with the tool vertical. Blocks until there."""
+    def move_tool(self, x, y, z, lean=None, yaw_deg=None, tol_mm=4.0, timeout=60.0, speed=None):
+        """Move the tool point to (x, y, z). lean None = the smallest lean that reaches it; a number = at least
+        that lean. Blocks until there; returns the state, with the lean used."""
         if z - TIP_OFFSET_MM < self.floor_z_mm:
             raise ArmError(f"z={z:.0f} mm would put the fingertips below the floor ({self.floor_z_mm:.0f} mm)")
+        use = min_lean(x, y, z, yaw_deg, at_least=lean or 0.0)
+        if use is None:
+            raise ArmError(f"({x:.0f}, {y:.0f}, {z:.0f}) mm is out of the arm's reach")
         self.enable()
-        goal = tool_to_flange(x, y, z, yaw_deg)
+        goal = flange_pose(x, y, z, use, yaw_deg)
         body = {"pose": goal, "speed": int(speed or self.speed)}
         t_end = time.time() + timeout
         still = 0
