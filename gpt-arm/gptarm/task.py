@@ -107,6 +107,7 @@ class Config:
     max_steps_direct: int = 60      # direct mode takes more, smaller steps
     joint_speed_deg_s: float = 25.0 # direct mode's joint-space moves
     floor_direct: float = 8.0       # direct mode: the lowest a fingertip may go (the table is 0)
+    judge: bool = True              # free instructions: a model compares the table before and after
 
     @classmethod
     def load(cls):

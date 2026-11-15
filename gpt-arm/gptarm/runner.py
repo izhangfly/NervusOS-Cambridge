@@ -16,6 +16,7 @@ from pathlib import Path
 
 from . import arm as A
 from . import direct as D
+from . import judge as J
 from . import lessons as Lz
 from .recorder import Recorder
 from . import llm as L
@@ -171,6 +172,7 @@ def _cycle(world, llm, instruction, context, run, stop_event, mode):
         if tool[2] < cfg.travel_z - 15.0:
             world._go(tool[0], tool[1], cfg.travel_z, min_tip_z=tool[2] - 30.0)
         note = world._look()
+        run.before = to_jpeg(world.last_frames["overhead"], 80, 1024) if world.last_frames.get("overhead") is not None else None
         d["usage"]["motion_s"] += time.time() - t0
         ann, wrist = world.frames()
         names = {"overhead": run.image("000-overhead.jpg", ann, 1024)[0], "wrist": run.image("000-wrist.jpg", wrist, 768)[0]}
@@ -202,7 +204,7 @@ def _cycle(world, llm, instruction, context, run, stop_event, mode):
                 run.step("error", note=f"The model could not be asked: {e}")
                 return finish("failed", "model_unavailable")
 
-        declared = False
+        declared, rechecked = False, False
         while world.steps_used < max_steps:
             if stop_event.is_set():
                 raise A.Stop("stopped")
@@ -264,6 +266,14 @@ def _cycle(world, llm, instruction, context, run, stop_event, mode):
                 run.step("error", note=f"The arm stopped itself ({st.get('guard') or 'not enabled'}).")
                 return finish("failed", "arm_fault")
             if skill == "done" and ok:
+                if not checked and cfg.judge and not isinstance(llm, L.Scripted):
+                    j = _judge(world, run, llm, instruction)
+                    if j and j.get("status") == "fail" and not rechecked and world.steps_used < max_steps:
+                        rechecked = True               # one more go, with the checker's critique (Voyager's critic loop)
+                        said = (f"A checker compared the table before and after and says it is NOT done: "
+                                f"{j.get('explanation', '')} {j.get('critique') or ''}").strip()
+                        history.append(("check", False, said) if direct else ("check", "none", "", False, said))
+                        continue
                 declared = True
                 break
         d["outcome"]["declared_done"] = declared
@@ -284,15 +294,62 @@ def _cycle(world, llm, instruction, context, run, stop_event, mode):
         return finish("failed", "internal_error")
 
 
+def _judge(world, run, llm, instruction):
+    """Park the arm, photograph the table and ask the judge. Returns its verdict, or None if it could not be asked."""
+    d = run.d
+    run.pending("perception", note="checking the result")
+    try:
+        tool, _ = world.tool()
+        if tool[2] < world.cfg.travel_z - 15.0:
+            world._go(tool[0], tool[1], world.cfg.travel_z, min_tip_z=tool[2] - 30.0)
+        world._look()
+    except A.ArmError as e:
+        run.step("error", note=f"Could not park the arm to check the result: {e}")
+        return None
+    after = world.last_frames.get("overhead")
+    try:
+        wrist = world.wrist.frame() if world.wrist else None
+    except Exception:                                        # noqa: BLE001
+        wrist = None
+    claim = next((s.get("note") for s in reversed(d["steps"]) if s["kind"] == "decision"), "")
+    imgs = {"before": getattr(run, "before", None), "after": to_jpeg(after, 80, 1024) if after is not None else None,
+            "wrist": to_jpeg(wrist, 80, 768) if wrist is not None else None}
+    run.pending("llm", note="the checker is comparing before and after")
+    try:
+        j, use = J.judge(llm, instruction, Lz.run_log(d), claim, imgs)
+    except L.LLMError as e:
+        run.step("info", note=f"The checker could not be asked: {e}")
+        return None
+    d["usage"]["llm_calls"] += 1
+    d["usage"]["tokens"] += int(use.get("tokens", 0))
+    d["usage"]["llm_s"] = round(d["usage"]["llm_s"] + float(use.get("seconds", 0.0)), 2)
+    d["judge"] = j
+    n = len(d["steps"])
+    names = {"overhead": run.image(f"{n:03d}-after.jpg", after, 1024)[0], "wrist": run.image(f"{n:03d}-wrist.jpg", wrist, 768)[0]}
+    run.step("perception", note=f"Checker: {j.get('status')}. {j.get('explanation', '')}",
+             detail=f"Before: {j.get('before', '')} After: {j.get('after', '')}" + (f" Fix: {j['critique']}" if j.get("critique") else ""),
+             tokens=int(use.get("tokens", 0)), llm_s=round(float(use.get("seconds", 0.0)), 2), images=names)
+    return j
+
+
 def _free_verdict(world, run, declared):
-    """Any instruction but the bottle cycle: the model's own word, with its last note as its answer."""
+    """Any instruction but the bottle cycle: the checker's verdict if there is one, else the model's own word.
+    The model's last note is its answer (for questions)."""
     d = run.d
     last = next((s for s in reversed(d["steps"]) if s["kind"] == "decision"), {})
     ann, wrist = world.frames(grid=d.get("mode") == "direct")
     n = len(d["steps"])
     names = {"overhead": run.image(f"{n:03d}-overhead.jpg", ann, 1024)[0], "wrist": run.image(f"{n:03d}-wrist.jpg", wrist, 768)[0]}
     d["outcome"]["checks"] = {}
-    if declared:
+    j = d.get("judge")
+    if declared and j:
+        ok = j.get("status") == "success"
+        d["outcome"].update(success=ok, reason="" if ok else ("impossible" if j.get("status") == "impossible"
+                                                              else (j.get("failure_kind") or "judged_failed")))
+        d["outcome"]["checks"] = {"judge": j.get("status"), "judge_confidence": j.get("confidence")}
+        run.step("verdict", ok=ok, note=("Done, and the checker agrees: " if ok else "The checker says it is not done: ")
+                 + (j.get("explanation") or ""), detail=last.get("note") or "", images=names)
+    elif declared:
         d["outcome"].update(success=None, reason="not_checked")
         run.step("verdict", ok=None, note="The model says it is done. Free instructions are not checked automatically.",
                  detail=last.get("note") or "", images=names)
