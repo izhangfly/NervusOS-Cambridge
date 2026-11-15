@@ -188,13 +188,26 @@ def gripper_marker(open_img, closed_img, open_again, near=None, radius=260.0):
     return (float(xs.mean()), float(ys.mean())), int(len(xs))
 
 
-def static_dark(frames, level=0.42):
-    """Pixels that are dark in every one of the frames: things that stand still (the basket, the bottle's cap,
-    the floor beyond the table) but not the arm, which was somewhere else in each."""
+TABLE_X, TABLE_Y = (40.0, 540.0), (-470.0, 470.0)      # the table top in front of the arm (mm), inside its edges
+
+
+def table_mask(cam, shape, x=TABLE_X, y=TABLE_Y):
+    """The table top's pixels, from the fit."""
+    corners = cam.project(np.array([[x[0], y[0], 0.0], [x[1], y[0], 0.0], [x[1], y[1], 0.0], [x[0], y[1], 0.0]]))
+    mask = np.zeros(shape[:2], np.uint8)
+    cv2.fillPoly(mask, [np.round(corners).astype(np.int32)], 255)
+    return mask
+
+
+def static_dark(frames, cam, level=0.42):
+    """Things standing on the table: pixels of the table top that are well under the table's own brightness
+    in every one of the frames (the basket, the bottle's cap). The arm was somewhere else in each frame, so
+    it and its shadow drop out. Off the table nothing is marked: the gripper is never sent there."""
+    table = table_mask(cam, frames[0].shape) > 0
     out = None
     for f in frames:
         g = cv2.cvtColor(f, cv2.COLOR_BGR2GRAY)
-        dark = g < level * np.percentile(g, 90)
+        dark = table & (g < level * np.median(g[table]))
         out = dark if out is None else (out & dark)
     return out
 
@@ -207,10 +220,10 @@ def gripper_clear(cam, dark, x, y, z, lean, margin_px):
         pose = A.flange_pose(x, y, z + dz, lean)
         pts = A.tip_points(pose) + [np.array([x, y, z + dz]), np.asarray(pose[:3], float)]
         for u, v in cam.project(np.asarray(pts)):
-            if not (margin_px <= u < w - margin_px and margin_px <= v < h - margin_px):
+            if not (0 <= u < w and 0 <= v < h):
                 return False
             m = int(margin_px)
-            if dark[int(v) - m:int(v) + m, int(u) - m:int(u) + m].any():
+            if dark[max(0, int(v) - m):int(v) + m, max(0, int(u) - m):int(u) + m].any():
                 return False
     return True
 
@@ -234,12 +247,22 @@ def _lean_for(x, y, zs, steep=False):
     return None
 
 
-def run(arm, overhead, log=print, save=True, out_dir=None, stages=STAGES, min_points=12):
-    """Calibrate with the arm. Returns the Camera. Raises CalibrationError if it can't."""
+def run(arm, overhead, log=print, save=True, out_dir=None, stages=STAGES, min_points=12, resume=False):
+    """Calibrate with the arm. Returns the Camera. Raises CalibrationError if it can't. resume: carry on from
+    the stages a previous run finished (their points and photographs are in out_dir)."""
     points, opens, cam, size = [], [], None, None
     out_dir = Path(out_dir) if out_dir else None
     if out_dir:
         out_dir.mkdir(parents=True, exist_ok=True)
+    done = set()
+    if resume and out_dir and (out_dir / "points.json").exists():
+        points = json.loads((out_dir / "points.json").read_text())
+        opens = [cv2.imread(str(f)) for f in sorted(out_dir.glob("p*-open.jpg"))]
+        done = {q["stage"] for q in points}
+        if opens and len(points) >= 6:
+            size = (opens[0].shape[1], opens[0].shape[0])
+            cam = fit(points, size, search=len(points) >= 14)
+            log(f"resuming after {sorted(done)}: {len(points)} points, {cam.residual_px} px rms")
 
     def measure(x, y, z, lean, stage):
         nonlocal size
@@ -268,10 +291,18 @@ def run(arm, overhead, log=print, save=True, out_dir=None, stages=STAGES, min_po
     arm.enable()
     arm.grip(A.GRIPPER_OPEN_MM, wait_s=0.5)
     for name, zs, xs, ys, margin in stages:
+        if name in done:
+            continue
         log(f"{name} points")
-        dark = static_dark(opens) if margin is not None else None
         if margin is not None and cam is None:
             raise CalibrationError("too few of the high points were seen to go lower safely")
+        dark = static_dark(opens, cam) if margin is not None else None
+        if dark is not None and out_dir:
+            vis = opens[-1].copy()
+            vis[dark] = (0, 0, 255)
+            cv2.polylines(vis, [np.round(cam.project(np.array([[TABLE_X[0], TABLE_Y[0], 0.0], [TABLE_X[1], TABLE_Y[0], 0.0],
+                          [TABLE_X[1], TABLE_Y[1], 0.0], [TABLE_X[0], TABLE_Y[1], 0.0]]))).astype(np.int32)], True, (0, 255, 0), 2)
+            cv2.imwrite(str(out_dir / f"obstacles-{name}.jpg"), vis)
         todo = []
         for i, x in enumerate(xs):
             for j, y in enumerate(ys if i % 2 == 0 else ys[::-1]):       # boustrophedon: short moves
@@ -300,6 +331,8 @@ def run(arm, overhead, log=print, save=True, out_dir=None, stages=STAGES, min_po
                 st = arm.state()
                 if st["tool"][2] < CARRY_Z - 10:          # never travel sideways from down low
                     arm.move_tool(st["tool"][0], st["tool"][1], CARRY_Z, lean=st["lean"])
+        if out_dir:
+            (out_dir / "points.json").write_text(json.dumps(points))
         if len(points) >= 6:
             cam = fit(points, size, search=len(points) >= 14)
             log(f"  fit on {len(cam.points)} points: {cam.residual_px} px rms, camera at "
@@ -338,11 +371,13 @@ def main():
     ap.add_argument("--speed", type=int, default=20)
     ap.add_argument("--out", default="/tmp/gptarm-calib")
     ap.add_argument("--only", default="", help="comma-separated stage names, for a partial run that is not saved")
+    ap.add_argument("--resume", action="store_true", help="carry on from the stages already in --out")
     a = ap.parse_args()
     arm = A.Arm(speed=a.speed, floor_z_mm=60.0)
     stages = [s for s in STAGES if not a.only or s[0] in a.only.split(",")]
     try:
-        cam = run(arm, Overhead(), save=not a.only, out_dir=a.out, stages=stages, min_points=6 if a.only else 12)
+        cam = run(arm, Overhead(), log=lambda m: print(m, flush=True), save=not a.only, out_dir=a.out, stages=stages, min_points=6 if a.only else 12,
+                  resume=a.resume)
     finally:
         arm.hold()
     print(json.dumps({k: v for k, v in cam.to_dict().items() if k != "points"}))
