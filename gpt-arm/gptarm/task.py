@@ -89,13 +89,13 @@ class Config:
     carry_z: float = 250.0          # tool point height for travelling (raised if the basket needs more)
     grasp_z: float = 75.0           # tool point height when gripping the standing bottle on the table
     release_extra: float = 4.0      # let go this far above where it was gripped
-    basket_rim: float = 200.0       # height of the basket's rim above the table
-    basket_floor: float = 8.0       # the basket's inside floor above the table
+    basket_rim: float = 110.0       # height of the basket's rim above the table
+    basket_floor: float = 10.0      # the basket's inside floor above the table
     basket_drop: bool = False       # True: let go above the rim instead of standing the bottle on the basket's floor
     bottle_height: float = P.BOTTLE_HEIGHT_MM
     return_tol: float = 40.0        # "where it started": within this distance
     max_steps: int = 40
-    park: tuple = ((110.0, -230.0, 300.0), (110.0, 230.0, 300.0))    # where the arm waits during a look
+    park: tuple = ((160.0, 0.0, 330.0), (110.0, 230.0, 300.0))    # where the arm waits during a look: back over its base, else left
     feel: bool = True               # check "upright" by closing the fingers on the cap
 
     @classmethod
@@ -144,7 +144,7 @@ class World:
         self.arm, self.overhead, self.wrist, self.cam = arm, overhead, wrist, cam
         self.cfg = cfg or Config.load()
         # (photograph, joints) -> perception.Scene; the simulator passes its own
-        self.perceive = perceive or (lambda img, joints: P.look(img, self.cam, joints, self.cfg.bottle_height))
+        self.perceive = perceive or (lambda img, joints: P.look(img, self.cam, joints, self.cfg.bottle_height, self.cfg.basket_rim))
         self.log = log or (lambda *a: None)
         self.bottle = None            # {"where", "xy", "upright", "t"}
         self.basket = None            # {"xy", "t"}

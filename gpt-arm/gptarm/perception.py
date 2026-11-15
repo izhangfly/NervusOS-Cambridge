@@ -65,7 +65,7 @@ def arm_mask(cam, joints_deg, shape, width_mm=150.0):
     return mask
 
 
-def look(img, cam, joints_deg=None, bottle_height=BOTTLE_HEIGHT_MM):
+def look(img, cam, joints_deg=None, bottle_height=BOTTLE_HEIGHT_MM, basket_rim=110.0):
     """One photograph -> Scene."""
     s = Scene()
     g = cv2.GaussianBlur(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY), (5, 5), 0)
@@ -98,7 +98,7 @@ def look(img, cam, joints_deg=None, bottle_height=BOTTLE_HEIGHT_MM):
         (cu, cv_), (w, h), _ = cv2.minAreaRect(hull)
         s.basket = {"px": [round(float(cu), 1), round(float(cv_), 1)], "box_px": b["box"],
                     "size_mm": [round(max(w, h) / k), round(min(w, h) / k)],
-                    "xy": [round(v, 1) for v in cam.ground(cu, cv_, 0.0)]}
+                    "xy": [round(v, 1) for v in cam.ground(cu, cv_, basket_rim / 2.0)]}
 
     # the bottle on the table: a small, compact dark blob the size of its cap (or of the cap seen side-on)
     cap_area = math.pi * (CAP_DIAMETER_MM / 2.0 * px_per_mm(cam, [300.0, 0.0, bottle_height])) ** 2
