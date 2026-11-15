@@ -44,6 +44,8 @@ GRASP_OFFSET_MM = 120.0     # flange to the point between the finger pads
 TIP_OFFSET_MM = 15.0        # from that point on to the closed fingertips
 GRIPPER_OPEN_MM = 75.0
 HOLD_MIN_MM = 8.0           # fingers that stopped wider than this hold something
+FINGER_HALF_MM = 40.0       # open fingers: each this far from the tool axis, along the closing line
+CEILING_FLANGE_MM = 430.0   # the overhead camera hangs above the table: the wrist stays below it
 
 
 class ArmError(Exception):
@@ -93,6 +95,15 @@ def min_lean(x, y, z, yaw_deg=None, at_least=0.0):
             return lean
         lean += LEAN_STEP_DEG
     return None
+
+
+def tip_points(pose):
+    """The two open fingertips and the closed tip (mm) for a driver flange pose: the lowest, widest parts."""
+    p, R = K.pose_to_rt(pose)
+    p = np.asarray(p, float)
+    end = p + R @ np.array([0.0, 0.0, GRASP_OFFSET_MM + TIP_OFFSET_MM])
+    side = R @ np.array([0.0, FINGER_HALF_MM, 0.0])
+    return [end, end + side, end - side]
 
 
 def tool_from_flange(pose):
@@ -178,16 +189,20 @@ class Arm:
         self._req("/api/stop", {})
         raise ArmError("the arm did not reach its ready pose in time")
 
-    def move_tool(self, x, y, z, lean=None, yaw_deg=None, tol_mm=4.0, timeout=60.0, speed=None):
+    def move_tool(self, x, y, z, lean=None, yaw_deg=None, tol_mm=4.0, timeout=60.0, speed=None, min_tip_z=None):
         """Move the tool point to (x, y, z). lean None = the smallest lean that reaches it; a number = at least
-        that lean. Blocks until there; returns the state, with the lean used."""
-        if z - TIP_OFFSET_MM < self.floor_z_mm:
-            raise ArmError(f"z={z:.0f} mm would put the fingertips below the floor ({self.floor_z_mm:.0f} mm)")
+        that lean. Blocks until there; returns the state, with the lean used. min_tip_z: hold and fail if a
+        fingertip dips below this height on the way (the path is the driver's, this is the check on it)."""
         use = min_lean(x, y, z, yaw_deg, at_least=lean or 0.0)
         if use is None:
             raise ArmError(f"({x:.0f}, {y:.0f}, {z:.0f}) mm is out of the arm's reach")
-        self.enable()
         goal = flange_pose(x, y, z, use, yaw_deg)
+        low = min(float(t[2]) for t in tip_points(goal))
+        if low < self.floor_z_mm:
+            raise ArmError(f"z={z:.0f} mm would put the fingertips at {low:.0f} mm, below the floor ({self.floor_z_mm:.0f} mm)")
+        if goal[2] > CEILING_FLANGE_MM:
+            raise ArmError(f"({x:.0f}, {y:.0f}, {z:.0f}) mm puts the wrist at {goal[2]:.0f} mm, above the ceiling ({CEILING_FLANGE_MM:.0f} mm)")
+        self.enable()
         body = {"pose": goal, "speed": int(speed or self.speed)}
         t_end = time.time() + timeout
         still = 0
@@ -202,6 +217,10 @@ class Arm:
             p = s["pose_current"]
             d = math.dist(p[:3], goal[:3])
             moving = (s.get("trajectory") or {}).get("moving")
+            tip = min(float(t[2]) for t in tip_points(p))
+            if tip < min(self.floor_z_mm, low) - 8.0 or (min_tip_z is not None and tip < min_tip_z - 5.0):
+                self.hold()
+                raise ArmError(f"the fingertips dipped to {tip:.0f} mm on the way: stopped")
             if d < tol_mm and not moving:
                 return self.state()
             still = still + 1 if (last is not None and math.dist(p[:3], last) < 0.3 and not moving) else 0
