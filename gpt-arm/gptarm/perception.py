@@ -24,7 +24,7 @@ from . import calib as C
 BOTTLE_HEIGHT_MM = 125.0      # table to the top of the cap, standing
 BOTTLE_DIAMETER_MM = 50.0
 CAP_DIAMETER_MM = 38.0
-DARK = 0.42                   # under this fraction of the table's brightness: dark
+DARK = 0.45                   # under this fraction of the table's brightness: dark (shadows are 0.55 and up)
 PALE = 0.62                   # over this fraction, inside the basket: the bottle's body
 
 
@@ -75,7 +75,8 @@ def look(img, cam, joints_deg=None, bottle_height=BOTTLE_HEIGHT_MM):
     if free.sum() < 5000:
         s.notes.append("the table is not in view")
         return s
-    s.table_level = level = float(np.median(g[free]))
+    # the table's own brightness: the bright side of what is in the table's area (a big basket moves the median)
+    s.table_level = level = float(np.percentile(g[free], 80))
     k = px_per_mm(cam, [300.0, 0.0, 0.0])
     dark = (free & (g < DARK * level)).astype(np.uint8)
     dark = cv2.morphologyEx(dark, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))

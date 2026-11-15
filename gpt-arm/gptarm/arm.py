@@ -45,7 +45,7 @@ TIP_OFFSET_MM = 15.0        # from that point on to the closed fingertips
 GRIPPER_OPEN_MM = 75.0
 HOLD_MIN_MM = 8.0           # fingers that stopped wider than this hold something
 FINGER_HALF_MM = 40.0       # open fingers: each this far from the tool axis, along the closing line
-CEILING_FLANGE_MM = 430.0   # the overhead camera hangs above the table: the wrist stays below it
+CEILING_FLANGE_MM = 560.0   # the overhead camera hangs about a metre above the table: the wrist stays well below it
 
 
 class ArmError(Exception):

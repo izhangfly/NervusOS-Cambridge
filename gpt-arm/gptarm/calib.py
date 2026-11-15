@@ -199,7 +199,7 @@ def table_mask(cam, shape, x=TABLE_X, y=TABLE_Y):
     return mask
 
 
-def static_dark(frames, cam, level=0.42):
+def static_dark(frames, cam, level=0.45):
     """Things standing on the table: pixels of the table top that are well under the table's own brightness
     in every one of the frames (the basket, the bottle's cap). The arm was somewhere else in each frame, so
     it and its shadow drop out. Off the table nothing is marked: the gripper is never sent there."""
@@ -207,7 +207,7 @@ def static_dark(frames, cam, level=0.42):
     out = None
     for f in frames:
         g = cv2.cvtColor(f, cv2.COLOR_BGR2GRAY)
-        dark = table & (g < level * np.median(g[table]))
+        dark = table & (g < level * np.percentile(g[table], 80))
         out = dark if out is None else (out & dark)
     return out
 

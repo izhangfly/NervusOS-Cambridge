@@ -97,7 +97,7 @@ class RunnerTest(unittest.TestCase):
         t.topple = 1                                   # the first run leaves the bottle lying: needs a hand
         b = runner.Bench(["scripted"], 3, task.DEFAULT_INSTRUCTION, root=self.root)
         stop = threading.Event()
-        th = threading.Thread(target=b.run, args=(make, task.DEFAULT_CONTEXT, stop, None, lambda m: None))
+        th = threading.Thread(target=b.run, args=(make, task.DEFAULT_CONTEXT, stop, None, lambda m: None), daemon=True)
         th.start()
         for _ in range(400):
             if b.d["state"] == "paused":
