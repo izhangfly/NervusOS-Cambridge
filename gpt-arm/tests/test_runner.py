@@ -47,11 +47,18 @@ class RunnerTest(unittest.TestCase):
         self.assertTrue((self.root / d["id"] / step["images"]["overhead"]).exists())
         self.assertEqual([s["n"] for s in d["steps"]], list(range(len(d["steps"]))))
 
-    def test_a_bottle_that_falls_over_fails_the_run(self):
+    def test_a_bottle_that_falls_over_is_stood_up_and_put_back(self):
         t, make = setup()
         t.topple = 1
         d = self.cycle(t, make)
-        self.assertEqual((d["outcome"]["success"], d["outcome"]["reason"]), (False, "tipped_over"))
+        self.assertEqual((d["outcome"]["success"], d["outcome"]["reason"]), (True, ""))
+        self.assertIn("stand_up", [s.get("skill") for s in d["steps"]])
+
+    def test_a_bottle_that_cannot_be_stood_up_fails_the_run(self):
+        t, make = setup()
+        t.topple, t.miss = 1, 99
+        d = self.cycle(t, make)
+        self.assertEqual(d["outcome"]["success"], False)
 
     def test_done_too_early_fails(self):
         t, make = setup()
@@ -94,7 +101,8 @@ class RunnerTest(unittest.TestCase):
 
     def test_a_benchmark_recovers_the_scene_and_pauses_when_it_cannot(self):
         t, make = setup()
-        t.topple = 1                                   # the first run leaves the bottle lying: needs a hand
+        t.bottle.update(upright=False, xy=[300.0, 150.0])   # lying, and the arm cannot get hold of it
+        t.miss = 99
         b = runner.Bench(["scripted"], 3, task.DEFAULT_INSTRUCTION, root=self.root)
         stop = threading.Event()
         th = threading.Thread(target=b.run, args=(make, task.DEFAULT_CONTEXT, stop, None, lambda m: None), daemon=True)
@@ -106,11 +114,12 @@ class RunnerTest(unittest.TestCase):
         self.assertEqual(b.d["state"], "paused")
         self.assertIn("upright", b.d["message"])
         t.bottle.update(upright=True, where="table", xy=[330.0, 200.0])      # the hand
+        t.miss = 0
         b.resume_event.set()
-        th.join(30)
+        th.join(60)
         self.assertEqual(b.d["state"], "done")
         r = b.d["results"][0]
-        self.assertEqual((r["runs"], r["successes"], r["failures"]), (3, 2, {"tipped_over": 1}))
+        self.assertEqual((r["runs"], r["successes"], r["failures"]), (3, 3, {}))
         self.assertTrue((b.dir / "bench.json").exists())
 
 

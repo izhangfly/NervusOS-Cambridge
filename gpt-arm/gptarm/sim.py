@@ -54,6 +54,7 @@ class SimArm:
         self.stop_event = stop_event or threading.Event()
         self.speed = speed
         self.enabled = True
+        self.floor_z_mm = 20.0
 
     # the same surface as arm.Arm
     def _check(self):
@@ -87,6 +88,9 @@ class SimArm:
         use = A.min_lean(x, y, z, yaw_deg, at_least=lean or 0.0)
         if use is None:
             raise A.ArmError(f"({x:.0f}, {y:.0f}, {z:.0f}) mm is out of the arm's reach")
+        low = min(float(t[2]) for t in A.tip_points(A.flange_pose(x, y, z, use, yaw_deg)))
+        if low < self.floor_z_mm:
+            raise A.ArmError(f"z={z:.0f} mm would put the fingertips at {low:.0f} mm, below the floor ({self.floor_z_mm:.0f} mm)")
         if self.t.bottle["held"]:
             base = z - self.t.grip_height
             if math.dist((x, y), self.t.basket["xy"]) < self.t.basket["radius"] + 25 and base < self.t.floor_at((x, y)) - 2:
@@ -106,7 +110,7 @@ class SimArm:
             if not lo <= v <= hi:
                 raise A.ArmError(f"J{i + 1} = {v:.1f} deg is outside its range ({lo:.0f} to {hi:.0f})")
         pose = A.KIN.fk_pose(q)
-        if min(float(t[2]) for t in A.tip_points(pose)) < 4.0:
+        if min(float(t[2]) for t in A.tip_points(pose)) < self.floor_z_mm:
             raise A.ArmError("the fingertips would go below the floor")
         tool, lean, _ = A.tool_from_flange(pose)
         self.tool, self.lean = tool, lean
@@ -131,11 +135,12 @@ class SimArm:
             floor = t.floor_at(b["xy"])
             near = math.dist(self.tool[:2], b["xy"]) < 14.0
             tall = P.BOTTLE_HEIGHT_MM if b["upright"] else P.BOTTLE_DIAMETER_MM
-            around = floor + 25.0 <= self.tool[2] <= floor + tall - 5.0
+            around = (floor + 25.0 <= self.tool[2] <= floor + tall - 5.0) if b["upright"] else (floor + 10.0 <= self.tool[2] <= floor + tall)
             if near and around and not b["held"] and t.miss <= 0:
                 self.width = 30.0 if self.tool[2] > floor + 100 else 48.0
                 if effort >= 500:                       # a firm grasp picks it up; a light touch only feels it
                     b["held"], t.grip_height = True, self.tool[2] - floor
+                    b["hanging"] = not b["upright"]     # taken lying, near one end: it swings to hang base down
             else:
                 if near and around:
                     t.miss -= 1
@@ -146,7 +151,10 @@ class SimArm:
                 xy = list(self.tool[:2])
                 floor = t.floor_at(xy)
                 in_basket = math.dist(xy, t.basket["xy"]) < t.basket["radius"]
-                gentle = (self.tool[2] - t.grip_height) <= floor + 12.0
+                if b.pop("hanging", False):
+                    gentle = self.tool[2] - floor <= 125.0 / 2.0 + 25.0 + 12.0
+                else:
+                    gentle = (self.tool[2] - t.grip_height) <= floor + 12.0
                 b["where"] = "basket" if in_basket else "table"
                 b["upright"] = bool(gentle)
                 if not in_basket and gentle and t.topple > 0:
@@ -210,5 +218,7 @@ def perceive(table):
         if not b["held"]:
             s.bottle = {"where": b["where"], "xy": list(b["xy"]), "upright": b["upright"] if b["where"] == "table" else None,
                         "px": [0, 0]}
+            if b["where"] == "table" and not b["upright"]:
+                s.bottle.update(axis_deg=b.get("axis_deg", 30.0), length_mm=110.0)
         return s
     return f

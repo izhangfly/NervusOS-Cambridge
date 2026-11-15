@@ -568,7 +568,9 @@ def oracle(state):
     if b["where"] == "table" and b.get("upright") is False:
         return ("stand_up", "none", "the bottle is lying: stand it up") if carry else ("lift", "none", "up first")
     if s["bottle_has_been_in_basket"] and b["where"] == "table":
-        return ("done", "none", "the bottle went in and is back on the table") if carry else ("lift", "none", "finish high")
+        home = s.get("start_spot_xy_mm")
+        if home is None or math.dist(b["xy_mm"], home) <= 30.0:
+            return ("done", "none", "the bottle went in and is back on the table") if carry else ("lift", "none", "finish high")
     if s["above"] == "bottle" or (b["where"] == "basket" and s["above"] == "basket"):
         return ("lower", "none", "onto the bottle") if carry else ("close_gripper", "none", "grasp")
     return ("move_above", "bottle", "go to the bottle") if carry else ("lift", "none", "up first")
