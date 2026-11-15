@@ -158,27 +158,31 @@ def fit(points, size, search=True):
 
 
 # ---- finding the fingers -----------------------------------------------------------------------------------
-def gripper_marker(open_img, closed_img, near=None, radius=260.0):
+def gripper_marker(open_img, closed_img, open_again=None, near=None, radius=260.0):
     """The centre of what changed between a gripper-open and a gripper-closed photograph: (u, v), pixel count.
-    None if nothing believable changed. `near`: where it is expected (pixels), if a calibration exists."""
-    d = cv2.absdiff(open_img, closed_img).max(axis=2)
-    d = cv2.GaussianBlur(d, (5, 5), 0)
-    mask = cv2.morphologyEx((d > DIFF_MIN).astype(np.uint8), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+    None if nothing believable changed. With a third photograph (open again), only pixels that changed AND
+    changed back count: a phone screen lighting up or a person moving at the table's edge does neither on
+    cue. `near`: where the gripper is expected (pixels), once a calibration exists."""
+    def diff(p, q):
+        return cv2.GaussianBlur(cv2.absdiff(p, q).max(axis=2), (5, 5), 0)
+
+    mask = diff(open_img, closed_img) > DIFF_MIN
+    if open_again is not None:
+        mask &= diff(closed_img, open_again) > DIFF_MIN
+        busy = (diff(open_img, open_again) > DIFF_MIN // 2).astype(np.uint8)
+        mask &= cv2.dilate(busy, np.ones((9, 9), np.uint8)) == 0
+    mask = cv2.morphologyEx(mask.astype(np.uint8), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
     n, lab, stats, cent = cv2.connectedComponentsWithStats(mask)
     comps = [(int(stats[i, cv2.CC_STAT_AREA]), cent[i], i) for i in range(1, n) if stats[i, cv2.CC_STAT_AREA] >= 30]
-    if not comps:
-        return None
     if near is not None:
         comps = [c for c in comps if np.linalg.norm(c[1] - np.asarray(near)) < radius]
-        if not comps:
-            return None
+    if not comps:
+        return None
     anchor = max(comps, key=lambda c: c[0])[1]
     kept = [c for c in comps if np.linalg.norm(c[1] - anchor) < 150.0]
     sel = np.isin(lab, [c[2] for c in kept])
     ys, xs = np.nonzero(sel)
-    if not 150 <= len(xs) <= 40000:
-        return None
-    if max(np.ptp(xs), np.ptp(ys)) > 330:
+    if not 150 <= len(xs) <= 40000 or max(np.ptp(xs), np.ptp(ys)) > 330:
         return None
     return (float(xs.mean()), float(ys.mean())), int(len(xs))
 
@@ -244,11 +248,15 @@ def run(arm, overhead, log=print, save=True, out_dir=None, stages=STAGES, min_po
         a = overhead.settled(3)
         arm.grip(0.0)
         b = overhead.settled(3)
-        arm.grip(A.GRIPPER_OPEN_MM, wait_s=0.8)
+        arm.grip(A.GRIPPER_OPEN_MM)
+        c = overhead.settled(3)
         size = (a.shape[1], a.shape[0])
         opens.append(a)
         near = cam.project(marker_point(flange, cam.marker_mm)) if cam is not None else None
-        hit = gripper_marker(a, b, near)
+        hit = gripper_marker(a, b, c, near)
+        if out_dir:
+            cv2.imwrite(str(out_dir / f"p{len(opens):02d}-open.jpg"), a)
+            cv2.imwrite(str(out_dir / f"p{len(opens):02d}-closed.jpg"), b)
         if hit is None:
             log(f"  {stage} ({x:.0f}, {y:.0f}, {z:.0f}) lean {lean:.0f}: the gripper was not seen")
             return
