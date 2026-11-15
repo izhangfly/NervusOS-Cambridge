@@ -16,6 +16,8 @@ from pathlib import Path
 
 from . import arm as A
 from . import direct as D
+from . import lessons as Lz
+from .recorder import Recorder
 from . import llm as L
 from . import task as T
 from .cameras import to_jpeg
@@ -59,14 +61,24 @@ class Run:
                   "usage": {"llm_calls": 0, "tokens": 0, "llm_s": 0.0, "motion_s": 0.0, "failed_skills": 0, "refusals": 0},
                   "pending": None, "steps": []}
 
+    recorder = None
+
     def step(self, kind, **kw):
         s = {"n": len(self.d["steps"]), "t": time.time(), "kind": kind, **{k: v for k, v in kw.items() if v is not None}}
         self.d["steps"].append(s)
+        if self.recorder is not None:
+            what = (s.get("skill") or kind) + (f" {s['target']}" if s.get("target") else "")
+            text = s.get("note") or ""
+            if kind == "decision" and not s.get("ok", True):
+                text += f"  [{s.get('detail', '')}]"
+            self.recorder.caption(f"{s['n']}  {what}  -  {text}")
         self.save()
         return s
 
     def pending(self, stage=None, **kw):
         self.d["pending"] = None if stage is None else {"stage": stage, "since": time.time(), **kw}
+        if self.recorder is not None and stage == "motion":
+            self.recorder.caption(f"{len(self.d['steps'])}  {kw.get('skill', '')} {kw.get('target', '')}  -  {kw.get('note', '')}")
         self.save(disk=False)
 
     def save(self, disk=True):
@@ -83,10 +95,55 @@ class Run:
         return name, data
 
 
-def run_cycle(world, llm, instruction, context, run, stop_event, mode="skills"):
-    """Drive one cycle. `world` must be new (no memory of earlier runs). Returns run.d.
-    mode "skills": the model picks a skill; "direct": the model gives the motion itself (direct.py)."""
+def is_task(instruction):
+    """The bottle cycle, which is checked automatically; any other instruction is the model's to judge."""
+    return " ".join(instruction.split()).lower() == " ".join(T.DEFAULT_INSTRUCTION.split()).lower()
+
+
+def run_cycle(world, llm, instruction, context, run, stop_event, mode="skills", lessons_on=False, learn=None, record=True):
+    """One run. `world` must be new. Returns run.d.
+    mode "skills": the model picks a skill; "direct": the model gives the motion itself (direct.py).
+    lessons_on: the model reads the lessons from earlier runs; learn (default: lessons_on): afterwards it
+    writes lessons from this one. record: a video of both cameras goes in the run's folder."""
+    d = run.d
+    items = Lz.shown() if lessons_on else []
+    d["lessons_used"] = len(items)
+    if items:
+        context = context.rstrip() + "\n\n" + Lz.as_context(items)
+    rec = None
+    if record:
+        try:
+            rec = Recorder(world.overhead, world.wrist, run.dir / "video.mp4", title=f"{d['model']}  {mode}  {d['id']}")
+            run.recorder = rec
+            d["video"] = rec.info()
+        except Exception:                                    # noqa: BLE001 (no video is no reason to stop)
+            rec = None
+    try:
+        _cycle(world, llm, instruction, context, run, stop_event, mode)
+    finally:
+        if rec is not None:
+            run.recorder = None
+            d["video"] = rec.stop()
+            run.save()
+    if (lessons_on if learn is None else learn) and d["state"] in ("done", "failed") and not isinstance(llm, L.Scripted) \
+            and any(s["kind"] == "decision" for s in d["steps"]) and not stop_event.is_set():
+        run.pending("llm", note="writing lessons from this run")
+        try:
+            said, use = Lz.learn(llm, d)
+            d["usage"]["tokens"] += int(use.get("tokens", 0))
+            d["usage"]["llm_s"] = round(d["usage"]["llm_s"] + float(use.get("seconds", 0.0)), 2)
+            run.step("lesson", note=said, tokens=int(use.get("tokens", 0)), llm_s=round(float(use.get("seconds", 0.0)), 2))
+        except L.LLMError as e:
+            run.step("info", note=f"No lessons written: {e}")
+        d["pending"] = None
+        run.save()
+    return d
+
+
+def _cycle(world, llm, instruction, context, run, stop_event, mode):
     d, cfg = run.d, world.cfg
+    checked = is_task(instruction)
+    d["checked"] = checked
     d["mode"] = mode
     direct = mode == "direct"
     if direct:
@@ -117,13 +174,14 @@ def run_cycle(world, llm, instruction, context, run, stop_event, mode="skills"):
         ann, wrist = world.frames()
         names = {"overhead": run.image("000-overhead.jpg", ann, 1024)[0], "wrist": run.image("000-wrist.jpg", wrist, 768)[0]}
         run.step("perception", note=note, state=world.state(), images=names)
-        if not world.bottle or world.bottle["where"] != "table":
+        if checked and (not world.bottle or world.bottle["where"] != "table"):
             run.step("error", note="The run cannot start: the camera cannot see the bottle on the table.")
             return finish("failed", "scene_not_ready")
-        if not world.basket:
+        if checked and not world.basket:
             run.step("error", note="The run cannot start: the basket is not in view.")
             return finish("failed", "scene_not_ready")
-        world.start_xy = list(world.bottle["xy"])
+        if world.bottle and world.bottle.get("xy") and world.bottle["where"] == "table":
+            world.start_xy = list(world.bottle["xy"])
 
         declared = False
         while world.steps_used < max_steps:
@@ -188,6 +246,8 @@ def run_cycle(world, llm, instruction, context, run, stop_event, mode="skills"):
                 declared = True
                 break
         d["outcome"]["declared_done"] = declared
+        if not checked:
+            return _free_verdict(world, run, declared)
         return _verdict(world, run, declared, finish)
     except A.Stop:
         world.arm.hold()
@@ -201,6 +261,26 @@ def run_cycle(world, llm, instruction, context, run, stop_event, mode="skills"):
         world.arm.hold()
         run.step("error", note=f"Internal error: {type(e).__name__}: {e}")
         return finish("failed", "internal_error")
+
+
+def _free_verdict(world, run, declared):
+    """Any instruction but the bottle cycle: the model's own word, with its last note as its answer."""
+    d = run.d
+    last = next((s for s in reversed(d["steps"]) if s["kind"] == "decision"), {})
+    ann, wrist = world.frames(grid=d.get("mode") == "direct")
+    n = len(d["steps"])
+    names = {"overhead": run.image(f"{n:03d}-overhead.jpg", ann, 1024)[0], "wrist": run.image(f"{n:03d}-wrist.jpg", wrist, 768)[0]}
+    d["outcome"]["checks"] = {}
+    if declared:
+        d["outcome"].update(success=None, reason="not_checked")
+        run.step("verdict", ok=None, note="The model says it is done. Free instructions are not checked automatically.",
+                 detail=last.get("note") or "", images=names)
+    else:
+        d["outcome"].update(success=False, reason="step_limit")
+        run.step("verdict", ok=False, note="The step budget ran out before the model said done.", images=names)
+    d["state"], d["ended"], d["pending"] = "done", time.time(), None
+    run.save()
+    return d
 
 
 def _verdict(world, run, declared, finish):
@@ -296,13 +376,13 @@ def tidy(world, stop_event, log, limit=30):
 class Bench:
     """N runs per model, interleaved, each from a clean start. Pauses when the scene needs a hand."""
 
-    def __init__(self, models, runs_per_model, instruction, mode="skills", root=None):  # noqa: D107
+    def __init__(self, models, runs_per_model, instruction, mode="skills", root=None, lessons=False):  # noqa: D107
         self.root = root or RUNS
         self.dir = self.root / f"bench-{time.strftime('%Y%m%d-%H%M%S')}"
         self.dir.mkdir(parents=True, exist_ok=True)
         self.resume_event = threading.Event()
         self.d = {"id": self.dir.name, "state": "running", "instruction": instruction, "mode": mode, "models": list(models),
-                  "runs_per_model": int(runs_per_model), "started": time.time(), "ended": None, "current": None,
+                  "runs_per_model": int(runs_per_model), "lessons": bool(lessons), "started": time.time(), "ended": None, "current": None,
                   "message": "", "results": [], "run_ids": [], "skipped": {}}
         self.runs = []
         self._summarise()
@@ -364,7 +444,8 @@ class Bench:
                 except L.LLMError as e:
                     d["skipped"][model] = str(e)
                     continue
-                r = run_cycle(make_world(), llm, d["instruction"], context, run, stop_event, mode=d["mode"])
+                r = run_cycle(make_world(), llm, d["instruction"], context, run, stop_event, mode=d["mode"],
+                              lessons_on=d["lessons"])
                 self.runs.append(r)
                 self._summarise()
                 need_check = not r["outcome"]["success"]
