@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# SSH ProxyCommand on the robot host: connect to the machine that carries the overhead camera, wherever it is.
+# Both machines are on Wi-Fi and their DHCP addresses change. If the two are Syncthing peers (no shared folder
+# needed), the local Syncthing knows the camera machine's current address:
+#   ~/.config/nervus/overhead.device   its Syncthing device ID (optional)
+#   ~/.config/nervus/overhead.host     its last known address (fallback; refreshed here when Syncthing answers)
+# Usage in ~/.ssh/config:  ProxyCommand ~/.local/bin/overhead-proxy %p
+port="${1:-22}"
+conf="$HOME/.config/nervus"
+dev="$(cat "$conf/overhead.device" 2>/dev/null)"
+ip=""
+for cfg in "$HOME/.local/state/syncthing/config.xml" "$HOME/.config/syncthing/config.xml"; do
+	[[ -n "$dev" && -f "$cfg" ]] || continue
+	key="$(grep -o '<apikey>[^<]*' "$cfg" | cut -d'>' -f2)"
+	ip="$(curl -s -m 2 -H "X-API-Key: $key" http://127.0.0.1:8384/rest/system/connections |
+		python3 -c "import json,sys
+c=json.load(sys.stdin)['connections'].get('$dev',{})
+a=c.get('address','') if c.get('connected') else ''
+print(a.rsplit(':',1)[0].strip('[]') if a and not a.startswith('relay') else '')" 2>/dev/null)"
+	break
+done
+if [[ -n "$ip" ]]; then
+	echo "$ip" > "$conf/overhead.host"
+else
+	ip="$(cat "$conf/overhead.host" 2>/dev/null)"
+fi
+[[ -n "$ip" ]] || { echo "overhead-proxy: no address for the camera machine (write it to $conf/overhead.host)" >&2; exit 1; }
+exec nc "$ip" "$port"
