@@ -15,6 +15,7 @@ import time
 from pathlib import Path
 
 from . import arm as A
+from . import direct as D
 from . import llm as L
 from . import task as T
 from .cameras import to_jpeg
@@ -78,9 +79,15 @@ class Run:
         return name, data
 
 
-def run_cycle(world, llm, instruction, context, run, stop_event):
-    """Drive one cycle. `world` must be new (no memory of earlier runs). Returns run.d."""
+def run_cycle(world, llm, instruction, context, run, stop_event, mode="skills"):
+    """Drive one cycle. `world` must be new (no memory of earlier runs). Returns run.d.
+    mode "skills": the model picks a skill; "direct": the model gives the motion itself (direct.py)."""
     d, cfg = run.d, world.cfg
+    d["mode"] = mode
+    direct = mode == "direct"
+    if direct:
+        world.arm.floor_z_mm = cfg.floor_direct
+    max_steps = cfg.max_steps_direct if direct else cfg.max_steps
     history = []
     run.step("user", note=instruction)
 
@@ -107,7 +114,7 @@ def run_cycle(world, llm, instruction, context, run, stop_event):
         names = {"overhead": run.image("000-overhead.jpg", ann, 1024)[0], "wrist": run.image("000-wrist.jpg", wrist, 768)[0]}
         run.step("perception", note=note, state=world.state(), images=names)
         if not world.bottle or world.bottle["where"] != "table":
-            run.step("error", note="The run cannot start: the bottle is not standing on the table where the camera can see it.")
+            run.step("error", note="The run cannot start: the camera cannot see the bottle on the table.")
             return finish("failed", "scene_not_ready")
         if not world.basket:
             run.step("error", note="The run cannot start: the basket is not in view.")
@@ -115,30 +122,44 @@ def run_cycle(world, llm, instruction, context, run, stop_event):
         world.start_xy = list(world.bottle["xy"])
 
         declared = False
-        while world.steps_used < cfg.max_steps:
+        while world.steps_used < max_steps:
             if stop_event.is_set():
                 raise A.Stop("stopped")
-            state = world.state()
-            ann, wrist = world.frames()
+            if direct:
+                try:
+                    world.observe()
+                except Exception:                           # noqa: BLE001 (the model still gets the pictures)
+                    pass
+                state = D.state(world)
+            else:
+                state = world.state()
+            ann, wrist = world.frames(grid=direct)
             n = len(d["steps"])
             (oname, odata), (wname, wdata) = run.image(f"{n:03d}-overhead.jpg", ann, 1024), run.image(f"{n:03d}-wrist.jpg", wrist, 768)
             images = {k: v for k, v in (("overhead", odata), ("wrist", wdata)) if v}
             run.pending("llm", note=f"waiting for {d['model']}")
             try:
-                ans, use = llm.ask(T.prompt(instruction, context, state, history), images, T.SCHEMA)
+                if direct:
+                    ans, use = llm.ask(D.prompt(instruction, context, state, history), images, D.SCHEMA)
+                else:
+                    ans, use = llm.ask(T.prompt(instruction, context, state, history), images, T.SCHEMA)
             except L.LLMError as e:
                 run.step("error", note=f"The model could not be asked: {e}")
                 return finish("failed", "model_unavailable")
             d["usage"]["llm_calls"] += 1
             d["usage"]["tokens"] += int(use.get("tokens", 0))
             d["usage"]["llm_s"] = round(d["usage"]["llm_s"] + float(use.get("seconds", 0.0)), 2)
-            skill, target, note = str(ans.get("skill")), str(ans.get("target") or "none"), str(ans.get("note") or "")
+            if direct:
+                skill, note = str(ans.get("action")), str(ans.get("note") or "")
+                target = D.describe(ans).split(" ", 1)[1] if " " in D.describe(ans) else "none"
+            else:
+                skill, target, note = str(ans.get("skill")), str(ans.get("target") or "none"), str(ans.get("note") or "")
             run.pending("motion", skill=skill, target=target, note=note)
             t0 = time.time()
             ok, detail = True, ""
             try:
-                detail = world.do(skill, target)
-            except T.Refused as e:
+                detail = D.execute(world, ans) if direct else world.do(skill, target)
+            except (T.Refused, D.Refused) as e:
                 ok, detail = False, f"refused: {e}"
                 d["usage"]["refusals"] += 1
             except A.ArmError as e:
@@ -148,7 +169,7 @@ def run_cycle(world, llm, instruction, context, run, stop_event):
             dt = time.time() - t0
             world.steps_used += 1
             d["usage"]["motion_s"] = round(d["usage"]["motion_s"] + dt, 2)
-            history.append((skill, target, note, ok, detail))
+            history.append((D.describe(ans), ok, detail) if direct else (skill, target, note, ok, detail))
             run.step("decision", skill=skill, target=None if target == "none" else target, note=note, ok=ok, detail=detail,
                      llm_s=round(float(use.get("seconds", 0.0)), 2), tokens=int(use.get("tokens", 0)), motion_s=round(dt, 2),
                      state=state, images={"overhead": oname, "wrist": wname})
@@ -215,8 +236,9 @@ def _verdict(world, run, declared, finish):
     else:
         reason = ""
     ok = reason == ""
+    limit = cfg.max_steps_direct if d.get("mode") == "direct" else cfg.max_steps
     say = {"": "The bottle went into the basket and is back upright where it started.",
-           "step_limit": f"The step budget ({cfg.max_steps}) ran out before the model said done.",
+           "step_limit": f"The step budget ({limit}) ran out before the model said done.",
            "still_holding": "The model said done with the bottle still in the gripper.",
            "never_entered": "The bottle never went into the basket.",
            "left_in_basket": "The bottle is still in the basket.",
@@ -267,7 +289,7 @@ def tidy(world, stop_event, log, limit=30):
 class Bench:
     """N runs per model, interleaved, each from a clean start. Pauses when the scene needs a hand."""
 
-    def __init__(self, models, runs_per_model, instruction, mode="skills", root=None):
+    def __init__(self, models, runs_per_model, instruction, mode="skills", root=None):  # noqa: D107
         self.root = root or RUNS
         self.dir = self.root / f"bench-{time.strftime('%Y%m%d-%H%M%S')}"
         self.dir.mkdir(parents=True, exist_ok=True)
@@ -335,7 +357,7 @@ class Bench:
                 except L.LLMError as e:
                     d["skipped"][model] = str(e)
                     continue
-                r = run_cycle(make_world(), llm, d["instruction"], context, run, stop_event)
+                r = run_cycle(make_world(), llm, d["instruction"], context, run, stop_event, mode=d["mode"])
                 self.runs.append(r)
                 self._summarise()
                 need_check = not r["outcome"]["success"]

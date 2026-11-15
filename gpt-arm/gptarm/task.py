@@ -104,6 +104,9 @@ class Config:
     stand_grip_from_centre: float = 25.0   # stand_up grips this far from a lying bottle's middle, towards the cap
     stand_effort: int = 1500        # firm enough to hold it, loose enough that it swings to hang
     bottle_length: float = 125.0    # base to the top of the cap
+    max_steps_direct: int = 60      # direct mode takes more, smaller steps
+    joint_speed_deg_s: float = 25.0 # direct mode's joint-space moves
+    floor_direct: float = 8.0       # direct mode: the lowest a fingertip may go (the table is 0)
 
     @classmethod
     def load(cls):
@@ -451,13 +454,63 @@ class World:
             self.log(f"feel check failed: {e}")
             return None
 
-    def frames(self):
+    # ---- direct mode: the model moves the arm; this keeps track of the bottle ------------------------------
+    def observe(self, img=None):
+        """Run the detector on a fresh overhead picture (the arm stays where it is) and update what is known.
+        Returns the picture."""
+        if img is None:
+            img = self.overhead.frame()
+        self.last_frames["overhead"] = img
+        sc = self.perceive(img, self.arm.state()["joints"])
+        self.scene = sc
+        now = time.time()
+        if sc.basket:
+            self.basket = {"xy": sc.basket["xy"], "t": now, "size_mm": sc.basket["size_mm"]}
+        if sc.bottle and not self.holding:
+            self.bottle = {"where": sc.bottle["where"], "xy": sc.bottle["xy"], "upright": sc.bottle.get("upright"), "t": now,
+                           **{k: sc.bottle[k] for k in ("axis_deg", "length_mm") if k in sc.bottle}}
+            if sc.bottle["where"] == "basket":
+                self.entered_basket = True
+        return img
+
+    def in_basket(self, xy):
+        if not self.basket or xy is None:
+            return False
+        a, b = self.basket.get("size_mm") or (300, 220)
+        return math.dist(xy, self.basket["xy"]) < 0.5 * min(a, b) + 20.0
+
+    def note_release(self):
+        """The fingers opened on the bottle: where did it go?"""
+        tool, _ = self.tool()
+        now = time.time()
+        if self.in_basket(tool[:2]):
+            self.entered_basket = True
+            self.basket_spot = (tool[0], tool[1], tool[2])
+            self.bottle = {"where": "basket", "xy": [tool[0], tool[1]], "upright": None, "t": now}
+        else:
+            self.bottle = {"where": "table", "xy": [tool[0], tool[1]], "upright": None, "t": now}
+
+    def after_motion(self):
+        if self.holding:
+            if self.gripper == "closed" and not self.arm.holding():
+                self.holding = False
+                self.bottle = {"where": "unknown", "xy": None, "upright": None, "t": time.time()}
+            else:
+                tool, _ = self.tool()
+                self.bottle = {"where": "gripper", "xy": [tool[0], tool[1]], "upright": None, "t": time.time()}
+                if self.in_basket(tool[:2]) and tool[2] < self.cfg.basket_rim + self.cfg.grasp_z:
+                    self.entered_basket = True
+
+    def frames(self, grid=False):
         """(overhead annotated bgr, wrist bgr or None): what the model is shown."""
         tool, _ = self.tool()
         try:
             img = self.overhead.frame()
         except Exception:                                   # noqa: BLE001 (a camera hiccup must not end a run)
             img = self.last_frames.get("overhead")
+        if img is not None and grid:
+            from .direct import grid as draw_grid
+            img = draw_grid(img, self.cam)
         ann = P.draw(img, self.cam, self._scene_for_drawing(), tool, self.start_xy) if img is not None else None
         wrist = None
         try:

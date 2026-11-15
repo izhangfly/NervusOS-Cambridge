@@ -48,6 +48,12 @@ FINGER_HALF_MM = 40.0       # open fingers: each this far from the tool axis, al
 CEILING_FLANGE_MM = 560.0   # the overhead camera hangs about a metre above the table: the wrist stays well below it
 
 
+# The driver's joint ranges, a few degrees inside the arm's own (J1 +-154, J2 0..195, J3 -175..0, J4 -100..112,
+# J5 +-75, J6 +-170): what a model may ask for in joint space.
+JOINT_LIMITS_DEG = [(-150.0, 150.0), (0.0, 180.0), (-170.0, 0.0), (-100.0, 100.0), (-70.0, 70.0), (-100.0, 100.0)]
+STREAM_DT = 0.04
+
+
 class ArmError(Exception):
     pass
 
@@ -230,6 +236,49 @@ class Arm:
                 self.hold()
                 raise ArmError(f"stopped {d:.0f} mm short of the target ({plan.get('kind')}: {plan.get('reason')})")
             time.sleep(0.1)
+
+    def move_joints(self, q, max_deg_s=30.0, timeout=30.0):
+        """Move to joint angles q (deg) along a straight line in joint space, streamed at 25 Hz so the speed is
+        ours to set. The whole line is checked first: every point keeps the fingertips above the floor and the
+        wrist below the ceiling. Blocks until there; raises ArmError if refused or if the arm falls behind."""
+        q = [float(v) for v in q]
+        if len(q) != 6 or not all(math.isfinite(v) for v in q):
+            raise ArmError("joints must be 6 numbers in degrees")
+        for i, (v, (lo, hi)) in enumerate(zip(q, JOINT_LIMITS_DEG)):
+            if not lo <= v <= hi:
+                raise ArmError(f"J{i + 1} = {v:.1f} deg is outside its range ({lo:.0f} to {hi:.0f})")
+        self.enable()
+        now = np.array(self.raw_state()["current"], float)
+        goal = np.array(q)
+        n = max(1, int(math.ceil(float(np.max(np.abs(goal - now))) / (max_deg_s * STREAM_DT))))
+        path = [now + (goal - now) * (k / n) for k in range(1, n + 1)]
+        for k, qk in enumerate(path):
+            pose = KIN.fk_pose(qk)
+            low = min(float(t[2]) for t in tip_points(pose))
+            if low < self.floor_z_mm:
+                raise ArmError(f"{100 * (k + 1) // n}% of the way there the fingertips would be at z={low:.0f} mm, "
+                               f"below the floor ({self.floor_z_mm:.0f} mm)")
+            if pose[2] > CEILING_FLANGE_MM:
+                raise ArmError(f"the wrist would rise to {pose[2]:.0f} mm, above the ceiling ({CEILING_FLANGE_MM:.0f} mm)")
+        self._req("/api/speed", {"speed": self.speed})
+        for k, qk in enumerate(path):
+            self._check()
+            self._req("/api/stream", {"joints": [round(float(v), 3) for v in qk]})
+            if k % 5 == 4:
+                actual = np.array(self.raw_state()["current"], float)
+                if float(np.max(np.abs(actual - path[max(0, k - 5)]))) > 20.0:
+                    raise ArmError("the arm fell behind the motion (blocked?): stopped where it is")
+            time.sleep(STREAM_DT)
+        t_end = time.time() + min(timeout, 6.0)
+        while time.time() < t_end:
+            self._check()
+            self._req("/api/stream", {"joints": [round(float(v), 3) for v in goal]})
+            actual = np.array(self.raw_state()["current"], float)
+            if float(np.max(np.abs(actual - goal))) < 1.0:
+                return self.state()
+            time.sleep(0.1)
+        off = np.abs(np.array(self.raw_state()["current"], float) - goal)
+        raise ArmError(f"stopped short: J{int(np.argmax(off)) + 1} is {float(np.max(off)):.1f} deg from its target")
 
     def hold(self):
         try:

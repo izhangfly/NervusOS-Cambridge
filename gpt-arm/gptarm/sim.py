@@ -100,6 +100,20 @@ class SimArm:
             self.t.bottle["xy"] = [float(x), float(y)]
         return self.state()
 
+    def move_joints(self, q, max_deg_s=30.0, timeout=30.0):
+        self._check()
+        for i, (v, (lo, hi)) in enumerate(zip(q, A.JOINT_LIMITS_DEG)):
+            if not lo <= v <= hi:
+                raise A.ArmError(f"J{i + 1} = {v:.1f} deg is outside its range ({lo:.0f} to {hi:.0f})")
+        pose = A.KIN.fk_pose(q)
+        if min(float(t[2]) for t in A.tip_points(pose)) < 4.0:
+            raise A.ArmError("the fingertips would go below the floor")
+        tool, lean, _ = A.tool_from_flange(pose)
+        self.tool, self.lean = tool, lean
+        if self.t.bottle["held"]:
+            self.t.bottle["xy"] = [tool[0], tool[1]]
+        return self.state()
+
     def hold(self):
         pass
 
