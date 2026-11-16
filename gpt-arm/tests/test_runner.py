@@ -122,6 +122,22 @@ class RunnerTest(unittest.TestCase):
         self.assertEqual((r["runs"], r["successes"], r["failures"]), (3, 3, {}))
         self.assertTrue((b.dir / "bench.json").exists())
 
+    def test_a_free_instruction_benchmark_starts_from_a_lying_bottle(self):
+        t, make = setup()
+        t.bottle.update(upright=False, xy=[300.0, 150.0])
+        b = runner.Bench(["scripted"], 1, "Put the bottle into the basket, then back on the table. Lying is fine.", root=self.root)
+        stop = threading.Event()
+        th = threading.Thread(target=b.run, args=(make, task.DEFAULT_CONTEXT, stop, None, lambda m: None), daemon=True)
+        th.start()
+        for _ in range(400):
+            if b.d["run_ids"] or b.d["state"] == "paused":
+                break
+            th.join(0.05)
+        stop.set()
+        th.join(60)
+        self.assertNotEqual(b.d["state"], "paused", b.d.get("message"))
+        self.assertEqual(len(b.d["run_ids"]), 1)
+
 
 class FreeAndLessonsTest(unittest.TestCase):
     def setUp(self):

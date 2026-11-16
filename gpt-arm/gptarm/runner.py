@@ -547,6 +547,10 @@ class Bench:
         d = self.d
         order = [(m, i + 1) for i in range(d["runs_per_model"]) for m in d["models"]]
         need_check = True
+        # The bottle cycle starts (and, done right, ends) with the bottle standing. Another instruction may
+        # leave it lying ("standing or lying are both fine"), so it starts from the bottle anywhere on the
+        # table, standing or not; each run records which (start_upright).
+        upright_start = is_task(d["instruction"])
         try:
             for model, index in order:
                 if stop_event.is_set():
@@ -560,18 +564,20 @@ class Bench:
                         ready = True
                     elif world.cfg.auto_tidy:
                         ready = tidy(world, stop_event, log)
-                    else:                                    # just look: is the bottle standing on the table?
+                    else:                                    # just look: is the bottle (standing) on the table?
                         tool, _ = world.tool()
                         if tool[2] < world.cfg.travel_z - 15.0:
                             world._go(tool[0], tool[1], world.cfg.travel_z, min_tip_z=tool[2] - 30.0)
                         world._look()
-                        ready = bool(world.bottle and world.bottle["where"] == "table" and world.bottle.get("upright") is not False)
-                    if ready and need_check and world.cfg.feel:
+                        ready = bool(world.bottle and world.bottle["where"] == "table"
+                                     and (world.bottle.get("upright") is not False or not upright_start))
+                    if ready and need_check and world.cfg.feel and upright_start:
                         ready = world.feel_upright() is True
                     if ready or stop_event.is_set():
                         break
-                    d["state"], d["message"] = "paused", ("The scene needs a hand: stand the bottle upright on the table, "
-                                                         "clear of the basket, then press Resume.")
+                    d["state"], d["message"] = "paused", (
+                        "The scene needs a hand: " + ("stand the bottle upright on the table" if upright_start else
+                                                      "put the bottle on the table") + ", clear of the basket, then press Resume.")
                     self.save()
                     self.resume_event.clear()
                     while not self.resume_event.wait(0.5):
