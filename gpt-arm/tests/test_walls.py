@@ -46,11 +46,11 @@ class WallTest(unittest.TestCase):
         with self.assertRaises(A.ArmError):
             A.check_walls(A.KIN.fk_pose(TOUCHED[1]), A.flange_pose(300, 0, 250), self.walls)
 
-    def test_a_turned_tool_keeps_the_camera_off_the_wall(self):
-        # leaning back towards the base puts the camera on the near side: the same tool point gets closer
-        out = A.wall_clearance(A.flange_pose(420, 0, 150, 20, yaw_deg=0), self.walls)[0]
-        back = A.wall_clearance(A.flange_pose(420, 0, 150, 20, yaw_deg=180), self.walls)[0]
-        self.assertGreater(back, out)
+    def test_more_lean_pulls_the_camera_back(self):
+        # leaning the tips outward swings the wrist, and the camera on it, back towards the base
+        gaps = [A.wall_clearance(A.flange_pose(400, 0, 150, lean, yaw_deg=0), self.walls)[0] for lean in (10, 30, 50)]
+        self.assertLess(gaps[0], gaps[1])
+        self.assertLess(gaps[1], gaps[2])
 
     def test_load_walls_from_file_and_fallback(self):
         with tempfile.TemporaryDirectory() as d:

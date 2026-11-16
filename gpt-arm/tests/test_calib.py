@@ -80,6 +80,40 @@ class CalibTest(unittest.TestCase):
         (u, v), n = C.gripper_marker(dim(a), dim(b), dim(c))
         self.assertLess(abs(u - 415.5), 3)
 
+    def test_repose_finds_a_nudged_camera_from_the_high_points(self):
+        """The overhead camera was nudged (2026-11-16): the lens is the same, the pose is new."""
+        P, c = a_camera()
+        Kc =np.array([[1100.0, 0, 800.0], [0, 1100.0, 600.0], [0, 0, 1.0]])
+        R = np.linalg.inv(Kc) @ P[:, :3]
+        old = C.Camera(Kc, np.zeros(5), C.cv2.Rodrigues(R)[0], -R @ c, (1600, 1200), 97.5)
+        # nudge: 2 degrees about a tilted axis, 25 mm sideways
+        dR = C.cv2.Rodrigues(np.array([0.02, -0.025, 0.01]))[0]
+        R2, c2 = dR @ R, c + np.array([20.0, -15.0, 5.0])
+        P2 = Kc @ np.hstack([R2, (-R2 @ c2).reshape(3, 1)])
+        rng = np.random.default_rng(3)
+        pts = []
+        name, zs, xs, ys, _ = C.STAGES[0]
+        for i, x in enumerate(xs):
+            for j, y in enumerate(ys):
+                z = zs[(i + j) % len(zs)]
+                lean = C._lean_for(x, y, (z,), steep=(i + j) % 2 == 1)
+                if lean is None:
+                    continue
+                flange = A.flange_pose(x, y, z, lean)
+                h = P2 @ np.append(C.marker_point(flange, 97.5), 1.0)
+                pts.append({"flange": flange, "px": list(h[:2] / h[2] + rng.normal(0, 1.0, 2))})
+        pts[2]["px"][1] += 60.0                                           # one bad detection
+        cam = C.fit_pose(pts, old)
+        self.assertEqual(len(cam.points), len(pts) - 1)
+        self.assertLess(cam.residual_px, 2.0)
+        np.testing.assert_allclose(cam.centre(), c2, atol=25.0)
+        for x, y in ((150.0, -250.0), (300.0, 0.0), (420.0, 250.0)):      # the table comes out where it is
+            u, v = cam.project([x, y, 0.0])
+            h = P2 @ np.array([x, y, 0.0, 1.0])
+            self.assertLess(math.hypot(u - h[0] / h[2], v - h[1] / h[2]), 3.0)
+            x2, y2 = cam.ground(*(h[:2] / h[2]))
+            self.assertLess(math.hypot(x2 - x, y2 - y), 4.0)
+
     def test_stage_points_are_reachable(self):
         for name, zs, xs, ys, margin in C.STAGES:
             n = sum(C._lean_for(x, y, (z, C.CARRY_Z) if margin else (z,)) is not None for x in xs for y in ys for z in zs[:1])
