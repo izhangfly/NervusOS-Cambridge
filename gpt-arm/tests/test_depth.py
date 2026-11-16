@@ -145,6 +145,38 @@ class DepthTest(unittest.TestCase):
         self.assertLess(np.linalg.norm(t - MOUNT.t), 8.0)
 
 
+class MemoryTest(unittest.TestCase):
+    def test_the_map_remembers_what_went_out_of_view(self):
+        """The depth camera looks ahead of the gripper: over the bottle, the bottle is out of view. The memory
+        keeps it, marked remembered, until something may have moved."""
+        bottle = dict(xy=(290.0, -160.0), top=55.0, length=125.0, width=45.0, axis_deg=35.0)
+        pose = A.flange_pose(300.0, -150.0, 230.0, A.min_lean(300.0, -150.0, 230.0))
+        mem = D.DepthMemory()
+        first = D.summary(render_boxes(pose, [bottle], floor=8.0), pose, MOUNT, memory=mem)
+        self.assertFalse(first["objects_below"][0]["remembered"])
+        later = D.summary(np.zeros((D.H, D.W), np.uint16), pose, MOUNT, memory=mem)       # no reading now
+        self.assertFalse(later["seen"])
+        b = later["objects_below"][0]
+        self.assertTrue(b["remembered"])
+        self.assertLess(math.dist(b["centre_xy_mm"], bottle["xy"]), 10)
+        self.assertEqual(later["surface_under_tool_z_mm"], 55)
+        self.assertTrue(later["surface_under_tool_remembered"])
+        img = D.top_view(np.zeros((D.H, D.W), np.uint16), pose, MOUNT, objects=later["objects_below"], memory=mem)
+        self.assertEqual(img.shape[1], 640)
+        # a new frame of the same place without the bottle overwrites it
+        gone = D.summary(render_boxes(pose, [], floor=8.0), pose, MOUNT, memory=mem)
+        self.assertFalse(any(math.dist(o["centre_xy_mm"], bottle["xy"]) < 30 for o in gone["objects_below"]))
+
+    def test_memory_crop_lines_up_with_a_single_frame(self):
+        bottle = dict(xy=(250.0, 40.0), top=60.0, length=125.0, width=45.0, axis_deg=-20.0)
+        pose = A.flange_pose(263.0, 51.0, 220.0, A.min_lean(263.0, 51.0, 220.0))
+        d = render_boxes(pose, [bottle], floor=0.0)
+        plain = D.summary(d, pose, MOUNT)["objects_below"][0]
+        kept = D.summary(d, pose, MOUNT, memory=D.DepthMemory())["objects_below"][0]
+        self.assertLess(math.dist(plain["centre_xy_mm"], kept["centre_xy_mm"]), 3)
+        self.assertEqual(plain["top_z_mm"], kept["top_z_mm"])
+
+
 class TablePlaneTest(unittest.TestCase):
     def test_the_bare_table_gives_back_the_mount(self):
         views = []

@@ -545,7 +545,8 @@ class World:
             else:
                 frame, flange = self.depth.settled(3), self.arm.state()["flange"]
                 wd = Dp.summary(frame, flange, self.mount)
-            return Dp.top_view(frame, flange, self.mount, objects=(wd or {}).get("objects_below"))
+            return Dp.top_view(frame, flange, self.mount, objects=(wd or {}).get("objects_below"),
+                               memory=getattr(self, "depth_memory", None) if last is not None else None)
         except Exception:                                   # noqa: BLE001
             return None
 

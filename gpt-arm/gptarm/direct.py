@@ -196,7 +196,9 @@ def state(world):
             import time
             from . import depth as Dp
             frame = w.depth.settled(3)
-            wd = Dp.summary(frame, st["flange"], w.mount)
+            if getattr(w, "depth_memory", None) is None:
+                w.depth_memory = Dp.DepthMemory()
+            wd = Dp.summary(frame, st["flange"], w.mount, memory=w.depth_memory)
             w.last_depth = (frame, st["flange"], wd, time.time())      # image 3 is drawn from the same frame
         except Exception as e:                               # noqa: BLE001 (no depth this step)
             wd = {"seen": False, "error": str(e)[:120]}
@@ -318,6 +320,7 @@ def execute(world, ans):
         if mm is None or not 0.0 <= float(mm) <= A.GRIPPER_OPEN_MM + 0.5:
             raise Refused("gripper needs gripper_mm between 0 and 75")
         w = arm.grip(float(mm), effort=cfg.grip_effort)
+        world.depth_memory = None                 # what was where may have changed: the depth map starts again
         closing = float(mm) < A.GRIPPER_OPEN_MM - 10.0
         world.gripper = "closed" if closing else "open"
         was = world.holding
