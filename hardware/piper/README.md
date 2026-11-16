@@ -61,6 +61,17 @@ still has a single owner.
   holds the arm with the motors on, drops the controller and refuses servo goals
   and jogs for 2 s. `/api/state` reports the last trip under `guard`; the panel
   shows it. `--ik-guard-deg 0` turns it off.
+- Hunting (smooth mode): at some hold targets a joint's own position loop never
+  settles, and the motor oscillates in place. You hear a loud buzz, and nothing
+  moves. Measured 2026-11-16: J5/J6 motor speed std 0.2-0.4 rad/s while holding,
+  under 0.03 when quiet. Re-sending the same target doesn't stop it; moving it
+  half a degree does. So while nothing is commanding the arm, the driver watches
+  each motor's speed (CAN 0x251-0x256). If one hunts for 0.5 s after a 1 s
+  settle, the driver moves that joint's hold target by +0.3, -0.3, +0.6, then
+  -0.6 deg from the original, 1 s apart, until it goes quiet. It never moves the
+  target further than 0.6 deg (about 1 mm at the fingertips for J5).
+  `/api/state` shows the last nudge under `hunt`, and the log has `(hunt)`
+  lines. The thresholds are in `motion.py` (`HUNT_*`).
 - The API has no authentication, so it listens on loopback only. Don't change
   `--bind` to `0.0.0.0`.
 
@@ -228,4 +239,6 @@ ssh -L 8770:localhost:8770 <host>   # browser panel from another machine
 | `cartesian: firmware` with a `cartesian_note` | numpy or ruckig missing in the driver venv: `pip install -r requirements.txt` |
 | Servo goals refused: "kinematic model doesn't match" | `fk_error_mm` over 15 mm: run with `--cartesian firmware` and report the joints and pose |
 | `(tracking guard)` in the log | A joint lagged its command by 20 deg: something blocked the arm, or the firmware isn't following |
+| A loud buzz while the arm holds still | A wrist motor hunting at its target. The driver nudges the target (`(hunt)` in the log). If it still buzzes after four nudges, record it: `gpt-arm/tools/buzz.py` |
+| The arm swings slowly back and forth after the teach button was used | The controller is still latched in teach mode (`teaching: true`, `ctrl_mode` TEACHING_MODE). Press Stop. On 2026-11-16 (J1 ±4 deg, every ~3 s), the Stop cleared the latch (`teaching` went false), and later moves were normal |
 | Jog stops with `jog_blocked` | The way ahead needs a joint past its limit, a singularity, or leaves the box; jog another axis |

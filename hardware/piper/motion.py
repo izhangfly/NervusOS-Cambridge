@@ -94,7 +94,8 @@ READY_POSE = [0.0, 45.0, -60.0, 0.0, 45.0, 0.0]
 # So while nothing commands the arm the driver watches each motor and nudges a hunting joint's hold target
 # by HUNT_NUDGES_DEG in turn (from where it was told to hold, never further than the largest of them).
 HUNT_WINDOW_S = 0.5       # the motor speeds are judged over this long ...
-HUNT_SPEED_STD = 0.12     # ... and a joint hunts when its motor speed's std is above this (rad/s)
+HUNT_SPEED_STD = 0.08     # ... and a joint hunts when its motor speed's std is above this (rad/s; quiet holds
+                          # measured under 0.03, a J6 hunt at 0.06 was still 6 dB over the quiet ones)
 HUNT_SETTLE_S = 1.0       # still for this long first: the end of a move rings briefly
 HUNT_RETRY_S = 1.0        # between nudges
 HUNT_NUDGES_DEG = (0.3, -0.3, 0.6, -0.6)
