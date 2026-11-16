@@ -69,7 +69,8 @@ still has a single owner.
   each motor's speed (CAN 0x251-0x256). If one hunts for 0.5 s after a 1 s
   settle, the driver moves that joint's hold target by +0.3, -0.3, +0.6, then
   -0.6 deg from the original, 1 s apart, until it goes quiet. It never moves the
-  target further than 0.6 deg (about 1 mm at the fingertips for J5).
+  target further than 0.6 deg (2.4 mm at the fingertips for J5, which is 226 mm
+  from them; 0.3 deg is 1.2 mm).
   `/api/state` shows the last nudge under `hunt`, and the log has `(hunt)`
   lines. The thresholds are in `motion.py` (`HUNT_*`).
 - The API has no authentication, so it listens on loopback only. Don't change
