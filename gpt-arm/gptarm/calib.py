@@ -236,6 +236,8 @@ STAGES = [   # name, tool heights, x values, y values, clearance margin in pixel
     ("middle", (185.0,), (200.0, 270.0, 340.0), (-100.0, 0.0, 100.0, 200.0, 300.0), 80),
     ("low", (115.0,), (190.0, 250.0, 310.0, 370.0), (-100.0, -20.0, 60.0, 140.0, 220.0, 300.0), 65),
 ]
+# repose: high above everything like "high", but spread over the whole table so the new pose holds everywhere
+REPOSE_STAGE = ("repose", (250.0, 300.0), (170.0, 260.0, 350.0, 420.0), (-240.0, -120.0, 0.0, 120.0, 240.0), None)
 
 
 def _lean_for(x, y, zs, steep=False):
@@ -387,7 +389,7 @@ def repose(arm, overhead, log=print, save=True, out_dir=None):
     if old is None:
         raise CalibrationError("there is no calibration to update: run the full calibration")
     seen = []
-    run(arm, overhead, log=log, save=False, out_dir=out_dir, stages=[STAGES[0]], min_points=0,
+    run(arm, overhead, log=log, save=False, out_dir=out_dir, stages=[REPOSE_STAGE], min_points=0,
         on_points=seen.extend)
     cam = fit_pose(seen, old)
     moved = float(np.linalg.norm(cam.centre() - old.centre()))

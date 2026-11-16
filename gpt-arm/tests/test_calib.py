@@ -92,7 +92,7 @@ class CalibTest(unittest.TestCase):
         P2 = Kc @ np.hstack([R2, (-R2 @ c2).reshape(3, 1)])
         rng = np.random.default_rng(3)
         pts = []
-        name, zs, xs, ys, _ = C.STAGES[0]
+        name, zs, xs, ys, _ = C.REPOSE_STAGE
         for i, x in enumerate(xs):
             for j, y in enumerate(ys):
                 z = zs[(i + j) % len(zs)]
