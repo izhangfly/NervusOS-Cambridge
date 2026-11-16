@@ -21,3 +21,16 @@ fi
 systemctl --user daemon-reload
 systemctl --user enable gptarm.service >/dev/null
 echo "installed. Start: systemctl --user start gptarm.service, or open GPT Arm from the desktop."
+
+# Optional: the wrist camera's depth (Orbbec Dabai DC1 through OpenNI2; see gptarm/depth.py).
+if [[ "${GPTARM_DEPTH:-1}" == "1" ]]; then
+    if [[ ! -f vendor-openni/libOpenNI2.so ]]; then
+        tmp="$(mktemp -d)"
+        git clone -q --depth 1 https://github.com/orbbec/ros2_astra_camera "$tmp/rac" \
+            && mkdir -p vendor-openni && cp -r "$tmp/rac/astra_camera/openni2_redist/x64/." vendor-openni/ \
+            && cp "$tmp/rac/astra_camera/scripts/56-orbbec-usb.rules" vendor-openni/
+        rm -rf "$tmp"
+    fi
+    "$PY" -m pip install -q openni || echo "could not install the openni package: depth stays off"
+    [[ -f /etc/udev/rules.d/56-orbbec-usb.rules ]] || echo "for depth, as root: install -m644 vendor-openni/56-orbbec-usb.rules /etc/udev/rules.d/ && udevadm control --reload-rules && udevadm trigger"
+fi

@@ -27,3 +27,4 @@ venv/
 
 # Agent worktrees (Claude Code)
 /.claude/worktrees/
+gpt-arm/vendor-openni/
