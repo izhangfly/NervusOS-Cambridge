@@ -55,6 +55,7 @@ class Service:
         self.world = None                 # the current run's world (for the live scene)
         self.cfg = T.Config.load()
         self.error = None
+        self.depth, self.mount = None, None
         self._ann = (0.0, None)           # (time, jpeg) of the last annotated overhead picture
         self.recording = None             # a free recording (Recorder) outside runs, and its id
         if use_sim:
@@ -230,7 +231,8 @@ class Service:
         with self.lock:
             if on and self.recording is None:
                 rid = time.strftime("rec-%Y%m%d-%H%M%S")
-                rec = Recorder(self.overhead, self.wrist, R.RUNS / "recordings" / f"{rid}.mp4", title=f"GPT Arm  {rid}")
+                rec = Recorder(self.overhead, self.wrist, R.RUNS / "recordings" / f"{rid}.mp4", title=f"GPT Arm  {rid}",
+                               depth=None if self.sim else self.depth)
                 self.recording = (rid, time.time(), rec)
             elif not on and self.recording is not None:
                 rid, t0, rec = self.recording
@@ -282,7 +284,7 @@ class Service:
                          "error": werr, "size": [1280, 720]}
         if not self.sim:
             dt = getattr(self.depth, "t", 0.0)
-            cams["wrist_depth"] = {"ok": self.depth.error is None and time.time() - dt < 3, "age_s": round(time.time() - dt, 2),
+            cams["depth"] = {"ok": self.depth.error is None and time.time() - dt < 3, "age_s": round(time.time() - dt, 2),
                                    "error": self.depth.error, "size": [640, 480], "calibrated": self.mount is not None}
         cal = {"ok": self.cam is not None, "points": len(self.cam.points) if self.cam else 0,
                "residual_px": self.cam.residual_px if self.cam else None, "when": self.cam.when if self.cam else None}
@@ -342,6 +344,15 @@ class Service:
 
     def wrist_jpeg(self):
         return to_jpeg(self.wrist.frame(), 80, 960)
+
+    def depth_jpeg(self):
+        from . import depth as Dp
+        if self.sim or self.depth is None:
+            raise CameraError("no depth camera")
+        try:
+            return to_jpeg(Dp.colourise(self.depth.frame()), 85)
+        except Dp.DepthError as e:
+            raise CameraError(str(e)) from None
 
     def runs(self, limit):
         out = []
@@ -413,10 +424,11 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path == "/api/status":
                 return self.send(200, s.status())
-            m = re.fullmatch(r"/api/camera/(overhead|wrist)\.jpg", path)
+            m = re.fullmatch(r"/api/camera/(overhead|wrist|depth)\.jpg", path)
             if m:
                 try:
-                    data = s.overhead_jpeg(q.get("annotated", ["0"])[0] == "1") if m.group(1) == "overhead" else s.wrist_jpeg()
+                    data = (s.overhead_jpeg(q.get("annotated", ["0"])[0] == "1") if m.group(1) == "overhead"
+                            else s.wrist_jpeg() if m.group(1) == "wrist" else s.depth_jpeg())
                 except CameraError as e:
                     return self.send(404, {"error": str(e)})
                 return self.send(200, data, "image/jpeg")

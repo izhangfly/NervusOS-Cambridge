@@ -221,3 +221,19 @@ step of kind `lesson`; a run with lessons off does neither. `run.lessons_used` s
 
 Runs live under `~/gptarm-runs/<id>/`: `run.json` (the Run with steps), the step images and `video.mp4`. Benchmarks under
 `~/gptarm-runs/bench-<stamp>/bench.json` listing run ids. The report generator reads only these.
+
+## Wrist depth and the checker (backend additions)
+
+- `POST /api/calibrate/depth`: fit where the wrist depth camera sits on the gripper. The bottle must stand on
+  the table; the arm grips it once (to know its position exactly), lets go and looks at its cap from about a
+  dozen poses. 409 while busy. `busy` is `calibrate` meanwhile.
+- `status.cameras.depth`: `{ok, age_s, error, size, calibrated}`; `GET /api/camera/depth.jpg` is the depth picture
+  (near warm, far cool, black = no reading, with a millimetre scale and the nearest distance).
+- Direct-mode decisions record what the model was given under `state.model_saw`, including `wrist_depth`:
+  `{seen, surface_under_tool_z_mm, fingertips_above_it_mm, nearest_object: {top_centre_xy_mm, top_z_mm,
+  extent_xy_mm, offset_from_tool_xy_mm}}`.
+- Free instructions: when the model says done, the arm parks and a `perception` step "Checker: success|fail|
+  impossible. ..." records the checker's verdict; `run.judge` holds it in full (`before, after, changes, status,
+  failure_kind, explanation, critique, confidence`). The verdict follows the checker (`outcome.checks.judge`);
+  `reason` is the checker's `failure_kind`, or `not_checked` if it could not be asked.
+- A run in direct mode starts with an `info` step "Plan: ..." (`run.plan`: `[{goal, done_when}]`).

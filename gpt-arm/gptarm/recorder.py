@@ -50,8 +50,9 @@ def _wrap(text, width_px, scale):
 
 
 class Recorder:
-    def __init__(self, overhead, wrist, path, fps=8, title=""):
+    def __init__(self, overhead, wrist, path, fps=8, title="", depth=None):
         self.overhead, self.wrist, self.path, self.fps = overhead, wrist, Path(path), fps
+        self.depth = depth                    # depth.WristDepth, shown as an inset in the wrist half
         self.title = title
         self.text = ""
         self.t0 = time.time()
@@ -87,6 +88,13 @@ class Recorder:
         frame = np.zeros((H, W, 3), np.uint8)
         frame[:top, :W // 2] = _fit(self._grab("overhead", self.overhead), W // 2, top)
         frame[:top, W // 2:] = _fit(self._grab("wrist", self.wrist) if self.wrist else None, W // 2, top)
+        if self.depth is not None:
+            try:
+                from .depth import colourise
+                inset = _fit(colourise(self.depth.frame(max_age_s=1.5)), 320, 240)
+                frame[top - 250:top - 10, W - 330:W - 10] = inset
+            except Exception:                               # noqa: BLE001 (no depth frame: no inset)
+                pass
         t = time.time() - self.t0
         stamp = f"{self.title}   {int(t // 60):02d}:{int(t % 60):02d}"
         cv2.putText(frame, stamp, (12, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2, cv2.LINE_AA)

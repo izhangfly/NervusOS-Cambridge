@@ -128,7 +128,7 @@
     archived: null, archivedAt: 0,
     model: null, mode: null,
     annotated: store.get('annotated', false),
-    camErr: { overhead: null, wrist: null },
+    camErr: { overhead: null, wrist: null, depth: null },
     runs: [], runsAt: 0, runsKey: '',
     benchLast: null,         // GET /api/bench when status.bench is null
     ctxLoaded: false, ctxDirty: false,
@@ -172,7 +172,7 @@
     $('offline').hidden = on;
     if (!on) updateOffline();
     renderButtons();
-    if (on) for (const c of ['overhead', 'wrist']) cams[c].kick();
+    if (on) for (const c of ['overhead', 'wrist', 'depth']) cams[c].kick();
   }
   function updateOffline() {
     $('offline-msg').textContent = app.lastOk
@@ -212,7 +212,8 @@
     let url = null, timer = 0, busy = false;
     async function tick() {
       clearTimeout(timer);
-      if (!busy && !document.hidden && app.online) {
+      const absent = name === 'depth' && !(app.s && app.s.cameras && app.s.cameras.depth);   // no depth camera: no polling
+      if (!busy && !document.hidden && app.online && !absent) {
         busy = true;
         const q = name === 'overhead' && app.annotated ? 'annotated=1&' : '';
         try {
@@ -235,10 +236,11 @@
     }
     return { start: tick, kick: tick };
   }
-  const cams = { overhead: camera('overhead'), wrist: camera('wrist') };
+  const cams = { overhead: camera('overhead'), wrist: camera('wrist'), depth: camera('depth') };
 
   function renderCamera(name) {
     const box = $('cam-' + name), st = app.s && app.s.cameras && app.s.cameras[name];
+    if (name === 'depth') box.hidden = !st;
     const err = (st && st.ok === false && (st.error || 'Camera not available.')) || app.camErr[name];
     const e = box.querySelector('[data-err]');
     e.hidden = !err;
@@ -346,7 +348,7 @@
 
   function renderButtons() {
     const s = app.s, busy = !s || !!s.busy || !app.online;
-    for (const id of ['btn-look', 'btn-home', 'btn-cal', 'btn-run', 'btn-bench-start']) $(id).disabled = busy;
+    for (const id of ['btn-look', 'btn-home', 'btn-cal', 'btn-cal-depth', 'btn-run', 'btn-bench-start']) if ($(id)) $(id).disabled = busy;
     $('btn-rec').disabled = !app.online;
     const b = s && (s.bench || app.benchLast);
     const bs = b && b.state;
@@ -935,7 +937,7 @@
   function render() {
     const s = app.s;
     renderTop(s);
-    renderCamera('overhead'); renderCamera('wrist');
+    renderCamera('overhead'); renderCamera('wrist'); renderCamera('depth');
     renderScene(s); renderArm(s); renderSpecs(s);
     renderPaused(s);
     if (app.tab === 'live') renderLive(s);
@@ -1016,6 +1018,9 @@
     $('btn-cal').addEventListener('click', async () => {
       if (await confirmBox('Calibrate the overhead camera?', 'The arm will move to a series of points over the table. Clear the table of anything it could hit, and keep hands away.', 'Calibrate, the arm will move')) act('api/calibrate', {}, 'Calibrate');
     });
+    if ($('btn-cal-depth')) $('btn-cal-depth').addEventListener('click', async () => {
+      if (await confirmBox('Calibrate the wrist depth camera?', 'Stand the bottle upright on the table, clear of the basket. The arm grips it once to find its exact position, lets go, then looks at its cap from about a dozen poses.', 'Calibrate, the arm will move')) act('api/calibrate/depth', {}, 'Calibrate depth');
+    });
 
     $('instruct').addEventListener('submit', (e) => { e.preventDefault(); runInstruction(); });
     $('instr').addEventListener('keydown', (e) => {
@@ -1078,7 +1083,7 @@
     });
 
     document.addEventListener('visibilitychange', () => {
-      if (!document.hidden) { pollNow(); cams.overhead.kick(); cams.wrist.kick(); }
+      if (!document.hidden) { pollNow(); cams.overhead.kick(); cams.wrist.kick(); cams.depth.kick(); }
     });
   }
 
@@ -1095,7 +1100,7 @@
     window.addEventListener('hashchange', route);
     route();
     pollStatus();
-    cams.overhead.start(); cams.wrist.start();
+    cams.overhead.start(); cams.wrist.start(); cams.depth.start();
   }
   start();
 })();

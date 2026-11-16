@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import time
 from pathlib import Path
@@ -20,7 +21,21 @@ from pathlib import Path
 HOME = Path(os.environ.get("GPTARM_HOME", "~/.config/gptarm")).expanduser()
 PATH = HOME / "lessons.json"
 SHOW = 12              # lessons shown to the model
-KEEP = 40              # lessons kept
+KEEP = 20              # lessons kept (ExpeL's max_num_rules)
+_BAD = re.compile(r"\(\s*-?\d+\s*,\s*-?\d+|\bstep\s*\d+|\brun\s*\d|\d{8}-\d{6}")   # coordinates, step or run numbers
+
+
+def lint(text):
+    """Why a proposed lesson is not general knowledge, or None. (Coordinates and run or step numbers belong
+    to one run, not to the arm.)"""
+    t = text.strip()
+    if len(t) < 15:
+        return "too short"
+    if len(t.split()) > 45:
+        return "too long"
+    if _BAD.search(t):
+        return "it names coordinates or a run or step number"
+    return None
 LOCK = threading.Lock()
 
 SCHEMA = {"type": "object", "additionalProperties": False, "required": ["operations"],
@@ -116,7 +131,7 @@ def as_context(items):
         return ""
     lines = ["# Lessons from earlier runs", "Written by the model after earlier runs on this arm. Most are useful; "
              "some may be wrong. Use your judgement."]
-    lines += [f"- {i['text']}" for i in items]
+    lines += [f"- {i['text']}" + ("" if i["score"] > 2 else " (unconfirmed: from one run only)") for i in items]
     return "\n".join(lines)
 
 
@@ -154,6 +169,13 @@ def learn(llm, d):
         for op in ops:
             kind, idx, text = op.get("op"), op.get("index"), (op.get("text") or "").strip()
             if kind == "ADD" and text and added < 2 and text not in [i["text"] for i in items]:
+                why = lint(text)
+                if why:
+                    said.append(f"not kept ({why}): {text}")
+                    continue
+                if len(items) >= KEEP:                     # full: the weakest lesson pays for the new one
+                    weakest = min(items, key=lambda i: i["score"])
+                    weakest["score"] -= 3
                 items.append({"text": text, "source_run": d["id"], "when": time.time(), "score": 2})
                 added += 1
                 said.append(f"new: {text}")
@@ -165,7 +187,7 @@ def learn(llm, d):
                 elif kind == "DISAGREE":
                     it["score"] -= 1
                     said.append(f"doubted: {it['text']}")
-                elif kind == "EDIT" and text:
+                elif kind == "EDIT" and text and not lint(text):
                     it.update(text=text, score=it["score"] + 1, source_run=d["id"], when=time.time())
                     said.append(f"rewritten: {text}")
         cur["items"] = sorted([i for i in items if i["score"] > 0], key=lambda i: -i["score"])[:KEEP]

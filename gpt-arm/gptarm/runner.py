@@ -115,7 +115,8 @@ def run_cycle(world, llm, instruction, context, run, stop_event, mode="skills", 
     rec = None
     if record:
         try:
-            rec = Recorder(world.overhead, world.wrist, run.dir / "video.mp4", title=f"{d['model']}  {mode}  {d['id']}")
+            rec = Recorder(world.overhead, world.wrist, run.dir / "video.mp4", title=f"{d['model']}  {mode}  {d['id']}",
+                           depth=getattr(world, "depth", None))
             run.recorder = rec
             d["video"] = rec.info()
         except Exception:                                    # noqa: BLE001 (no video is no reason to stop)

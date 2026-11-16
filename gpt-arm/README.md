@@ -37,6 +37,10 @@ Nothing is carried from one run to the next.
 |---|---|
 | `gptarm/arm.py` | The arm as this project uses it: a tool point between the finger pads, a lean about the finger line where a vertical tool cannot reach, blocking moves, joint-space moves streamed at 25 Hz, the gripper, the floor and ceiling checks |
 | `gptarm/calib.py` | Overhead camera calibration with no target: the arm opens and closes its gripper at known points, the camera finds the fingers, a pinhole camera is fitted (about 6 px, 5 mm on the table) |
+| `gptarm/depth.py` | The wrist camera's depth (Dabai DC1 through OpenNI2): where the depth camera sits on the gripper (fitted from views of a standing bottle's cap), and what is under the gripper in the arm's millimetres |
+| `gptarm/judge.py` | Free instructions: a model compares the table before and after and says success, fail or impossible, with a critique the driving model gets one more go with |
+| `gptarm/lessons.py` | Learning from experience: a short list of lessons the model edits after each run (ADD / AGREE / DISAGREE / EDIT with scores, as in ExpeL) and reads before the next |
+| `gptarm/recorder.py` | A video of every run: both cameras side by side, captioned with the step, H.264 MP4 |
 | `gptarm/perception.py` | The bottle (by its black cap and pale body: standing or lying, and which way it lies) and the basket, in the arm's millimetres |
 | `gptarm/direct.py` | Direct mode: what the model is told, the answer's JSON schema, the checks and the executor, the millimetre grid drawn on the overhead picture |
 | `gptarm/task.py` | Skills mode: the skills, the governor, the state flags, the editable arm context; also the bookkeeping both modes share (where the bottle is, did it enter the basket) |
@@ -55,7 +59,8 @@ Nothing is carried from one run to the next.
 
 - AgileX PiPER with its two-finger gripper on a USB-CAN adapter (`can0`), at the middle of the long side of
   a white table about 100 x 60 cm
-- Wrist camera: the Orbbec Dabai DC1 on the gripper (its colour stream, UVC; depth is not used yet)
+- Wrist camera: the Orbbec Dabai DC1 on the gripper: colour through UVC, depth through OpenNI2 with Orbbec's
+  driver (`install.sh` fetches it from Orbbec's ROS 2 package; it needs Orbbec's udev rule)
 - Overhead camera: any camera about a metre above the table that can serve JPEGs. Here it is a Surface Pro 9
   running Ubuntu, whose rear camera needs libcamera (`overhead/overhead_cam.py`)
 - Robot host: Ubuntu 24.04, no GPU needed (the model runs remotely; perception is plain OpenCV)
@@ -100,7 +105,8 @@ HTTP. Check the route: `python -m gptarm.llm gpt-5.6-sol`.
 
 ## Use
 
-1. **Calibrate** once, and again whenever the overhead camera is moved: the portal's Calibrate button, or
+1. **Calibrate** once, and again whenever the overhead camera is moved (and **Calibrate depth** once, with the
+   bottle standing on the table, for the wrist depth camera): the portal's Calibrate button, or
    `python -m gptarm.calib`. The arm visits about 40 points, high ones first. A point near something
    dark on the table is skipped, so nothing needs clearing. It takes about 10 minutes.
 2. Open **GPT Arm** on the desktop. Choose a model and a mode, type an instruction (or keep the default
@@ -116,13 +122,26 @@ HTTP. Check the route: `python -m gptarm.llm gpt-5.6-sol`.
 Without the arm: `python -m gptarm.server --sim` serves the portal on the simulator, where a "Scripted"
 model drives the skills mode with no tokens.
 
+## Any instruction
+
+Type anything in the portal: "wave hello", "point at the basket", "push the basket 10 cm to the left",
+"what is on the table?". In direct mode the model first writes a short plan with a checkable condition per
+stage, then moves the arm one motion at a time. It sees both pictures every step: the overhead one with a
+millimetre grid, the wrist one with a compass and a mark between the fingertips. It also gets the joint
+angles and the gripper reading, and the wrist depth camera's measurements: the height of whatever is under
+the fingertips, and the position and top height of the nearest object below the gripper. When it says done,
+the arm parks and a checker compares the table before and after. If the checker disagrees, its critique
+goes back to the model for one more go. Every run is recorded as a video you can download, and with
+"Learn from earlier runs" on, the model writes lessons afterwards that the next runs read.
+
 ## How a run is judged
 
 At the end (the model says done, or the step budget runs out) the arm parks out of the camera's view and
 the overhead camera finds the bottle. If it is on the table, the gripper closes at cap height where the
 bottle should stand: a standing bottle stops the fingers, a fallen one is too low to touch. A run succeeds
 when the bottle entered the basket at some point, is back on the table within 40 mm of where it started,
-and stands. A failure is recorded with its reason: `never_entered`, `left_in_basket`, `tipped_over`,
+and stands. Any other instruction is judged by the checker (`judge.py`): success, or a failure in its own words.
+A failure of the bottle cycle is recorded with its reason: `never_entered`, `left_in_basket`, `tipped_over`,
 `not_returned`, `step_limit`, `still_holding`, `bottle_lost`, `model_unavailable` or `arm_fault`.
 
 ## Safety
@@ -139,7 +158,7 @@ motion, and perception can be wrong.
 
 ```sh
 python tests/test_calib.py && python tests/test_task.py && python tests/test_direct.py \
-  && python tests/test_runner.py && python tests/test_make_report.py
+  && python tests/test_runner.py && python tests/test_depth.py && python tests/test_make_report.py
 python tools/mock_server.py --port 8811 & python -m unittest tests/test_portal_contract.py
 GPTARM_URL=http://127.0.0.1:8812 GPTARM_CONTRACT_MUTATE=1 python -m unittest tests/test_portal_contract.py  # against `server --sim --port 8812`
 ```
@@ -147,6 +166,13 @@ GPTARM_URL=http://127.0.0.1:8812 GPTARM_CONTRACT_MUTATE=1 python -m unittest tes
 ## Credits
 
 Author: **Ian Zhang** ([@izhangfly](https://github.com/izhangfly)).
+
+Borrowed and adapted: the lessons mechanism from [ExpeL](https://github.com/LeapLabTHU/ExpeL) (Apache-2.0);
+the checker's prompt from [PragmaBot](https://github.com/leggedrobotics/pragmabot)'s success detector
+(BSD-3-Clause), with three outcomes as in [Agent Workflow Memory](https://github.com/zorazrw/agent-workflow-memory)
+and a critique loop as in [Voyager](https://github.com/MineDojo/Voyager) (MIT); the OpenNI2 runtime and
+Orbbec driver from [ros2_astra_camera](https://github.com/orbbec/ros2_astra_camera) (Apache-2.0), read with
+the [openni](https://pypi.org/project/openni/) bindings (MIT).
 
 The skills-mode design (the model picks a named skill, a governor checks preconditions, a grasp counts when
 the fingers stop part way, strict JSON answers, the lean about the finger line) is adapted from

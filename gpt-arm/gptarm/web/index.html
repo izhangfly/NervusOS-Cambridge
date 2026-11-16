@@ -30,6 +30,7 @@
     <button id="btn-look" class="btn" title="Photograph the table and refresh the scene flags">Look</button>
     <button id="btn-home" class="btn" title="Move the arm to its look pose, out of the camera's way">Home</button>
     <button id="btn-cal" class="btn" title="Automatic overhead-camera calibration (the arm moves)">Calibrate</button>
+    <button id="btn-cal-depth" class="btn" title="Calibrate the wrist depth camera from a standing bottle (the arm moves)">Calibrate depth</button>
   </div>
   <button id="btn-stop" class="btn stop" title="Stop the run or benchmark; the arm holds with motors on">Stop</button>
   <button id="btn-estop" class="btn estop" title="The driver's emergency stop">E-stop</button>
@@ -62,6 +63,13 @@
       <header><h2>Wrist</h2><span class="age" data-age></span></header>
       <button class="frame" data-cam="wrist" aria-label="Open the wrist camera larger">
         <img alt="Wrist camera view" data-img>
+        <span class="cam-err" data-err hidden></span>
+      </button>
+    </section>
+    <section class="cam" id="cam-depth" hidden>
+      <header><h2>Wrist depth</h2><span class="age" data-age></span></header>
+      <button class="frame" data-cam="depth" aria-label="Open the wrist depth view larger">
+        <img alt="Wrist depth camera view: near is warm, far is cool" data-img>
         <span class="cam-err" data-err hidden></span>
       </button>
     </section>

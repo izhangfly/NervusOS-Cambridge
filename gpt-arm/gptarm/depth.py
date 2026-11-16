@@ -185,6 +185,26 @@ def nearest_top(depth, max_range_mm=None, min_px=150):
     return best
 
 
+def colourise(depth, near=100.0, far=600.0):
+    """A depth image as a picture: near is warm, far is cool, no reading is black; with a scale bar."""
+    import cv2
+    d = depth.astype(float)
+    v = np.clip((d - near) / (far - near), 0.0, 1.0)
+    img = cv2.applyColorMap((255 * (1.0 - v)).astype(np.uint8), cv2.COLORMAP_TURBO)
+    img[d <= 0] = 0
+    h, w = img.shape[:2]
+    bar = cv2.applyColorMap(np.linspace(255, 0, w - 40).astype(np.uint8)[None, :].repeat(10, axis=0), cv2.COLORMAP_TURBO)
+    img[h - 26:h - 16, 20:w - 20] = bar
+    for mm in range(int(near), int(far) + 1, 100):
+        x = int(20 + (mm - near) / (far - near) * (w - 41))
+        cv2.putText(img, f"{mm}", (x - 12, h - 32), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1, cv2.LINE_AA)
+    ok = d > 0
+    if ok.any():
+        nearest = float(np.percentile(d[ok], 0.3))
+        cv2.putText(img, f"nearest {nearest:.0f} mm", (10, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2, cv2.LINE_AA)
+    return img
+
+
 def summary(depth, flange_pose, mount, table_z=0.0):
     """What the model is told: the surface under the fingertips and the nearest object below the gripper."""
     pts = mount.to_base(cloud(depth), flange_pose)
