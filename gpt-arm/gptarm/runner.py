@@ -560,24 +560,32 @@ class Bench:
                 # a clean start: the bottle standing on the table
                 while True:
                     world = make_world()
-                    if not need_check:
-                        ready = True
-                    elif world.cfg.auto_tidy:
-                        ready = tidy(world, stop_event, log)
-                    else:                                    # just look: is the bottle (standing) on the table?
-                        tool, _ = world.tool()
-                        if tool[2] < world.cfg.travel_z - 15.0:
-                            world._go(tool[0], tool[1], world.cfg.travel_z, min_tip_z=tool[2] - 30.0)
-                        world._look()
-                        ready = bool(world.bottle and world.bottle["where"] == "table"
-                                     and (world.bottle.get("upright") is not False or not upright_start))
-                    if ready and need_check and world.cfg.feel and upright_start:
-                        ready = world.feel_upright() is True
+                    why = ""
+                    try:
+                        if not need_check:
+                            ready = True
+                        elif world.cfg.auto_tidy:
+                            ready = tidy(world, stop_event, log)
+                        else:                                # just look: is the bottle (standing) on the table?
+                            tool, _ = world.tool()
+                            if tool[2] < world.cfg.travel_z - 15.0:
+                                world._go(tool[0], tool[1], world.cfg.travel_z, min_tip_z=tool[2] - 30.0)
+                            world._look()
+                            ready = bool(world.bottle and world.bottle["where"] == "table"
+                                         and (world.bottle.get("upright") is not False or not upright_start))
+                        if ready and need_check and world.cfg.feel and upright_start:
+                            ready = world.feel_upright() is True
+                    except A.ArmError as e:
+                        # A run can end with the gripper low (in the basket, on the table). If getting clear of it
+                        # fails, that is the scene needing a hand too, not the end of the benchmark (2026-11-16:
+                        # "fingertips dipped to -2 mm" here ended a 10-run benchmark after 6 runs).
+                        world.arm.hold()
+                        ready, why = False, f"The arm couldn't get clear to look ({e}). "
                     if ready or stop_event.is_set():
                         break
                     d["state"], d["message"] = "paused", (
-                        "The scene needs a hand: " + ("stand the bottle upright on the table" if upright_start else
-                                                      "put the bottle on the table") + ", clear of the basket, then press Resume.")
+                        why + "The scene needs a hand: " + ("stand the bottle upright on the table" if upright_start else
+                                                            "put the bottle on the table") + ", clear of the basket, then press Resume.")
                     self.save()
                     self.resume_event.clear()
                     while not self.resume_event.wait(0.5):

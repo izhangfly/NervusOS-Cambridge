@@ -122,6 +122,33 @@ class RunnerTest(unittest.TestCase):
         self.assertEqual((r["runs"], r["successes"], r["failures"]), (3, 3, {}))
         self.assertTrue((b.dir / "bench.json").exists())
 
+    def test_an_arm_error_while_checking_the_scene_pauses_the_benchmark(self):
+        from gptarm import arm as A
+        t, make = setup()
+
+        def make_failing():
+            w = make()
+
+            def refuse(*a, **k):
+                raise A.ArmError("the fingertips dipped to -2 mm on the way: stopped")
+            w.arm.move_tool = refuse
+            w.arm.state = lambda: {**type(w.arm).state(w.arm), "tool": [200.0, 0.0, 40.0]}
+            w.tool = lambda: ([200.0, 0.0, 40.0], 0.0)
+            return w
+        b = runner.Bench(["scripted"], 1, "Put the bottle into the basket, then back on the table. Lying is fine.", root=self.root)
+        stop = threading.Event()
+        th = threading.Thread(target=b.run, args=(make_failing, task.DEFAULT_CONTEXT, stop, None, lambda m: None), daemon=True)
+        th.start()
+        for _ in range(400):
+            if b.d["state"] == "paused":
+                break
+            th.join(0.05)
+        self.assertEqual(b.d["state"], "paused")
+        self.assertIn("couldn't get clear", b.d["message"])
+        self.assertTrue(th.is_alive(), "the benchmark waits for Resume instead of ending")
+        stop.set()
+        th.join(10)
+
     def test_a_free_instruction_benchmark_starts_from_a_lying_bottle(self):
         t, make = setup()
         t.bottle.update(upright=False, xy=[300.0, 150.0])
