@@ -279,6 +279,8 @@ class Arm:
             "gripper_mm": s.get("gripper_actual_mm"), "moving": bool((s.get("trajectory") or {}).get("moving")),
             "plan": (s.get("plan") or {}).get("kind"), "plan_reason": (s.get("plan") or {}).get("reason"),
             "guard": (s.get("guard") or {}).get("reason") if s.get("guard") else None,
+            # The driver keeps its LAST trip, however old: say when, so a trip from before isn't taken for a new one.
+            "guard_time": (s.get("guard") or {}).get("time") if s.get("guard") else None,
             "owner": (s.get("owner") or {}).get("client"), "speed": s.get("speed"),
         }
 

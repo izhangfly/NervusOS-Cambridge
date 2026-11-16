@@ -36,7 +36,7 @@ if the instruction does not mention it. The instruction may also be a question o
 # The model driving the arm finally said
 {claim}
 
-Images: 1 = overhead camera BEFORE the run, 2 = overhead camera AFTER (arm parked), 3 = wrist camera AFTER.
+{images}
 
 Describe the table before and after, list what changed, then decide:
 - success: the instruction was carried out (well enough);
@@ -48,6 +48,21 @@ Describe the table before and after, list what changed, then decide:
 
 
 def judge(llm, instruction, log, claim, images):
-    """-> (verdict dict, usage). images: {"before", "after", "wrist"} JPEG bytes (any may be missing)."""
-    imgs = {k: images[k] for k in ("before", "after", "wrist") if images.get(k)}
-    return llm.ask(PROMPT.format(instruction=instruction.strip(), log=log, claim=claim or "(nothing)"), imgs, SCHEMA)
+    """-> (verdict dict, usage). images: {"before", "after", "wrist"} JPEG bytes (any may be missing) and
+    "during": [(step number, JPEG bytes)], overhead pictures taken soon after the fingers let go of something
+    (runner.release_views), which show where things were put on the way."""
+    imgs, said = {}, []
+    if images.get("before"):
+        imgs["before"] = images["before"]
+        said.append(f"{len(imgs)} = overhead camera BEFORE the run")
+    for n, data in images.get("during") or []:
+        imgs[f"during-{n}"] = data
+        said.append(f"{len(imgs)} = overhead camera DURING the run, soon after the gripper let go of something at "
+                    f"step {n} (the arm may hide part of the table)")
+    for k, what in (("after", "overhead camera AFTER (arm parked)"), ("wrist", "wrist camera AFTER")):
+        if images.get(k):
+            imgs[k] = images[k]
+            said.append(f"{len(imgs)} = {what}")
+    text = "Images: " + ("; ".join(said) if said else "none") + "."
+    return llm.ask(PROMPT.format(instruction=instruction.strip(), log=log, claim=claim or "(nothing)", images=text),
+                   imgs, SCHEMA)

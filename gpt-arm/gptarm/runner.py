@@ -272,7 +272,7 @@ def _cycle(world, llm, instruction, context, run, stop_event, mode):
                      llm_s=round(float(use.get("seconds", 0.0)), 2), tokens=int(use.get("tokens", 0)), motion_s=round(dt, 2),
                      state=rec, images={"overhead": oname, "wrist": wname, **({"depth": dname} if dname else {})})
             st = world.arm.state()
-            if not st["enabled"] or st.get("guard"):
+            if not st["enabled"] or (st.get("guard") and float(st.get("guard_time") or 0.0) >= t0 - 1.0):
                 run.step("error", note=f"The arm stopped itself ({st.get('guard') or 'not enabled'}).")
                 return finish("failed", "arm_fault")
             if skill == "done" and ok:
@@ -304,6 +304,32 @@ def _cycle(world, llm, instruction, context, run, stop_event, mode):
         return finish("failed", "internal_error")
 
 
+LIFTED_Z_MM = 120.0
+
+
+def release_views(run, limit=3):
+    """Overhead pictures from DURING the run, one for each time the fingers let go of something: where it was
+    put. Before and after alone can't show a there-and-back task (into the basket and out again looks like
+    nothing happened). Each decision's pictures were taken before it, so the picture after a release is the
+    next decision's; the first one taken with the arm lifted again (tool z >= LIFTED_Z_MM, within two more
+    decisions) hides less. -> [(step number of the release, JPEG bytes)], the last `limit`."""
+    steps = [s for s in run.d["steps"] if s.get("kind") == "decision"]
+    out = []
+    for i, s in enumerate(steps):
+        if i == 0 or s.get("skill") != "gripper" or not s.get("ok"):
+            continue
+        was, now = steps[i - 1].get("state"), s.get("state")
+        if not (isinstance(was, dict) and isinstance(now, dict) and was.get("holding") and not now.get("holding")):
+            continue
+        later = range(i + 1, min(i + 4, len(steps)))
+        pick = next((j for j in later if ((steps[j - 1].get("state") or {}).get("tool_xyz_mm") or [0, 0, 0])[2]
+                     >= LIFTED_Z_MM), later[0] if len(later) else None)
+        name = ((steps[pick].get("images") or {}).get("overhead") if pick is not None else None)
+        if name and (run.dir / name).exists():
+            out.append((s.get("n"), (run.dir / name).read_bytes()))
+    return out[-limit:]
+
+
 def _judge(world, run, llm, instruction):
     """Park the arm, photograph the table and ask the judge. Returns its verdict, or None if it could not be asked."""
     d = run.d
@@ -323,7 +349,8 @@ def _judge(world, run, llm, instruction):
         wrist = None
     claim = next((s.get("note") for s in reversed(d["steps"]) if s["kind"] == "decision"), "")
     imgs = {"before": getattr(run, "before", None), "after": to_jpeg(after, 80, 1024) if after is not None else None,
-            "wrist": to_jpeg(wrist, 80, 768) if wrist is not None else None}
+            "wrist": to_jpeg(wrist, 80, 768) if wrist is not None else None,
+            "during": release_views(run)}
     run.pending("llm", note="the checker is comparing before and after")
     try:
         j, use = J.judge(llm, instruction, Lz.run_log(d), claim, imgs)

@@ -214,6 +214,35 @@ class JudgeTest(unittest.TestCase):
         self.assertEqual(d["plan"][0]["goal"], "wave")
         tmp.cleanup()
 
+    def test_the_checker_sees_where_things_were_put_on_the_way(self):
+        from gptarm import judge as J
+        tmp = tempfile.TemporaryDirectory()
+        run = runner.Run("m", "Into the basket and out again", "direct", root=Path(tmp.name))
+
+        def dec(n, skill, holding, z, ok=True):
+            (run.dir / f"{n:03d}-overhead.jpg").write_bytes(f"img{n}".encode())
+            return {"n": n, "kind": "decision", "skill": skill, "ok": ok,
+                    "state": {"holding": holding, "tool_xyz_mm": [200, 0, z]}, "images": {"overhead": f"{n:03d}-overhead.jpg"}}
+        run.d["steps"] = [dec(1, "move_tool", False, 200), dec(2, "gripper", True, 45),        # grasp
+                          dec(3, "move_tool", True, 200), dec(4, "gripper", False, 60),        # release in the basket
+                          dec(5, "move_by", False, 200), dec(6, "move_tool", False, 200),      # lifted after 5
+                          dec(7, "gripper", True, 45), dec(8, "gripper", False, 45),           # grasp, release on the table
+                          dec(9, "done", False, 45)]
+        views = runner.release_views(run)
+        # release at 4: decision 6's picture (taken after 5 lifted the arm); release at 8: only 9 is left
+        self.assertEqual(views, [(4, b"img6"), (8, b"img9")])
+        seen = {}
+
+        def ask(p, images, schema):
+            seen["prompt"], seen["keys"] = p, list(images)
+            return {"status": "success"}, {}
+        J.judge(type("L", (), {"ask": lambda self, p, i, s: ask(p, i, s)})(), "x", "log", "done",
+                {"before": b"b", "after": b"a", "wrist": b"w", "during": views})
+        self.assertEqual(seen["keys"], ["before", "during-4", "during-8", "after", "wrist"])
+        self.assertIn("2 = overhead camera DURING the run, soon after the gripper let go of something at step 4", seen["prompt"])
+        self.assertIn("4 = overhead camera AFTER", seen["prompt"])
+        tmp.cleanup()
+
 
 if __name__ == "__main__":
     unittest.main()
