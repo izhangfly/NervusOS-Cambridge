@@ -87,13 +87,10 @@ class SimArm:
     def move_tool(self, x, y, z, lean=None, yaw_deg=None, tol_mm=4.0, timeout=60.0, speed=None, min_tip_z=None):
         self._check()
         self.enable()                     # as arm.Arm does: a new move after an e-stop re-enables
-        use = A.min_lean(x, y, z, yaw_deg, at_least=lean or 0.0)
-        if use is None:
-            raise A.ArmError(f"({x:.0f}, {y:.0f}, {z:.0f}) mm is out of the arm's reach")
-        low = min(float(t[2]) for t in A.tip_points(A.flange_pose(x, y, z, use, yaw_deg)))
+        use, goal = A.goal_for(x, y, z, lean, yaw_deg, A.flange_pose(*self.tool, self.lean), self.walls)
+        low = min(float(t[2]) for t in A.tip_points(goal))
         if low < self.floor_z_mm:
             raise A.ArmError(f"z={z:.0f} mm would put the fingertips at {low:.0f} mm, below the floor ({self.floor_z_mm:.0f} mm)")
-        A.check_walls(A.flange_pose(x, y, z, use, yaw_deg), A.flange_pose(*self.tool, self.lean), self.walls)
         if self.t.bottle["held"]:
             base = z - self.t.grip_height
             if math.dist((x, y), self.t.basket["xy"]) < self.t.basket["radius"] + 25 and base < self.t.floor_at((x, y)) - 2:

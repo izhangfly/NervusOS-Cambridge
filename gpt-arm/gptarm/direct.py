@@ -72,8 +72,8 @@ towards you first.
 
 - move_tool: put the TOOL POINT (the point midway between the two finger pads) at x, y, z. The tool points
   down. `lean` (degrees, optional) tips the fingertips outward, away from the base, about the line the
-  fingers close along: the pads stay level. Where the wrist cannot reach with a vertical tool, the smallest
-  lean that works is used anyway; leave lean null unless you want more. `yaw` (degrees, optional) is the
+  fingers close along: the pads stay level. Where the wrist cannot reach with a vertical tool, or would come
+  too near the backboard, the smallest lean that works is used anyway; leave lean null unless you want more. `yaw` (degrees, optional) is the
   direction, in the table plane, that the tool leans towards; the fingers close at right angles to it.
   Null yaw means the bearing of the point from the base (x axis = 0, +y = 90), so the fingers close
   sideways. The arm moves there in a path of its own choosing; it does not travel in a straight line.

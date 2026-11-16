@@ -105,6 +105,26 @@ def wall_clearance(pose, walls):
     return best
 
 
+def goal_for(x, y, z, lean, yaw_deg, now_pose, walls):
+    """(lean used, flange pose) for a tool point: the smallest lean, at least `lean`, that reaches it and keeps
+    every part clear of the walls (more lean swings the wrist and its camera back towards the base).
+    Raises ArmError if no lean does."""
+    use = min_lean(x, y, z, yaw_deg, at_least=lean or 0.0)
+    if use is None:
+        raise ArmError(f"({x:.0f}, {y:.0f}, {z:.0f}) mm is out of the arm's reach")
+    first = None
+    while use <= LEAN_MAX_DEG + 1e-6:
+        if reachable(x, y, z, use, yaw_deg):
+            goal = flange_pose(x, y, z, use, yaw_deg)
+            try:
+                check_walls(goal, now_pose, walls)
+                return use, goal
+            except ArmError as e:
+                first = first or e
+        use += LEAN_STEP_DEG
+    raise first
+
+
 def check_walls(goal_pose, now_pose, walls, margin=WALL_MARGIN_MM):
     """Raise ArmError if goal_pose brings a part closer than `margin` to a wall (moving away is always allowed)."""
     gap, part, wall = wall_clearance(goal_pose, walls)
@@ -262,17 +282,13 @@ class Arm:
         """Move the tool point to (x, y, z). lean None = the smallest lean that reaches it; a number = at least
         that lean. Blocks until there; returns the state, with the lean used. min_tip_z: hold and fail if a
         fingertip dips below this height on the way (the path is the driver's, this is the check on it)."""
-        use = min_lean(x, y, z, yaw_deg, at_least=lean or 0.0)
-        if use is None:
-            raise ArmError(f"({x:.0f}, {y:.0f}, {z:.0f}) mm is out of the arm's reach")
-        goal = flange_pose(x, y, z, use, yaw_deg)
+        start = self.raw_state()["pose_current"]
+        use, goal = goal_for(x, y, z, lean, yaw_deg, start, self.walls)
         low = min(float(t[2]) for t in tip_points(goal))
         if low < self.floor_z_mm:
             raise ArmError(f"z={z:.0f} mm would put the fingertips at {low:.0f} mm, below the floor ({self.floor_z_mm:.0f} mm)")
         if goal[2] > CEILING_FLANGE_MM:
             raise ArmError(f"({x:.0f}, {y:.0f}, {z:.0f}) mm puts the wrist at {goal[2]:.0f} mm, above the ceiling ({CEILING_FLANGE_MM:.0f} mm)")
-        start = self.raw_state()["pose_current"]
-        check_walls(goal, start, self.walls)
         gap_start = wall_clearance(start, self.walls)[0]
         self.enable()
         body = {"pose": goal, "speed": int(speed or self.speed)}
