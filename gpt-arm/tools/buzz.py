@@ -123,19 +123,71 @@ def is_buzz(c):
     return c["ripple"] > 0.15 and c["flips_s"] > 30 and c["travel"] < 0.5
 
 
-def run_steps(run_dir):
-    """[(t_start, label)] from a GPT Arm run's run.json (timestamps are wall-clock seconds)."""
+def run_decisions(run_dir):
+    """A GPT Arm run's decisions: [{"n", "t_end" (wall-clock s, when its motion ended), "motion_s", "label",
+    "state"}]. A step is written when its motion has ended; the arm then holds still while the model
+    thinks about the next one."""
     try:
         d = json.load(open(Path(run_dir).expanduser() / "run.json"))
     except (OSError, ValueError):
         return []
     out = []
     for s in d.get("steps") or []:
-        t = s.get("t") or s.get("time") or s.get("started")
-        a = s.get("action") or {}
-        if isinstance(t, (int, float)):
-            out.append((float(t), f"{a.get('type') or a.get('skill') or '?'} {json.dumps(a.get('args') or {k: v for k, v in a.items() if k != 'type'})[:90]}"))
+        if s.get("kind") == "decision" and isinstance(s.get("t"), (int, float)):
+            out.append({"n": s.get("n"), "t_end": float(s["t"]), "motion_s": float(s.get("motion_s") or 0.0),
+                        "label": f"{s.get('skill')} {s.get('target') or ''}".strip(), "state": s.get("state") or {}})
     return out
+
+
+def run_steps(run_dir):
+    """[(t, label)]: when each decision's motion ended."""
+    return [(r["t_end"], f"{r['n']} {r['label']}") for r in run_decisions(run_dir)]
+
+
+def band_level(path, lo_hz=150.0, hi_hz=400.0, win=WIN_S):
+    """[(t, dB)]: sound level in the band where the arm's tones are (150-400 Hz in the 2026-11-16 runs)."""
+    t0, rate, x = load_wav(path)
+    n = int(win * rate)
+    f = np.fft.rfftfreq(n, 1.0 / rate)
+    band = (f >= lo_hz) & (f <= hi_hz)
+    hann = np.hanning(n)
+    return [(t0 + k / rate, float(10 * np.log10((np.abs(np.fft.rfft(x[k:k + n] * hann))[band] ** 2).sum() + 1e-20)))
+            for k in range(0, len(x) - n, n)]
+
+
+def holds(wav, can_log, run_dir):
+    """The sound while the arm stood still between moves, per pose: which poses buzz."""
+    lv = band_level(wav)
+    t = np.array([a for a, _ in lv])
+    db = np.array([b for _, b in lv])
+    speed, joints, cmds, _ = load(can_log)
+    jt, jv = joints
+    decs = run_decisions(run_dir)
+    rows = []
+    for a, b in zip(decs, decs[1:] + [None]):
+        t0 = a["t_end"] + 1.0                                  # let it settle
+        t1 = (b["t_end"] - b["motion_s"] - 0.5) if b else a["t_end"] + 8.0
+        m = (t >= t0) & (t < t1)
+        if m.sum() < 4:
+            continue
+        k = int(np.searchsorted(jt, (t0 + t1) / 2)) if len(jt) else 0
+        q = jv[min(k, len(jv) - 1)] if len(jv) else [np.nan] * 6
+        ripple = {}
+        for j in range(6):
+            s = speed[j]
+            mm = (s[:, 0] >= t0) & (s[:, 0] < t1)
+            ripple[j] = (float(np.std(s[mm, 1])), float(np.std(s[mm, 2]))) if mm.sum() > 5 else (0.0, 0.0)
+        st = a["state"] if isinstance(a["state"], dict) else {}
+        rows.append({"n": a["n"], "label": a["label"], "secs": t1 - t0, "db": float(np.median(db[m])),
+                     "q": [round(float(v)) for v in q], "tool": st.get("tool_xyz_mm"), "holding": st.get("holding"),
+                     "ripple": ripple})
+    quiet = float(np.percentile([r["db"] for r in rows], 20)) if rows else 0.0
+    print(f"band 150-400 Hz while holding still, relative to the quietest fifth of the holds ({len(rows)} holds):")
+    for r in sorted(rows, key=lambda r: -r["db"]):
+        rp = " ".join(f"J{j + 1} {r['ripple'][j][0]:.3f}/{r['ripple'][j][1]:.2f}" for j in range(6))
+        print(f"  {r['db'] - quiet:+5.1f} dB  {r['secs']:4.0f}s  after #{r['n']} {r['label'][:38]:38s} q={r['q']} "
+              f"tool={r['tool']} {'holding' if r['holding'] else ''}\n            speed/current std: {rp}")
+    return rows
 
 
 def analyze(path, run_dir=None, show=40):
@@ -273,9 +325,15 @@ def main():
     s.add_argument("--can")
     s.add_argument("--run")
     s.add_argument("--show", type=int, default=40)
+    h = sub.add_parser("holds", help="the sound while the arm stood still after each move of a run, loudest first")
+    h.add_argument("wav")
+    h.add_argument("--can", required=True)
+    h.add_argument("--run", required=True)
     args = ap.parse_args()
     if args.cmd == "record":
         record(args.path)
+    elif args.cmd == "holds":
+        holds(args.wav, args.can, args.run)
     elif args.cmd == "audio":
         analyze_audio(args.wav, args.can, args.run, show=args.show)
     else:
