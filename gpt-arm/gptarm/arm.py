@@ -315,6 +315,9 @@ class Arm:
         return self.raw_state().get("gripper_actual_mm")
 
     def holding(self):
-        """True when the gripper was told to close and the fingers stopped part way."""
+        """True when the fingers were told to close and stopped clearly wider than told: on something.
+        (A close to 35 mm that ends at 45 mm holds a 45 mm bottle; one that ends at 35 mm holds nothing.)"""
         w = self.raw_state().get("gripper_actual_mm")
-        return bool(self.grip_cmd is not None and self.grip_cmd < 3.0 and w is not None and w > HOLD_MIN_MM)
+        if self.grip_cmd is None or w is None or self.grip_cmd > GRIPPER_OPEN_MM - 10.0:
+            return False
+        return bool(w > max(HOLD_MIN_MM, self.grip_cmd + 4.0))

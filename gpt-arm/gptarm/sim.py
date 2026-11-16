@@ -133,7 +133,7 @@ class SimArm:
         self._check()
         b, t = self.t.bottle, self.t
         self.grip_cmd = float(width_mm)
-        if width_mm < 3.0:
+        if width_mm < 40.0:                       # a close (to anything narrower than the bottle)
             floor = t.floor_at(b["xy"])
             near = math.dist(self.tool[:2], b["xy"]) < (14.0 if b["upright"] else 45.0)
             tall = P.BOTTLE_HEIGHT_MM if b["upright"] else P.BOTTLE_DIAMETER_MM
@@ -146,7 +146,7 @@ class SimArm:
             else:
                 if near and around:
                     t.miss -= 1
-                self.width = 0.4
+                self.width = max(0.4, float(width_mm))
         else:
             if b["held"]:
                 b["held"] = False
@@ -167,7 +167,9 @@ class SimArm:
         return self.width
 
     def holding(self):
-        return bool(self.grip_cmd is not None and self.grip_cmd < 3.0 and self.width > A.HOLD_MIN_MM)
+        if self.grip_cmd is None or self.grip_cmd > A.GRIPPER_OPEN_MM - 10.0:
+            return False
+        return bool(self.width > max(A.HOLD_MIN_MM, self.grip_cmd + 4.0))
 
 
 class SimOverhead:

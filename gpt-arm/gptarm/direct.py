@@ -272,13 +272,14 @@ def execute(world, ans):
         if mm is None or not 0.0 <= float(mm) <= A.GRIPPER_OPEN_MM + 0.5:
             raise Refused("gripper needs gripper_mm between 0 and 75")
         w = arm.grip(float(mm), effort=cfg.grip_effort)
-        world.gripper = "closed" if float(mm) < 3.0 else "open"
+        closing = float(mm) < A.GRIPPER_OPEN_MM - 10.0
+        world.gripper = "closed" if closing else "open"
         was = world.holding
-        world.holding = arm.holding() if float(mm) < 3.0 else False
+        world.holding = arm.holding() if closing else False
         if was and not world.holding:
             world.note_release()
         return f"the fingers are now {w:.0f} mm apart" + ("; they stopped on something: holding" if world.holding else
-                                                           ("; they closed on nothing" if float(mm) < 3.0 else ""))
+                                                           ("; they closed on nothing" if closing else ""))
     if a == "skill":
         name = ans.get("skill")
         if name not in SKILLS:
