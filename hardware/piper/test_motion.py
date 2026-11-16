@@ -44,6 +44,54 @@ def derivatives(q, dt=1.0 / 100):
 
 
 @unittest.skipUnless(HAVE, "needs numpy and ruckig")
+class HuntTest(unittest.TestCase):
+    """The hold-still buzz: a joint's motor oscillating in place gets its target nudged, a quiet arm never."""
+
+    def feed(self, w, t0, t1, hunting_joint=None, amp=0.4, targets=READY):
+        out, t = [], t0
+        while t < t1:
+            s = [0.002 * math.sin(7 * t)] * 6
+            if hunting_joint is not None:
+                s[hunting_joint] = amp * (1 if int(t * 200) % 2 else -1)       # a 100 Hz square wave
+            r = w.update(t, s, targets)
+            if r:
+                out.append((t, r))
+            t += 0.01
+        return out
+
+    def test_a_quiet_hold_is_left_alone(self):
+        self.assertEqual(self.feed(M.HuntWatch(), 0.0, 10.0), [])
+
+    def test_a_hunting_joint_is_nudged_after_the_settle_time(self):
+        w = M.HuntWatch()
+        got = self.feed(w, 0.0, 1.6, hunting_joint=4)
+        self.assertEqual(len(got), 1)
+        t, (new, j, std) = got[0]
+        self.assertGreaterEqual(t, M.HUNT_SETTLE_S)
+        self.assertEqual(j, 4)
+        self.assertGreater(std, M.HUNT_SPEED_STD)
+        self.assertAlmostEqual(new[4], READY[4] + M.HUNT_NUDGES_DEG[0])
+        self.assertEqual(new[:4] + new[5:], READY[:4] + READY[5:])
+
+    def test_nudges_go_round_from_the_original_target_and_then_stop(self):
+        w = M.HuntWatch()
+        got = self.feed(w, 0.0, 30.0, hunting_joint=5)          # it never stops hunting
+        offsets = [round(r[0][5] - READY[5], 3) for _, r in got]
+        self.assertEqual(offsets, [round(v, 3) for v in M.HUNT_NUDGES_DEG])
+        gaps = [b[0] - a[0] for a, b in zip(got, got[1:])]
+        self.assertTrue(all(g >= M.HUNT_RETRY_S - 1e-9 for g in gaps))
+        self.assertLessEqual(max(abs(v) for v in offsets), 0.6)
+
+    def test_reset_starts_over(self):
+        w = M.HuntWatch()
+        self.feed(w, 0.0, 1.6, hunting_joint=4)
+        w.reset()
+        self.assertEqual(self.feed(w, 2.0, 2.9, hunting_joint=4), [])           # settling again
+        got = self.feed(w, 2.9, 3.6, hunting_joint=4)
+        self.assertAlmostEqual(got[0][1][0][4], READY[4] + M.HUNT_NUDGES_DEG[0])  # first nudge again
+
+
+@unittest.skipUnless(HAVE, "needs numpy and ruckig")
 class FollowerTest(unittest.TestCase):
     def test_respects_limits_and_arrives(self):
         for speed in (15, 50, 100):

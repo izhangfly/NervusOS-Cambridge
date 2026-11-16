@@ -87,6 +87,63 @@ DIRECT_MAX_DEG = 5.0      # a plan this short (largest joint change) is a stream
 
 READY_POSE = [0.0, 45.0, -60.0, 0.0, 45.0, 0.0]
 
+# Hunting. At some hold targets a joint's own position loop (in the arm's firmware) never settles: the motor
+# oscillates in place, a loud buzz with no visible motion. Measured on 2026-11-16 (GPT Arm runs, CAN
+# 0x251-0x256): J5 and J6 motor speed std 0.17-0.41 rad/s while holding, against under 0.03 when quiet.
+# Re-sending the same target did not stop it; moving that joint's target 0.5 deg did, 5 times out of 6.
+# So while nothing commands the arm the driver watches each motor and nudges a hunting joint's hold target
+# by HUNT_NUDGES_DEG in turn (from where it was told to hold, never further than the largest of them).
+HUNT_WINDOW_S = 0.5       # the motor speeds are judged over this long ...
+HUNT_SPEED_STD = 0.12     # ... and a joint hunts when its motor speed's std is above this (rad/s)
+HUNT_SETTLE_S = 1.0       # still for this long first: the end of a move rings briefly
+HUNT_RETRY_S = 1.0        # between nudges
+HUNT_NUDGES_DEG = (0.3, -0.3, 0.6, -0.6)
+
+
+class HuntWatch:
+    """Notices a joint hunting while the arm holds still, and says where to move its target.
+
+    update() is called once per control tick while nothing is streaming, with the motor speeds and the
+    targets the arm is holding; reset() whenever anything else commands the arm. update() returns
+    (new targets, joint index, its speed std) when a nudge is due, else None."""
+
+    def __init__(self, window_s=HUNT_WINDOW_S, std=HUNT_SPEED_STD, settle_s=HUNT_SETTLE_S,
+                 retry_s=HUNT_RETRY_S, nudges=HUNT_NUDGES_DEG):
+        self.window_s, self.std, self.settle_s, self.retry_s = window_s, std, settle_s, retry_s
+        self.nudges = tuple(nudges)
+        self.reset()
+
+    def reset(self):
+        self.since = None          # when this still period began
+        self.base = None           # the targets it began with
+        self.buf = []              # [(t, speeds)]
+        self.tries = {}            # joint -> nudges used
+        self.last_nudge = -math.inf
+
+    def update(self, t, speeds, targets):
+        if self.since is None:
+            self.since, self.base = t, [float(v) for v in targets]
+        self.buf.append((t, [float(v) for v in speeds]))
+        while self.buf and self.buf[0][0] < t - self.window_s:
+            self.buf.pop(0)
+        if t - self.since < self.settle_s or t - self.last_nudge < self.retry_s:
+            return None
+        if len(self.buf) < 10 or self.buf[-1][0] - self.buf[0][0] < 0.8 * self.window_s:
+            return None
+        std = np.std(np.array([s for _, s in self.buf]), axis=0)
+        j = int(np.argmax(std))
+        if std[j] < self.std:
+            return None
+        k = self.tries.get(j, 0)
+        if k >= len(self.nudges):
+            return None            # tried them all: leave it (it is noisy, not unsafe)
+        self.tries[j] = k + 1
+        new = [float(v) for v in targets]
+        new[j] = self.base[j] + self.nudges[k]
+        self.last_nudge = t
+        self.buf.clear()
+        return new, j, float(std[j])
+
 
 def motion_limits(speed: float) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """(velocity, acceleration, jerk) per joint, deg-based, for a speed setting in percent."""

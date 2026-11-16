@@ -185,6 +185,7 @@ STATE = {
     "owner": None,            # {"client", "kind", "last"}
     "guard": None,            # last IK guard trip: {"time", "reason", "client"}
     "plan": None,             # smooth mode: the last Cartesian plan (motion.Plan.summary())
+    "hunt": None,             # smooth mode: the last hold-still nudge (motion.HuntWatch) and how many so far
     "log": [],
 }
 
@@ -331,6 +332,10 @@ class Arm:
             self._dh_selected = False
             self.overruns = 0
             self._jog_note_t = 0.0
+            self.hunt = MOTION.HuntWatch()
+            self._held = None               # the joint targets last sent (what the arm holds when idle)
+            self._hunt_reset = False        # set by other threads when they command the arm
+            self._hunts = 0
             threading.Thread(target=self._loop_smooth, daemon=True, name="control").start()
         else:
             threading.Thread(target=self._loop, daemon=True, name="control").start()
@@ -561,6 +566,8 @@ class Arm:
             self.motion_ctrl(0x01)
             with io_lock:
                 self.piper.JointCtrl(*[int(round(v * MDEG)) for v in cur])
+            if self.smooth:
+                self._held, self._hunt_reset = list(cur), True
         log_call("hold", {"joints": [round(v, 1) for v in cur]})
 
     def recover(self):
@@ -605,6 +612,8 @@ class Arm:
             STATE["targets"] = tgt
         with io_lock:
             self.piper.JointCtrl(*[int(round(v * MDEG)) for v in tgt])
+        if self.smooth:
+            self._held, self._hunt_reset = list(tgt), True
         return tgt
 
     # ---------------------------------------------------------------- loop
@@ -905,6 +914,7 @@ class Arm:
                 if ctx["streaming"]:
                     ctx["streaming"] = False
                     log_call("(deadman)", {"reason": why_not, "action": "stopped streaming"})
+                self._hunt_tick(ctx, now, period, meas)
                 return
             q_cmd = fol.anchor(meas)
         # Guards. Tracking: the arm must be where the trajectory says (else it is blocked,
@@ -981,9 +991,44 @@ class Arm:
             if not go:
                 return
             self.piper.JointCtrl(*cmd)
+        self._held = [v / MDEG for v in cmd]
         with state_lock:
             STATE["pose"] = self.kin.fk_pose(q)
         ctx["streaming"] = True
+
+    def _hunt_tick(self, ctx, now, period, meas):
+        """Nothing commands the arm: if a joint's motor hunts at its hold target (a buzz, no motion; see
+        motion.HuntWatch), move that target a fraction of a degree. Any tick that isn't idle, or a hold
+        sent from another thread, starts the watch over."""
+        if self._hunt_reset or meas is None or self._held is None or now - ctx.get("hunt_t", -math.inf) > 3 * period:
+            self._hunt_reset = False
+            self.hunt.reset()
+        ctx["hunt_t"] = now
+        if meas is None or self._held is None:
+            return
+        try:
+            hs = self.piper.GetArmHighSpdInfoMsgs()
+            speeds = [getattr(hs, f"motor_{n}").motor_speed / 1000.0 for n in range(1, 7)]
+        except Exception:
+            return
+        r = self.hunt.update(now, speeds, self._held)
+        if r is None:
+            return
+        new, j, std = r
+        new = [clamp(n + 1, float(v)) for n, v in enumerate(new)]
+        with io_lock:
+            with state_lock:
+                go = STATE["enabled"] and not STATE["estopped"] and STATE["mode"] != "stream"
+            if not go or self._hunt_reset:
+                return
+            self.piper.JointCtrl(*[int(round(v * MDEG)) for v in new])
+        moved = round(new[j] - self._held[j], 2)
+        self._held = new
+        self._hunts += 1
+        note = {"joint": j + 1, "motor_speed_std": round(std, 3), "nudge_deg": moved, "target_deg": round(new[j], 2)}
+        with state_lock:
+            STATE["hunt"] = {**note, "time": now, "count": self._hunts}
+        log_call("(hunt)", {**note, "action": "moved the hold target"})
 
     def close(self):
         self._stop.set()
@@ -1110,6 +1155,7 @@ def state_json(lite=False):
             body["dh_variant"] = ARM.kin.dh_variant
             body["jog_blocked"] = ARM.jogger.blocked or None
             body["overruns"] = ARM.overruns
+            body["hunt"] = STATE["hunt"]
         if not lite:
             body["log"] = STATE["log"][:14]
     return body
