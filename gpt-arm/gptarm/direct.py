@@ -98,26 +98,32 @@ towards you first.
   table (listed in `objects_on_table` with position, size and colour; positions are where the object's middle
   meets the table, so a tall object's base is a little nearer the middle of the picture). They can be wrong,
   and the arm hides part of the table.
-- Wrist: looks down along the gripper, between the two fingers (the dark shapes at the bottom corners).
-  It is not mirrored: UP in the wrist picture is the tool's yaw direction (away from the base when yaw is
-  null), LEFT is 90 degrees counter-clockwise from that seen from above. A compass drawn in the corner
-  shows where the arm's +x and +y point, and a cyan mark shows ROUGHLY where the point between the fingertips
-  is (it is fixed in the picture and drifts with height: trust the depth picture's ring instead). Close to an
-  object, 1 mm is roughly 3 to 4 pixels.
-- Wrist depth picture (image 3, when there is one): the same view as distance, warm = near, cool = far,
-  black = no reading, flat grey = below the table top (the floor past the table's edge), with a millimetre
-  scale. Drawn on it from the arm's exact geometry: a white ring where
-  the point between the fingertips is, two white dots for the open fingertips, and a white cross on the
-  surface straight below the tool point with that surface's height. If the ring sits on the object you want
-  to grasp, the fingers will close around it. This is measured; prefer it to the colour picture's cyan mark.
+- Wrist: the colour camera on the side of the gripper, looking down past the two fingers (the dark shapes at
+  the bottom corners). It is not mirrored: UP in the wrist picture is the tool's yaw direction (away from the
+  base when yaw is null), LEFT is 90 degrees counter-clockwise from that seen from above; a compass in the
+  corner shows where the arm's +x and +y point. It looks at the fingers from the side and at an angle, so
+  where something appears relative to the fingers depends on how far below them it is: from high up, an
+  object that looks "between the fingers" is usually NOT under them. Use it to see what things are, not
+  to line them up.
+- Wrist depth map (image 3, when there is one): MEASURED, and the picture to line up a grasp with. The depth
+  camera's view turned into a map of the table seen from straight above, centred on the tool point: +x up,
+  +y left (like the overhead picture), 320 x 320 mm, coloured by height above the table (scale at the
+  bottom; black = not seen), with a grid every 50 mm labelled in the arm's x and y. The white ring is the tool
+  point's x, y: what is under the ring is what the fingers close on when you lower the tool straight down
+  (move_by with only z keeps x and y). The two white dots are the open fingertips and the white line between
+  them is the line they close along: it must lie ACROSS the object. Objects that stand out from the floor
+  around them are labelled D1, D2, ... (listed in `wrist_depth.objects_below`).
 
-- Wrist depth (`wrist_depth` in the state, when the depth camera is calibrated): measured, not guessed.
-  `surface_under_tool_z_mm` is the height of whatever is straight under the tool point and
-  `fingertips_above_it_mm` how far the fingertips are above it; `nearest_object` is the highest thing below
-  the gripper within 20 cm: its top's centre (x, y), its top height, its extent, and its offset from the tool
-  point. Trust it over the detector's guesses and over estimates from the pictures. The depth camera reads
-  nothing closer than about 15 cm and little from black fabric: `seen: false` means no reading, not an
-  empty table.
+- Wrist depth numbers (`wrist_depth` in the state): `surface_under_tool_z_mm` is the height of whatever is
+  straight under the tool point (null if the depth camera cannot see there from this pose) and
+  `fingertips_above_it_mm` how far the fingertips are above it. `objects_below` lists what rises from the
+  floor around it, nearest first: centre (x, y), top height, length and width, `long_axis_deg` (the direction
+  of its long side in the table plane: 0 = +x, 90 = +y), its offset from the tool point, and whether the view
+  cuts it off (then it may be bigger). A bottle lying down is about 125 x 45 mm with its top about 45 mm
+  above what it lies on; a basket wall is long, thin and about 100 mm high. Since the fingers close at right
+  angles to `yaw`, a yaw along an object's long axis closes the fingers across it. Trust these over the
+  detector's guesses and over estimates from the pictures. The depth camera reads nothing closer than about
+  15 cm and little from black fabric: `seen: false` means no reading, not an empty table.
 
 Fill `expect` with what you expect to see after the motion; the next step shows it next to what happened.
 
@@ -178,8 +184,11 @@ def state(world):
     wd = None
     if getattr(w, "depth", None) is not None and getattr(w, "mount", None) is not None:
         try:
+            import time
             from . import depth as Dp
-            wd = Dp.summary(w.depth.settled(3), st["flange"], w.mount)
+            frame = w.depth.settled(3)
+            wd = Dp.summary(frame, st["flange"], w.mount)
+            w.last_depth = (frame, st["flange"], wd, time.time())      # image 3 is drawn from the same frame
         except Exception as e:                               # noqa: BLE001 (no depth this step)
             wd = {"seen": False, "error": str(e)[:120]}
     walls = getattr(w.arm, "walls", None)
@@ -222,7 +231,9 @@ def plan_text(plan):
 
 
 def wrist_overlay(img, yaw_deg):
-    """The compass and the fingertip mark on the wrist picture (see the context's description)."""
+    """The compass on the wrist picture (see the context's description). (A fixed mark for the fingertips was
+    drawn here until 2026-11-16: it is right only at the fingertips' own depth, and the model kept lining
+    objects far below up with it.)"""
     if img is None:
         return None
     out = img.copy()
@@ -236,9 +247,6 @@ def wrist_overlay(img, yaw_deg):
         cv2.arrowedLine(out, (cx, cy), tip, col, 3, cv2.LINE_AA, tipLength=0.25)
         cv2.putText(out, name, (int(cx + dx * (r + 4)) - 12, int(cy + dy * (r + 4)) + 6), cv2.FONT_HERSHEY_SIMPLEX,
                     0.6, (255, 255, 255), 2, cv2.LINE_AA)
-    u, v = int(w * 0.505), int(h * 0.83)                      # between the fingertips, measured on this arm
-    cv2.drawMarker(out, (u, v), (255, 255, 0), cv2.MARKER_CROSS, 34, 2, cv2.LINE_AA)
-    cv2.putText(out, "between fingertips", (u + 20, v - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2, cv2.LINE_AA)
     return out
 
 
@@ -258,7 +266,7 @@ def prompt(instruction, context, st, history, plan=None, depth_image=None):
         lines.append(f"- {desc}: {'done' if ok else 'NOT DONE'}. {detail}".rstrip()
                      + (f" (you expected: {expect})" if expect else ""))
     lines += ["", "Image 1 is the overhead camera, image 2 the wrist camera"
-              + (", image 3 the wrist depth camera." if depth_image else "."),
+              + (", image 3 the wrist depth map (seen from above, centred on the tool point)." if depth_image else "."),
               "Choose the next motion. In `note`, say in one or two sentences what you see and why."]
     return "\n".join(lines)
 

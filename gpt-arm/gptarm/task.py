@@ -533,12 +533,19 @@ class World:
         return ann, wrist
 
     def depth_view(self):
-        """The wrist depth picture with the fingertips projected onto it, or None (no depth camera or mount)."""
+        """The model's depth picture: the wrist depth seen from straight above around the tool point (see
+        depth.top_view), from the same frame as the last depth summary when there is one; None without depth."""
         if getattr(self, "depth", None) is None or getattr(self, "mount", None) is None:
             return None
         try:
             from . import depth as Dp
-            return Dp.model_view(self.depth.settled(3), self.arm.state()["flange"], self.mount)
+            last = getattr(self, "last_depth", None)
+            if last is not None and time.time() - last[3] < 5.0:
+                frame, flange, wd = last[:3]
+            else:
+                frame, flange = self.depth.settled(3), self.arm.state()["flange"]
+                wd = Dp.summary(frame, flange, self.mount)
+            return Dp.top_view(frame, flange, self.mount, objects=(wd or {}).get("objects_below"))
         except Exception:                                   # noqa: BLE001
             return None
 

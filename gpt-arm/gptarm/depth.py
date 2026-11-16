@@ -258,7 +258,7 @@ def model_view(depth, flange_pose, mount, scale=3):
     tool = np.asarray(p, float) + np.asarray(R) @ np.array([0.0, 0.0, A.GRASP_OFFSET_MM])
     tips = A.tip_points(flange_pose)
     s = summary(depth, flange_pose, mount)
-    below = np.array([tool[0], tool[1], float(s.get("surface_under_tool_z_mm", 0.0))])
+    below = np.array([tool[0], tool[1], float(s.get("surface_under_tool_z_mm") or 0.0)])
     for P, kind in [(tool, "tool")] + [(t, "tip") for t in tips[1:]] + [(below, "below")]:
         uv = project(P, flange_pose, mount, depth.shape)[0]
         if uv is None:
@@ -276,16 +276,100 @@ def model_view(depth, flange_pose, mount, scale=3):
     return img
 
 
-def summary(depth, flange_pose, mount, table_z=0.0):
-    """What the model is told: the surface under the fingertips and the nearest object below the gripper."""
-    pts = cloud(depth)
+def base_points(depth, flange_pose, mount, step=None):
+    """The depth image as base-frame points (mm), without the gripper's own fingers and body."""
+    pts = cloud(depth, step=step)
     pts[:, :2] /= getattr(mount, "focal_scale", 1.0)
     pts = mount.to_base(pts, flange_pose)
+    p, R = A.K.pose_to_rt(flange_pose)
+    q = (pts - np.asarray(p, float)) @ np.asarray(R)                # flange frame
+    grip = ((q[:, 2] > -20.0) & (q[:, 2] < A.GRASP_OFFSET_MM + A.TIP_OFFSET_MM + 8.0)
+            & (np.abs(q[:, 0]) < 40.0) & (np.abs(q[:, 1]) < 60.0))
+    return pts[~grip]
+
+
+MAP_HALF_MM, MAP_CELL_MM = 160.0, 2.0
+
+
+def height_map(pts, centre_xy, half_mm=MAP_HALF_MM, cell_mm=MAP_CELL_MM):
+    """The table seen from straight above, around centre_xy: H[row, col] = the top height (mm) of what the
+    depth camera saw in that cell, NaN where it saw nothing. Row 0 is the far side (+x), column 0 the left
+    (+y), as on the overhead picture. Small gaps (one cell) are filled from their neighbours."""
+    import cv2
+    n = int(round(2 * half_mm / cell_mm))
+    r = ((centre_xy[0] + half_mm - pts[:, 0]) / cell_mm).astype(int)
+    c = ((centre_xy[1] + half_mm - pts[:, 1]) / cell_mm).astype(int)
+    ok = (r >= 0) & (r < n) & (c >= 0) & (c < n)
+    H = np.full((n, n), -1e4, np.float32)
+    np.maximum.at(H, (r[ok], c[ok]), pts[ok, 2].astype(np.float32))
+    seen = H > -1e3
+    grown = cv2.dilate(H, np.ones((3, 3), np.uint8))
+    H = np.where(seen, H, grown)
+    H[H < -1e3] = np.nan
+    return H
+
+
+def _cell_xy(rows, cols, centre_xy, half_mm=MAP_HALF_MM, cell_mm=MAP_CELL_MM):
+    return (centre_xy[0] + half_mm - (np.asarray(rows) + 0.5) * cell_mm,
+            centre_xy[1] + half_mm - (np.asarray(cols) + 0.5) * cell_mm)
+
+
+def map_objects(H, centre_xy, rise_mm=18.0, min_area_mm2=300.0, limit=5):
+    """Things that rise above the floor around them in a height map: [{centre, top, length, width, long axis,
+    offset from centre_xy}], nearest first. The floor is the map's low tenth (the table, or a basket's floor)."""
+    import cv2
+    valid = ~np.isnan(H)
+    if valid.sum() < 100:
+        return []
+    floor = float(np.nanpercentile(H, 10))
+    mask = (valid & (np.nan_to_num(H, nan=-1e4) > floor + rise_mm)).astype(np.uint8)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
+    n, lab, st, _ = cv2.connectedComponentsWithStats(mask)
+    out = []
+    for k in range(1, n):
+        if st[k, cv2.CC_STAT_AREA] * MAP_CELL_MM ** 2 < min_area_mm2:
+            continue
+        rr, cc = np.nonzero(lab == k)
+        xs, ys = _cell_xy(rr, cc, centre_xy)
+        zs = H[rr, cc]
+        zs = zs[~np.isnan(zs)]
+        P = np.column_stack([xs, ys])
+        c = P.mean(axis=0)
+        if len(P) >= 3:
+            w, v = np.linalg.eigh(np.cov((P - c).T))
+            major = v[:, 1]
+        else:
+            major = np.array([1.0, 0.0])
+        minor = np.array([-major[1], major[0]])
+        length = float(np.ptp((P - c) @ major)) + MAP_CELL_MM
+        width = float(np.ptp((P - c) @ minor)) + MAP_CELL_MM
+        ang = math.degrees(math.atan2(major[1], major[0]))
+        ang = ang - 180.0 if ang > 90.0 else (ang + 180.0 if ang <= -90.0 else ang)
+        edge = bool(rr.min() == 0 or cc.min() == 0 or rr.max() == H.shape[0] - 1 or cc.max() == H.shape[1] - 1)
+        out.append({"centre_xy_mm": [round(float(c[0])), round(float(c[1]))],
+                    "top_z_mm": round(float(np.percentile(zs, 95))), "floor_around_z_mm": round(floor),
+                    "length_mm": round(length), "width_mm": round(width), "long_axis_deg": round(ang),
+                    "offset_from_tool_xy_mm": [round(float(c[0] - centre_xy[0])), round(float(c[1] - centre_xy[1]))],
+                    "cut_off_by_view": edge})
+    out.sort(key=lambda o: math.hypot(*o["offset_from_tool_xy_mm"]))
+    for i, o in enumerate(out[:limit], 1):
+        o["label"] = f"D{i}"
+    return out[:limit]
+
+
+def tool_point(flange_pose):
+    p, R = A.K.pose_to_rt(flange_pose)
+    return np.asarray(p, float) + np.asarray(R) @ np.array([0.0, 0.0, A.GRASP_OFFSET_MM])
+
+
+def summary(depth, flange_pose, mount, table_z=0.0):
+    """What the model is told: the surface under the tool point, and the things that stand up from the floor
+    around it (from the top-down height map the model also sees)."""
+    pts = base_points(depth, flange_pose, mount)
     if len(pts) < 200:
         return {"seen": False, "why": "almost no depth reading: the camera is closer than about 15 cm to what it "
                                       "faces, or it faces black fabric"}
-    p, R = A.K.pose_to_rt(flange_pose)
-    tool = np.asarray(p, float) + np.asarray(R) @ np.array([0.0, 0.0, A.GRASP_OFFSET_MM])
+    tool = tool_point(flange_pose)
     tip_z = min(float(t[2]) for t in A.tip_points(flange_pose))
     below = pts[np.hypot(pts[:, 0] - tool[0], pts[:, 1] - tool[1]) < 12.0]
     out = {"seen": True}
@@ -293,17 +377,63 @@ def summary(depth, flange_pose, mount, table_z=0.0):
         top = float(np.percentile(below[:, 2], 90))
         out["surface_under_tool_z_mm"] = round(top)
         out["fingertips_above_it_mm"] = round(tip_z - top)
-    objs = pts[(pts[:, 2] > table_z + 15.0) & (pts[:, 2] < tool[2] - 20.0)]
-    objs = objs[np.hypot(objs[:, 0] - tool[0], objs[:, 1] - tool[1]) < 200.0]
-    if len(objs) >= 20:
-        topz = float(np.percentile(objs[:, 2], 95))
-        cap = objs[objs[:, 2] > topz - 15.0]
-        c = cap[:, :2].mean(axis=0)
-        ext = np.ptp(objs[:, :2], axis=0)
-        out["nearest_object"] = {"top_centre_xy_mm": [round(float(c[0])), round(float(c[1]))], "top_z_mm": round(topz),
-                                 "extent_xy_mm": [round(float(ext[0])), round(float(ext[1]))],
-                                 "offset_from_tool_xy_mm": [round(float(c[0] - tool[0])), round(float(c[1] - tool[1]))]}
+    else:
+        out["surface_under_tool_z_mm"] = None               # not in the depth camera's view from here
+    out["objects_below"] = map_objects(height_map(pts, tool[:2]), tool[:2])
     return out
+
+
+def top_view(depth, flange_pose, mount, scale=4, objects=None):
+    """The picture the model gets as image 3: the depth camera's view turned into a map seen from straight
+    above, centred on the tool point, +x up and +y left, coloured by height above the table, with a 50 mm grid
+    in the arm's coordinates, the tool point (white ring), the open fingertips (white dots) and the line the
+    fingers close along, and the objects of `objects_below` labelled D1, D2, ..."""
+    import cv2
+    pts = base_points(depth, flange_pose, mount)
+    tool = tool_point(flange_pose)
+    H = height_map(pts, tool[:2])
+    n = H.shape[0]
+    v = np.clip(np.nan_to_num(H, nan=0.0) / 160.0, 0.0, 1.0)
+    img = cv2.applyColorMap((255 * v).astype(np.uint8), cv2.COLORMAP_TURBO)
+    img[np.isnan(H)] = (0, 0, 0)
+    img = cv2.resize(img, (n * scale, n * scale), interpolation=cv2.INTER_NEAREST)
+    k = scale / MAP_CELL_MM                                          # pixels per mm
+
+    def px(x, y):
+        return (int(round((tool[1] + MAP_HALF_MM - y) * k)), int(round((tool[0] + MAP_HALF_MM - x) * k)))
+
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    for x in range(int(math.ceil((tool[0] - MAP_HALF_MM) / 50.0)) * 50, int(tool[0] + MAP_HALF_MM) + 1, 50):
+        _, row = px(x, 0)
+        cv2.line(img, (0, row), (img.shape[1], row), (210, 210, 210), 1, cv2.LINE_AA)
+        cv2.putText(img, f"x={x}", (4, row - 4), font, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
+    for y in range(int(math.ceil((tool[1] - MAP_HALF_MM) / 50.0)) * 50, int(tool[1] + MAP_HALF_MM) + 1, 50):
+        col, _ = px(0, y)
+        cv2.line(img, (col, 0), (col, img.shape[0]), (210, 210, 210), 1, cv2.LINE_AA)
+        cv2.putText(img, f"y={y}", (col + 3, 14), font, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
+    for o in objects or []:
+        c = px(*o["centre_xy_mm"])
+        cv2.putText(img, f"{o['label']} top {o['top_z_mm']}", (c[0] - 30, c[1] + 5), font, 0.55, (0, 0, 0), 3, cv2.LINE_AA)
+        cv2.putText(img, f"{o['label']} top {o['top_z_mm']}", (c[0] - 30, c[1] + 5), font, 0.55, (255, 255, 255), 1, cv2.LINE_AA)
+    tips = [px(t[0], t[1]) for t in A.tip_points(flange_pose)[1:]]
+    cv2.line(img, tips[0], tips[1], (255, 255, 255), 1, cv2.LINE_AA)
+    for t in tips:
+        cv2.circle(img, t, 6, (255, 255, 255), -1, cv2.LINE_AA)
+        cv2.circle(img, t, 6, (0, 0, 0), 1, cv2.LINE_AA)
+    c = px(tool[0], tool[1])
+    cv2.circle(img, c, 10, (255, 255, 255), 2, cv2.LINE_AA)
+    cv2.circle(img, c, 12, (0, 0, 0), 1, cv2.LINE_AA)
+    # the legend: height above the table
+    h, w = img.shape[:2]
+    bar = cv2.applyColorMap(np.linspace(0, 255, w - 80).astype(np.uint8)[None, :].repeat(10, axis=0), cv2.COLORMAP_TURBO)
+    pad = np.zeros((54, w, 3), np.uint8)
+    pad[8:18, 40:w - 40] = bar
+    for mm in range(0, 161, 40):
+        xx = int(40 + mm / 160.0 * (w - 81))
+        cv2.putText(pad, f"{mm}", (xx - 10, 34), font, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
+    cv2.putText(pad, f"height above the table (mm); seen from above, +x up, +y left; tool z={tool[2]:.0f}", (8, 50),
+                font, 0.42, (220, 220, 220), 1, cv2.LINE_AA)
+    return np.vstack([img, pad])
 
 
 def fit_plane(pts, max_angle_deg=60.0, iters=300, tol_mm=6.0, rng=None):

@@ -231,8 +231,13 @@ Runs live under `~/gptarm-runs/<id>/`: `run.json` (the Run with steps), the step
 - `status.cameras.depth`: `{ok, age_s, error, size, calibrated}`; `GET /api/camera/depth.jpg` is the depth picture
   (near warm, far cool, black = no reading, with a millimetre scale and the nearest distance).
 - Direct-mode decisions record what the model was given under `state.model_saw`, including `wrist_depth`:
-  `{seen, surface_under_tool_z_mm, fingertips_above_it_mm, nearest_object: {top_centre_xy_mm, top_z_mm,
-  extent_xy_mm, offset_from_tool_xy_mm}}`.
+  `{seen, why?, surface_under_tool_z_mm (null when out of view), fingertips_above_it_mm, objects_below: [{label
+  ("D1"...), centre_xy_mm, top_z_mm, floor_around_z_mm, length_mm, width_mm, long_axis_deg, offset_from_tool_xy_mm,
+  cut_off_by_view}]}` (nearest first, from a top-down height map of the depth frame) and `nearest_wall: {wall,
+  closest_part, clearance_mm}`. The run's `NNN-depth.jpg` is that height map as the model saw it (image 3).
+- Walls: `~/.config/gptarm/workspace.json` `{"walls": [{name, normal, offset_mm, ...}]}`, measured with
+  `python -m gptarm.depth wall`; without it a backboard at x = 495 mm is assumed. Every move keeps the wrist camera,
+  wrist, gripper and fingertips 15 mm from each wall (refused before the move, stopped during it).
 - Free instructions: when the model says done, the arm parks and a `perception` step "Checker: success|fail|
   impossible. ..." records the checker's verdict; `run.judge` holds it in full (`before, after, changes, status,
   failure_kind, explanation, critique, confidence`). The verdict follows the checker (`outcome.checks.judge`);
