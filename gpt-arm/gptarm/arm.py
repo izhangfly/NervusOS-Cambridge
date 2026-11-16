@@ -64,11 +64,15 @@ WORKSPACE_PATH = HOME / "workspace.json"
 DEFAULT_WALLS = [{"name": "backboard", "normal": [1.0, 0.0, 0.0], "offset_mm": 495.0, "measured": False}]
 WALL_MARGIN_MM = 15.0       # the closest any part may come to a wall
 # The parts of the arm that can touch something beside it: (name, centre in the flange frame (mm), radius mm).
-# The wrist camera's centre is from its depth calibration (wrist_depth.json); the radius covers its housing.
+# The wrist camera: its depth sensor's optical centre is from the depth calibration (wrist_depth.json). The
+# module is a bar about 60 x 17 x 11 mm (Orbbec Dabai) lying along the flange's y axis (the line the fingers
+# close along) with the depth sensor near one end, so it is covered by spheres 45 mm either side of that centre;
+# its thin side faces outward, away from the tool axis.
 CAMERA_IN_FLANGE_MM = (-71.0, 29.0, 42.0)
-BODY = [("wrist camera", CAMERA_IN_FLANGE_MM, 50.0),
-        ("wrist", (0.0, 0.0, -45.0), 45.0),
-        ("gripper", (0.0, 50.0, 55.0), 20.0), ("gripper", (0.0, -50.0, 55.0), 20.0)]
+BODY = [("wrist camera", (CAMERA_IN_FLANGE_MM[0], CAMERA_IN_FLANGE_MM[1] + s, CAMERA_IN_FLANGE_MM[2]), 20.0)
+        for s in (-45.0, -22.5, 0.0, 22.5, 45.0)]
+BODY += [("wrist", (0.0, 0.0, -45.0), 45.0),
+         ("gripper", (0.0, 50.0, 55.0), 20.0), ("gripper", (0.0, -50.0, 55.0), 20.0)]
 
 
 def load_walls(path=None):

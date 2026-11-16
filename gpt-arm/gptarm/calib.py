@@ -247,9 +247,10 @@ def _lean_for(x, y, zs, steep=False):
     return None
 
 
-def run(arm, overhead, log=print, save=True, out_dir=None, stages=STAGES, min_points=12, resume=False):
+def run(arm, overhead, log=print, save=True, out_dir=None, stages=STAGES, min_points=12, resume=False, on_points=None):
     """Calibrate with the arm. Returns the Camera. Raises CalibrationError if it can't. resume: carry on from
-    the stages a previous run finished (their points and photographs are in out_dir)."""
+    the stages a previous run finished (their points and photographs are in out_dir). on_points: called with
+    the measured points before the fit (repose fits them its own way)."""
     points, opens, cam, size = [], [], None, None
     out_dir = Path(out_dir) if out_dir else None
     if out_dir:
@@ -338,6 +339,10 @@ def run(arm, overhead, log=print, save=True, out_dir=None, stages=STAGES, min_po
             cam = fit(points, size, search=len(points) >= 14)
             log(f"  fit on {len(cam.points)} points: {cam.residual_px} px rms, camera at "
                 f"{[round(float(v)) for v in cam.centre()]} mm, marker {cam.marker_mm:.0f} mm past the flange")
+    if on_points is not None:
+        arm.hold()
+        on_points([dict(q) for q in points])
+        return cam
     if cam is None or len(cam.points) < min_points:
         raise CalibrationError(f"only {len(points)} calibration points were seen; at least {min_points} are needed")
     arm.hold()
@@ -345,6 +350,52 @@ def run(arm, overhead, log=print, save=True, out_dir=None, stages=STAGES, min_po
         cam.save()
     if out_dir and opens:
         cv2.imwrite(str(out_dir / "calibration.jpg"), draw(cam, opens[-1]))
+    return cam
+
+
+def fit_pose(points, old):
+    """The camera moved, its lens did not: the old camera's K, distortion and marker, a new position and
+    direction from the given points (at least 4). Drops gross outliers once. -> Camera."""
+    pts = list(points)
+
+    def solve(pp):
+        W = np.array([marker_point(q["flange"], old.marker_mm) for q in pp], np.float64).reshape(-1, 1, 3)
+        I = np.array([q["px"] for q in pp], np.float64).reshape(-1, 1, 2)
+        ok, rv, tv = cv2.solvePnP(W, I, old.K, old.dist, old.rvec.copy(), old.tvec.copy(), useExtrinsicGuess=True,
+                                  flags=cv2.SOLVEPNP_ITERATIVE)
+        if not ok:
+            raise CalibrationError("the camera's new pose could not be solved")
+        err = np.linalg.norm(cv2.projectPoints(W, rv, tv, old.K, old.dist)[0].reshape(-1, 2) - I.reshape(-1, 2), axis=1)
+        return rv, tv, err
+
+    if len(pts) < 4:
+        raise CalibrationError(f"only {len(pts)} points were seen; at least 4 are needed")
+    rv, tv, err = solve(pts)
+    keep = err <= max(3.0 * np.median(err), 8.0)
+    if not keep.all() and keep.sum() >= 5:
+        pts = [q for q, k in zip(pts, keep) if k]
+        rv, tv, err = solve(pts)
+    for q, e in zip(pts, err):
+        q["err_px"] = round(float(e), 1)
+    return Camera(old.K, old.dist, rv, tv, old.size, old.marker_mm, pts, round(float(np.sqrt((err ** 2).mean())), 2))
+
+
+def repose(arm, overhead, log=print, save=True, out_dir=None):
+    """After the overhead camera was nudged: measure the high points only (the arm stays above everything)
+    and solve the camera's new position and direction with the lens as it was. Returns the Camera."""
+    old = Camera.load()
+    if old is None:
+        raise CalibrationError("there is no calibration to update: run the full calibration")
+    seen = []
+    run(arm, overhead, log=log, save=False, out_dir=out_dir, stages=[STAGES[0]], min_points=0,
+        on_points=seen.extend)
+    cam = fit_pose(seen, old)
+    moved = float(np.linalg.norm(cam.centre() - old.centre()))
+    turn = math.degrees(np.linalg.norm(cv2.Rodrigues(cam.R @ old.R.T)[0]))
+    log(f"new pose from {len(cam.points)} points: {cam.residual_px} px rms; the camera moved {moved:.0f} mm "
+        f"and turned {turn:.1f} deg; now at {[round(float(v)) for v in cam.centre()]} mm")
+    if save:
+        cam.save()
     return cam
 
 
@@ -373,12 +424,18 @@ def main():
     ap.add_argument("--out", default="/tmp/gptarm-calib")
     ap.add_argument("--only", default="", help="comma-separated stage names, for a partial run that is not saved")
     ap.add_argument("--resume", action="store_true", help="carry on from the stages already in --out")
+    ap.add_argument("--repose", action="store_true",
+                    help="the camera was nudged: keep the lens, measure the high points only, solve its new pose")
     a = ap.parse_args()
     arm = A.Arm(speed=a.speed, floor_z_mm=60.0)
     stages = [s for s in STAGES if not a.only or s[0] in a.only.split(",")]
+    say = lambda m: print(m, flush=True)    # noqa: E731
     try:
-        cam = run(arm, Overhead(), log=lambda m: print(m, flush=True), save=not a.only, out_dir=a.out, stages=stages, min_points=6 if a.only else 12,
-                  resume=a.resume)
+        if a.repose:
+            cam = repose(arm, Overhead(), log=say, out_dir=a.out)
+        else:
+            cam = run(arm, Overhead(), log=say, save=not a.only, out_dir=a.out, stages=stages, min_points=6 if a.only else 12,
+                      resume=a.resume)
     finally:
         arm.hold()
     print(json.dumps({k: v for k, v in cam.to_dict().items() if k != "points"}))
