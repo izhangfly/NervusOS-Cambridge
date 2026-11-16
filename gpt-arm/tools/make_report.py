@@ -210,6 +210,16 @@ def load_json(p: Path):
         return json.load(f)
 
 
+TASK = "Put the hair gel bottle into the basket. Then take it out again and stand it upright on the table where it started."
+
+
+def is_cycle(run: dict) -> bool:
+    """A run of the bottle cycle (the benchmark's task), not a free instruction typed in the portal."""
+    if "checked" in run:
+        return bool(run["checked"])
+    return " ".join((run.get("instruction") or "").split()).lower() == " ".join(TASK.split()).lower()
+
+
 def load_runs(runs_dir: Path, bench_path):
     """(bench or None, [run dicts], [missing ids]). Each run gets `_dir`."""
     bench, missing, runs = None, [], []
@@ -601,6 +611,8 @@ def build(runs_dir: Path, bench_arg, out_dir, exclude: list, figures: bool = Tru
     for r in runs:
         if r.get("id") in exclude:
             skipped.append((r, "excluded on the command line"))
+        elif bench is None and not is_cycle(r):          # with a bench, its instruction is the task
+            skipped.append((r, "a free instruction, not the bottle cycle"))
         elif r.get("state") == "running":
             skipped.append((r, "still running"))
         else:
