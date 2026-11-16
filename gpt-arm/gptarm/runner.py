@@ -499,7 +499,16 @@ class Bench:
                 # a clean start: the bottle standing on the table
                 while True:
                     world = make_world()
-                    ready = tidy(world, stop_event, log) if need_check else True
+                    if not need_check:
+                        ready = True
+                    elif world.cfg.auto_tidy:
+                        ready = tidy(world, stop_event, log)
+                    else:                                    # just look: is the bottle standing on the table?
+                        tool, _ = world.tool()
+                        if tool[2] < world.cfg.travel_z - 15.0:
+                            world._go(tool[0], tool[1], world.cfg.travel_z, min_tip_z=tool[2] - 30.0)
+                        world._look()
+                        ready = bool(world.bottle and world.bottle["where"] == "table" and world.bottle.get("upright") is not False)
                     if ready and need_check and world.cfg.feel:
                         ready = world.feel_upright() is True
                     if ready or stop_event.is_set():

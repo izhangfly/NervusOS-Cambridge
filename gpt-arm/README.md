@@ -112,9 +112,11 @@ HTTP. Check the route: `python -m gptarm.llm gpt-5.6-sol`.
 2. Open **GPT Arm** on the desktop. Choose a model and a mode, type an instruction (or keep the default
    task), press Run. The log shows every step: the pictures the model saw, its note, the motion, and what
    happened. STOP holds the arm where it is; E-STOP is the driver's emergency stop.
-3. **Benchmark**: choose models, mode and runs per model. Runs alternate between models. Before each run
-   the arm checks that the bottle stands on the table. If it doesn't, the arm takes it out of the basket,
-   or stands it up, or the benchmark pauses and asks you to set it up.
+3. **Benchmark**: choose models, mode, runs per model, and whether runs may learn from each other (off by
+   default, so the runs are comparable). Runs alternate between models. Each starts only when the overhead camera
+   sees the bottle standing on the table; after a failed run the benchmark pauses and asks you to stand it up
+   again, then Resume. (`auto_tidy` in `~/.config/gptarm/config.json` makes it try a scripted, model-free reset
+   first.) A successful run ends with the bottle back where it started, so the next one needs nothing.
 4. **Report**: `python tools/make_report.py` writes `REPORT.md` and figures from `~/gptarm-runs`. It gives
    success rates with Wilson intervals, time and tokens per cycle, recoveries, failure kinds, and skills
    against direct.

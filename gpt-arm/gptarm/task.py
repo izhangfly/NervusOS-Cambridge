@@ -108,6 +108,7 @@ class Config:
     joint_speed_deg_s: float = 25.0 # direct mode's joint-space moves
     floor_direct: float = 8.0       # direct mode: the lowest a fingertip may go (the table is 0)
     judge: bool = True              # free instructions: a model compares the table before and after
+    auto_tidy: bool = False         # benchmarks: try the scripted reset (skills, no model) before asking for a hand
 
     @classmethod
     def load(cls):
