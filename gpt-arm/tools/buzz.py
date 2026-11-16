@@ -7,6 +7,11 @@ Record (read-only; candump only listens, nothing is sent to the arm):
     python tools/buzz.py analyze /tmp/can.log [--run ~/gptarm-runs/<id>]
     XDG_RUNTIME_DIR=/run/user/1000 pw-record --rate 16000 --channels 1 /tmp/arm.wav   # the Dell's microphone
     python tools/buzz.py audio /tmp/arm.wav --can /tmp/can.log [--run ~/gptarm-runs/<id>]
+    python tools/buzz.py holds /tmp/arm.wav --can /tmp/can.log --run ~/gptarm-runs/<id>    # loudest holds first
+
+`holds` is the one that found it (2026-11-16): the arm stands still after each move while the model thinks,
+so each hold is a clean sample of one pose. The loud ones had one wrist motor (J5 or J6) with a motor speed
+std of 0.2-0.4 rad/s while it didn't move: hunting at its target (see hardware/piper/README.md, "Hunting").
 
 What it looks at: each motor's own high-speed feedback (CAN 0x251-0x256, about 100 Hz each on this arm:
 speed in 0.001 rad/s, current in 0.001 A), the joint angles (0x2A5-0x2A7) and the joint commands the
