@@ -12,12 +12,18 @@ mkdir -p ~/.config/systemd/user ~/.local/bin
 sed "s#^ExecStart=.*#ExecStart=$PY -m gptarm.server --port 8800#" desktop/gptarm.service > ~/.config/systemd/user/gptarm.service
 install -Dm755 desktop/gptarm_portal.py ~/.local/bin/gptarm-portal
 install -Dm644 desktop/gptarm.svg ~/.local/share/icons/hicolor/scalable/apps/gptarm.svg
-install -Dm644 desktop/gptarm.desktop ~/.local/share/applications/gptarm.desktop
+# The launcher by its full path: GNOME Shell's PATH does not include ~/.local/bin, and a bare name there
+# makes the icon a "broken desktop file".
+entry="$(mktemp)"
+sed -e "s#^Exec=.*#Exec=$HOME/.local/bin/gptarm-portal#" -e "s#^TryExec=.*##" desktop/gptarm.desktop > "$entry"
+install -Dm644 "$entry" ~/.local/share/applications/gptarm.desktop
 desk="$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop")"
 if [[ -d "$desk" ]]; then
-    install -Dm755 desktop/gptarm.desktop "$desk/gptarm.desktop"
+    install -Dm755 "$entry" "$desk/gptarm.desktop"
     gio set "$desk/gptarm.desktop" metadata::trusted true 2>/dev/null || true
 fi
+rm -f "$entry"
+update-desktop-database ~/.local/share/applications 2>/dev/null || true
 systemctl --user daemon-reload
 systemctl --user enable gptarm.service >/dev/null
 echo "installed. Start: systemctl --user start gptarm.service, or open GPT Arm from the desktop."
