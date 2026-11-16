@@ -93,8 +93,15 @@ the arm's left, +z up. The table top is z = 0.
 - Wrist: looks down along the gripper, between the two fingers (the dark shapes at the bottom corners).
   It is not mirrored: UP in the wrist picture is the tool's yaw direction (away from the base when yaw is
   null), LEFT is 90 degrees counter-clockwise from that seen from above. A compass drawn in the corner
-  shows where the arm's +x and +y point, and a cyan mark shows the point between the fingertips. Close to
-  an object, 1 mm is roughly 3 to 4 pixels.
+  shows where the arm's +x and +y point, and a cyan mark shows ROUGHLY where the point between the fingertips
+  is (it is fixed in the picture and drifts with height: trust the depth picture's ring instead). Close to an
+  object, 1 mm is roughly 3 to 4 pixels.
+- Wrist depth picture (image 3, when there is one): the same view as distance, warm = near, cool = far,
+  black = no reading, flat grey = below the table top (the floor past the table's edge), with a millimetre
+  scale. Drawn on it from the arm's exact geometry: a white ring where
+  the point between the fingertips is, two white dots for the open fingertips, and a white cross on the
+  surface straight below the tool point with that surface's height. If the ring sits on the object you want
+  to grasp, the fingers will close around it. This is measured; prefer it to the colour picture's cyan mark.
 
 - Wrist depth (`wrist_depth` in the state, when the depth camera is calibrated): measured, not guessed.
   `surface_under_tool_z_mm` is the height of whatever is straight under the tool point and
@@ -231,7 +238,8 @@ def prompt(instruction, context, st, history, plan=None):
         expect = item[3] if len(item) > 3 else None
         lines.append(f"- {desc}: {'done' if ok else 'NOT DONE'}. {detail}".rstrip()
                      + (f" (you expected: {expect})" if expect else ""))
-    lines += ["", "Image 1 is the overhead camera, image 2 the wrist camera.",
+    lines += ["", "Image 1 is the overhead camera, image 2 the wrist camera"
+              + (", image 3 the wrist depth camera." if st.get("wrist_depth") and st["wrist_depth"].get("seen") else "."),
               "Choose the next motion. In `note`, say in one or two sentences what you see and why."]
     return "\n".join(lines)
 

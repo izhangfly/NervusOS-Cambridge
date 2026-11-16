@@ -224,6 +224,11 @@ def _cycle(world, llm, instruction, context, run, stop_event, mode):
             n = len(d["steps"])
             (oname, odata), (wname, wdata) = run.image(f"{n:03d}-overhead.jpg", ann, 1024), run.image(f"{n:03d}-wrist.jpg", wrist, 768)
             images = {k: v for k, v in (("overhead", odata), ("wrist", wdata)) if v}
+            dname = None
+            if direct:
+                dname, ddata = run.image(f"{n:03d}-depth.jpg", world.depth_view(), 960)
+                if ddata:
+                    images["depth"] = ddata
             run.pending("llm", note=f"waiting for {d['model']}")
             try:
                 if direct:
@@ -264,7 +269,7 @@ def _cycle(world, llm, instruction, context, run, stop_event, mode):
                 note = f"{note} (expects: {ans['expect']})"
             run.step("decision", skill=skill, target=None if target == "none" else target, note=note, ok=ok, detail=detail,
                      llm_s=round(float(use.get("seconds", 0.0)), 2), tokens=int(use.get("tokens", 0)), motion_s=round(dt, 2),
-                     state=rec, images={"overhead": oname, "wrist": wname})
+                     state=rec, images={"overhead": oname, "wrist": wname, **({"depth": dname} if dname else {})})
             st = world.arm.state()
             if not st["enabled"] or st.get("guard"):
                 run.step("error", note=f"The arm stopped itself ({st.get('guard') or 'not enabled'}).")

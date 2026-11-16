@@ -223,6 +223,59 @@ def colourise(depth, near=100.0, far=600.0):
     return img
 
 
+def project(points_base, flange_pose, mount, shape=(H, W)):
+    """Base-frame points (mm) -> pixels in the depth image (None for points behind the camera)."""
+    p, R = A.K.pose_to_rt(flange_pose)
+    fx, fy, cx, cy = intrinsics(shape[1], shape[0])
+    fx, fy = fx * mount.focal_scale, fy * mount.focal_scale
+    out = []
+    for P in np.atleast_2d(np.asarray(points_base, float)):
+        q = mount.R.T @ (np.asarray(R).T @ (P - np.asarray(p, float)) - mount.t)
+        out.append(None if q[2] <= 1.0 else (float(fx * q[0] / q[2] + cx), float(fy * q[1] / q[2] + cy)))
+    return out
+
+
+def model_view(depth, flange_pose, mount, scale=3):
+    """The depth picture the model sees: colours for distance, the exact spot between the fingertips (white
+    ring), the two open fingertips (white dots), and the point on the surface straight below the tool point
+    (white cross), with its height."""
+    import cv2
+    img = colourise(depth)
+    # everything below the table top (the floor past the table's edge) in flat grey: only the table and what is
+    # on it keep their colours
+    fx, fy, cx, cy = intrinsics(depth.shape[1], depth.shape[0])
+    fx, fy = fx * mount.focal_scale, fy * mount.focal_scale
+    vs, us = np.mgrid[0:depth.shape[0], 0:depth.shape[1]]
+    z = depth.astype(float)
+    cam = np.stack([(us - cx) * z / fx, (vs - cy) * z / fy, z], axis=-1).reshape(-1, 3)
+    base_z = mount.to_base(cam, flange_pose)[:, 2].reshape(depth.shape)
+    floor = (z > 0) & (base_z < -25.0)
+    img[floor] = (70, 70, 70)
+    if floor.any():
+        cv2.putText(img, "grey: below the table", (10, 44), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 200, 200), 1, cv2.LINE_AA)
+    img = cv2.resize(img, (img.shape[1] * scale, img.shape[0] * scale), interpolation=cv2.INTER_NEAREST)
+    p, R = A.K.pose_to_rt(flange_pose)
+    tool = np.asarray(p, float) + np.asarray(R) @ np.array([0.0, 0.0, A.GRASP_OFFSET_MM])
+    tips = A.tip_points(flange_pose)
+    s = summary(depth, flange_pose, mount)
+    below = np.array([tool[0], tool[1], float(s.get("surface_under_tool_z_mm", 0.0))])
+    for P, kind in [(tool, "tool")] + [(t, "tip") for t in tips[1:]] + [(below, "below")]:
+        uv = project(P, flange_pose, mount, depth.shape)[0]
+        if uv is None:
+            continue
+        u, v = int(uv[0] * scale), int(uv[1] * scale)
+        if kind == "tool":
+            cv2.circle(img, (u, v), 14, (255, 255, 255), 2, cv2.LINE_AA)
+            cv2.putText(img, "between fingertips", (u + 18, v - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2, cv2.LINE_AA)
+        elif kind == "tip":
+            cv2.circle(img, (u, v), 6, (255, 255, 255), -1, cv2.LINE_AA)
+        else:
+            cv2.drawMarker(img, (u, v), (255, 255, 255), cv2.MARKER_CROSS, 22, 2, cv2.LINE_AA)
+            cv2.putText(img, f"surface z={below[2]:.0f} mm", (u + 14, v + 22), cv2.FONT_HERSHEY_SIMPLEX, 0.55,
+                        (255, 255, 255), 2, cv2.LINE_AA)
+    return img
+
+
 def summary(depth, flange_pose, mount, table_z=0.0):
     """What the model is told: the surface under the fingertips and the nearest object below the gripper."""
     pts = cloud(depth)

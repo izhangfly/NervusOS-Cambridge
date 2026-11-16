@@ -532,6 +532,16 @@ class World:
             wrist = wrist_overlay(wrist, tool_from_flange(self.arm.state()["flange"])[2])
         return ann, wrist
 
+    def depth_view(self):
+        """The wrist depth picture with the fingertips projected onto it, or None (no depth camera or mount)."""
+        if getattr(self, "depth", None) is None or getattr(self, "mount", None) is None:
+            return None
+        try:
+            from . import depth as Dp
+            return Dp.model_view(self.depth.settled(3), self.arm.state()["flange"], self.mount)
+        except Exception:                                   # noqa: BLE001
+            return None
+
     def _scene_for_drawing(self):
         sc = P.Scene()
         if self.scene and self.scene.basket:

@@ -373,7 +373,13 @@ class Service:
         if self.sim or self.depth is None:
             raise CameraError("no depth camera")
         try:
-            return to_jpeg(Dp.colourise(self.depth.frame()), 85)
+            d = self.depth.frame()
+            if self.mount is not None:                   # the same marked-up view the model gets
+                try:
+                    return to_jpeg(Dp.model_view(d, self.arm.raw_state()["pose_current"], self.mount, scale=2), 85)
+                except A.ArmError:
+                    pass
+            return to_jpeg(Dp.colourise(d), 85)
         except Dp.DepthError as e:
             raise CameraError(str(e)) from None
 
