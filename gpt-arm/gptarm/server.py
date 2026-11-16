@@ -44,6 +44,16 @@ class Busy(Exception):
     pass
 
 
+def Dp_W():
+    from . import depth as Dp
+    return Dp.W
+
+
+def Dp_H():
+    from . import depth as Dp
+    return Dp.H
+
+
 class Service:
     def __init__(self, use_sim=False):
         self.sim = use_sim
@@ -298,7 +308,7 @@ class Service:
         if not self.sim:
             dt = getattr(self.depth, "t", 0.0)
             cams["depth"] = {"ok": self.depth.error is None and time.time() - dt < 3, "age_s": round(time.time() - dt, 2),
-                                   "error": self.depth.error, "size": [640, 480], "calibrated": self.mount is not None}
+                                   "error": self.depth.error, "size": [Dp_W(), Dp_H()], "calibrated": self.mount is not None}
         cal = {"ok": self.cam is not None, "points": len(self.cam.points) if self.cam else 0,
                "residual_px": self.cam.residual_px if self.cam else None, "when": self.cam.when if self.cam else None}
         scene = None
