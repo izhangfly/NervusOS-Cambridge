@@ -60,6 +60,14 @@ you why. Nothing else plans for you.
 Coordinates are millimetres from the arm's base: +x forward (away from the base, across the table), +y to
 the arm's left, +z up. The table top is z = 0.
 
+A backboard (a white sheet against the wall) stands just past the far edge of the table, at about x = 500.
+No part of the arm may touch it, and the wrist camera sticks out about 4 cm past the fingers on the far side
+of the gripper (when the tool leans outward) and is the first thing to hit it. Code refuses a motion that would
+bring any part within 15 mm of the backboard, and stops one that gets that close on the way;
+`nearest_wall` in the state says how far the closest part is now. Things pushed against the backboard
+cannot be reached from above with the tool leaning outward: lean less, turn the yaw, or pull them
+towards you first.
+
 ## Motions (one per answer; the fields a motion does not use are null)
 
 - move_tool: put the TOOL POINT (the point midway between the two finger pads) at x, y, z. The tool points
@@ -107,7 +115,9 @@ the arm's left, +z up. The table top is z = 0.
   `surface_under_tool_z_mm` is the height of whatever is straight under the tool point and
   `fingertips_above_it_mm` how far the fingertips are above it; `nearest_object` is the highest thing below
   the gripper within 20 cm: its top's centre (x, y), its top height, its extent, and its offset from the tool
-  point. Trust it over the detector's guesses and over estimates from the pictures.
+  point. Trust it over the detector's guesses and over estimates from the pictures. The depth camera reads
+  nothing closer than about 15 cm and little from black fabric: `seen: false` means no reading, not an
+  empty table.
 
 Fill `expect` with what you expect to see after the motion; the next step shows it next to what happened.
 
@@ -172,7 +182,13 @@ def state(world):
             wd = Dp.summary(w.depth.settled(3), st["flange"], w.mount)
         except Exception as e:                               # noqa: BLE001 (no depth this step)
             wd = {"seen": False, "error": str(e)[:120]}
+    walls = getattr(w.arm, "walls", None)
+    near = None
+    if walls:
+        gap, part, wall = A.wall_clearance(st["flange"], walls)
+        near = {"wall": wall, "closest_part": part, "clearance_mm": round(gap)}
     return {
+        "nearest_wall": near,
         "joints_deg": [round(v, 1) for v in st["joints"]],
         "tool_point_mm": [round(v) for v in tool], "tool_lean_deg": round(lean), "tool_yaw_deg": round(yaw),
         "gripper_mm": None if st["gripper_mm"] is None else round(float(st["gripper_mm"]), 1),
@@ -226,7 +242,10 @@ def wrist_overlay(img, yaw_deg):
     return out
 
 
-def prompt(instruction, context, st, history, plan=None):
+def prompt(instruction, context, st, history, plan=None, depth_image=None):
+    """depth_image: whether a depth picture goes with the prompt as image 3 (None: when depth saw something)."""
+    if depth_image is None:
+        depth_image = bool(st.get("wrist_depth") and st["wrist_depth"].get("seen"))
     lines = [context.strip(), "", "# The instruction", instruction.strip()]
     if plan:
         lines += ["", "# Your plan (written at the start; follow it, or depart from it if the pictures say so)", plan_text(plan)]
@@ -239,7 +258,7 @@ def prompt(instruction, context, st, history, plan=None):
         lines.append(f"- {desc}: {'done' if ok else 'NOT DONE'}. {detail}".rstrip()
                      + (f" (you expected: {expect})" if expect else ""))
     lines += ["", "Image 1 is the overhead camera, image 2 the wrist camera"
-              + (", image 3 the wrist depth camera." if st.get("wrist_depth") and st["wrist_depth"].get("seen") else "."),
+              + (", image 3 the wrist depth camera." if depth_image else "."),
               "Choose the next motion. In `note`, say in one or two sentences what you see and why."]
     return "\n".join(lines)
 

@@ -232,7 +232,8 @@ def _cycle(world, llm, instruction, context, run, stop_event, mode):
             run.pending("llm", note=f"waiting for {d['model']}")
             try:
                 if direct:
-                    ans, use = llm.ask(D.prompt(instruction, context, state, history, plan), images, D.SCHEMA)
+                    ans, use = llm.ask(D.prompt(instruction, context, state, history, plan, depth_image="depth" in images),
+                                       images, D.SCHEMA)
                 else:
                     ans, use = llm.ask(T.prompt(instruction, context, state, history), images, T.SCHEMA)
             except L.LLMError as e:

@@ -282,7 +282,8 @@ def summary(depth, flange_pose, mount, table_z=0.0):
     pts[:, :2] /= getattr(mount, "focal_scale", 1.0)
     pts = mount.to_base(pts, flange_pose)
     if len(pts) < 200:
-        return {"seen": False}
+        return {"seen": False, "why": "almost no depth reading: the camera is closer than about 15 cm to what it "
+                                      "faces, or it faces black fabric"}
     p, R = A.K.pose_to_rt(flange_pose)
     tool = np.asarray(p, float) + np.asarray(R) @ np.array([0.0, 0.0, A.GRASP_OFFSET_MM])
     tip_z = min(float(t[2]) for t in A.tip_points(flange_pose))
@@ -505,6 +506,86 @@ def calibrate(arm, depth, x, y, top_z, log=print, save=True):
     return m
 
 
+def wall_poses():
+    """Where the arm looks at the backboard from: well back from it, the tool leaning outward so the wrist
+    camera faces the far edge of the table. (x, y, z, lean) with yaw 0."""
+    return [(300.0, y, 330.0, 55.0) for y in (-150.0, 0.0, 150.0)]
+
+
+def fit_wall(pts, iters=500, tol_mm=10.0, max_tilt_deg=20.0, rng=None):
+    """The dominant near-vertical plane in base-frame points: (unit normal, horizontal and pointing +x,
+    offset mm, inlier mask), or None."""
+    pts = np.asarray(pts, float)
+    if len(pts) < 100:
+        return None
+    rng = rng or np.random.default_rng(0)
+    best = None
+    sin_max = math.sin(math.radians(max_tilt_deg))
+    for _ in range(iters):
+        a, b, c = pts[rng.choice(len(pts), 3, replace=False)]
+        n = np.cross(b - a, c - a)
+        if np.linalg.norm(n) < 1e-6:
+            continue
+        n /= np.linalg.norm(n)
+        if abs(n[2]) > sin_max:                            # a wall is vertical
+            continue
+        inl = np.abs((pts - a) @ n) < tol_mm
+        if best is None or inl.sum() > best.sum():
+            best = inl
+    if best is None or best.sum() < 0.3 * len(pts):
+        return None
+    q = pts[best]
+    c = q.mean(axis=0)
+    n = np.linalg.svd(q - c)[2][-1]
+    n = np.array([n[0], n[1], 0.0])                        # vertical by definition
+    n /= np.linalg.norm(n)
+    if n[0] < 0:
+        n = -n                                             # from the table towards the wall
+    return n, float(n @ c), best
+
+
+def measure_wall(arm, depth, log=print, save=True, x_min=430.0, z_min=70.0, y_max=350.0):
+    """Look at the backboard from a few poses, fit its plane, and save it to workspace.json as the arm's wall.
+    The saved plane is pushed in to the nearest 2% of the backboard's points, so a curve at its foot counts."""
+    mount = Mount.load()
+    if mount is None:
+        raise SystemExit("the depth camera's mount is not calibrated: run `python -m gptarm.depth table` first")
+    found = []
+    for x, y, z, lean in wall_poses():
+        arm.move_tool(x, y, z, lean=lean, yaw_deg=0.0)
+        time.sleep(0.8)
+        d = depth.settled(7)
+        pose = arm.raw_state()["pose_current"]
+        pts = cloud(d)
+        pts[:, :2] /= mount.focal_scale
+        pts = mount.to_base(pts, pose)
+        keep = (pts[:, 0] > x_min) & (pts[:, 2] > z_min) & (np.abs(pts[:, 1]) < y_max)
+        log(f"view from ({x:.0f}, {y:.0f}, {z:.0f}): {len(pts)} points, {int(keep.sum())} past x={x_min:.0f} and above z={z_min:.0f}")
+        found.append(pts[keep])
+    P = np.vstack(found) if found else np.zeros((0, 3))
+    fit = fit_wall(P)
+    if fit is None:
+        raise SystemExit(f"no wall found in {len(P)} points: is the backboard in view?")
+    n, d_fit, inl = fit
+    s = P @ n
+    near = np.abs(s - d_fit) < 80.0
+    offset = float(np.percentile(s[near], 2))
+    rms = float(np.sqrt(np.mean((s[inl] - d_fit) ** 2)))
+    wall = {"name": "backboard", "normal": [round(float(v), 4) for v in n], "offset_mm": round(offset, 1),
+            "fit_offset_mm": round(d_fit, 1), "plane_rms_mm": round(rms, 1), "points": int(len(P)),
+            "z_range_mm": [round(float(P[:, 2].min())), round(float(P[:, 2].max()))], "measured": time.time()}
+    for y in (-300.0, 0.0, 300.0):
+        log(f"  at y={y:+.0f} the backboard is at x={(offset - n[1] * y) / n[0]:.0f} mm")
+    log(f"backboard: normal ({n[0]:.3f}, {n[1]:.3f}), plane fit {d_fit:.0f} mm (rms {rms:.1f}), "
+        f"nearest part {offset:.0f} mm, from {len(P)} points")
+    if save:
+        A.WORKSPACE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        A.WORKSPACE_PATH.write_text(json.dumps({"walls": [wall]}, indent=1))
+        np.save(A.WORKSPACE_PATH.with_name("wall_points.npy"), P.astype(np.float32))
+        log(f"saved to {A.WORKSPACE_PATH}")
+    return wall
+
+
 def main():
     import argparse
     ap = argparse.ArgumentParser(description="Wrist depth camera: calibrate its mount, or print what it sees")
@@ -515,6 +596,7 @@ def main():
     c.add_argument("y", type=float)
     c.add_argument("top_z", type=float)
     sub.add_parser("show", help="print the summary at the current pose (the arm does not move)")
+    sub.add_parser("wall", help="measure the backboard behind the table and save it as the arm's wall; the arm moves")
     a = ap.parse_args()
     arm, dep = A.Arm(speed=20, floor_z_mm=60.0), WristDepth()
     try:
@@ -522,6 +604,8 @@ def main():
             calibrate(arm, dep, a.x, a.y, a.top_z)
         elif a.cmd == "table":
             calibrate_on_table(arm, dep)
+        elif a.cmd == "wall":
+            measure_wall(arm, dep)
         else:
             m = Mount.load()
             if m is None:

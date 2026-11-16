@@ -55,6 +55,7 @@ class SimArm:
         self.speed = speed
         self.enabled = True
         self.floor_z_mm = 20.0
+        self.walls = [dict(w) for w in A.DEFAULT_WALLS]   # the real table's backboard, at its default place
 
     # the same surface as arm.Arm
     def _check(self):
@@ -92,6 +93,7 @@ class SimArm:
         low = min(float(t[2]) for t in A.tip_points(A.flange_pose(x, y, z, use, yaw_deg)))
         if low < self.floor_z_mm:
             raise A.ArmError(f"z={z:.0f} mm would put the fingertips at {low:.0f} mm, below the floor ({self.floor_z_mm:.0f} mm)")
+        A.check_walls(A.flange_pose(x, y, z, use, yaw_deg), A.flange_pose(*self.tool, self.lean), self.walls)
         if self.t.bottle["held"]:
             base = z - self.t.grip_height
             if math.dist((x, y), self.t.basket["xy"]) < self.t.basket["radius"] + 25 and base < self.t.floor_at((x, y)) - 2:
@@ -114,6 +116,7 @@ class SimArm:
         pose = A.KIN.fk_pose(q)
         if min(float(t[2]) for t in A.tip_points(pose)) < self.floor_z_mm:
             raise A.ArmError("the fingertips would go below the floor")
+        A.check_walls(pose, A.flange_pose(*self.tool, self.lean), self.walls)
         tool, lean, _ = A.tool_from_flange(pose)
         self.tool, self.lean = tool, lean
         if self.t.bottle["held"]:

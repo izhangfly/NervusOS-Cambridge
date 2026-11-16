@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import sys
 import threading
 import time
@@ -53,6 +54,62 @@ CEILING_FLANGE_MM = 560.0   # the overhead camera hangs about a metre above the 
 # J5 +-75, J6 +-170): what a model may ask for in joint space.
 JOINT_LIMITS_DEG = [(-150.0, 150.0), (0.0, 180.0), (-170.0, 0.0), (-100.0, 100.0), (-70.0, 70.0), (-100.0, 100.0)]
 STREAM_DT = 0.04
+
+# Walls: vertical surfaces beside the table that no part of the arm may touch. The backboard behind the far edge
+# of the table was found the hard way (2026-11-16: the wrist camera slid along it with its centre at x = 491 to
+# 503 mm); `python -m gptarm.depth wall` measures it with the depth camera and saves it to workspace.json.
+# Each wall is a plane: normal . p = offset_mm, the normal pointing from the table towards the wall.
+HOME = Path(os.environ.get("GPTARM_HOME", "~/.config/gptarm")).expanduser()
+WORKSPACE_PATH = HOME / "workspace.json"
+DEFAULT_WALLS = [{"name": "backboard", "normal": [1.0, 0.0, 0.0], "offset_mm": 495.0, "measured": False}]
+WALL_MARGIN_MM = 15.0       # the closest any part may come to a wall
+# The parts of the arm that can touch something beside it: (name, centre in the flange frame (mm), radius mm).
+# The wrist camera's centre is from its depth calibration (wrist_depth.json); the radius covers its housing.
+CAMERA_IN_FLANGE_MM = (-71.0, 29.0, 42.0)
+BODY = [("wrist camera", CAMERA_IN_FLANGE_MM, 50.0),
+        ("wrist", (0.0, 0.0, -45.0), 45.0),
+        ("gripper", (0.0, 50.0, 55.0), 20.0), ("gripper", (0.0, -50.0, 55.0), 20.0)]
+
+
+def load_walls(path=None):
+    try:
+        walls = json.loads(Path(path or WORKSPACE_PATH).read_text())["walls"]
+        return [w for w in walls if len(w["normal"]) == 3 and "offset_mm" in w]
+    except (OSError, ValueError, KeyError, TypeError):
+        return [dict(w) for w in DEFAULT_WALLS]
+
+
+def body_spheres(pose):
+    """[(part, centre xyz, radius)] for a driver flange pose: the wrist, the camera, the gripper and fingertips."""
+    p, R = K.pose_to_rt(pose)
+    p, R = np.asarray(p, float), np.asarray(R, float)
+    out = [(name, p + R @ np.asarray(c, float), r) for name, c, r in BODY]
+    out += [("fingertip", t, 8.0) for t in tip_points(pose)]
+    return out
+
+
+def wall_clearance(pose, walls):
+    """(clearance mm, part, wall name) of the part closest to any wall, or (inf, None, None) without walls."""
+    best = (math.inf, None, None)
+    for w in walls:
+        n = np.asarray(w["normal"], float)
+        n = n / np.linalg.norm(n)
+        for part, c, r in body_spheres(pose):
+            gap = float(w["offset_mm"] - n @ c - r)
+            if gap < best[0]:
+                best = (gap, part, w.get("name", "wall"))
+    return best
+
+
+def check_walls(goal_pose, now_pose, walls, margin=WALL_MARGIN_MM):
+    """Raise ArmError if goal_pose brings a part closer than `margin` to a wall (moving away is always allowed)."""
+    gap, part, wall = wall_clearance(goal_pose, walls)
+    if gap >= margin:
+        return
+    if now_pose is not None and gap >= wall_clearance(now_pose, walls)[0] - 1.0:
+        return                                             # already close: getting no closer is fine
+    raise ArmError(f"that would bring the {part} within {max(gap, 0.0):.0f} mm of the {wall} "
+                   f"(every part must stay {margin:.0f} mm from it)")
 
 
 class ArmError(Exception):
@@ -130,6 +187,7 @@ class Arm:
         self.floor_z_mm = float(floor_z_mm)        # lowest allowed fingertip height
         self.stop_event = stop_event or threading.Event()
         self.grip_cmd = None
+        self.walls = load_walls()
 
     # ---- http ------------------------------------------------------------------------------------------------
     def _req(self, path, body=None, timeout=3.0):
@@ -209,6 +267,9 @@ class Arm:
             raise ArmError(f"z={z:.0f} mm would put the fingertips at {low:.0f} mm, below the floor ({self.floor_z_mm:.0f} mm)")
         if goal[2] > CEILING_FLANGE_MM:
             raise ArmError(f"({x:.0f}, {y:.0f}, {z:.0f}) mm puts the wrist at {goal[2]:.0f} mm, above the ceiling ({CEILING_FLANGE_MM:.0f} mm)")
+        start = self.raw_state()["pose_current"]
+        check_walls(goal, start, self.walls)
+        gap_start = wall_clearance(start, self.walls)[0]
         self.enable()
         body = {"pose": goal, "speed": int(speed or self.speed)}
         t_end = time.time() + timeout
@@ -229,6 +290,10 @@ class Arm:
             if tip < min(self.floor_z_mm, low) - 8.0 or (min_tip_z is not None and tip < min_tip_z - 5.0):
                 self.hold()
                 raise ArmError(f"the fingertips dipped to {tip:.0f} mm on the way: stopped")
+            gap, part, wall = wall_clearance(p, self.walls)
+            if gap < min(WALL_MARGIN_MM / 2.0, gap_start - 1.0):
+                self.hold()                                 # the driver's path swung towards a wall
+                raise ArmError(f"the {part} came within {max(gap, 0.0):.0f} mm of the {wall} on the way: stopped")
             if d < tol_mm and not moving:
                 return self.state()
             still = still + 1 if (last is not None and math.dist(p[:3], last) < 0.3 and not moving) else 0
@@ -260,6 +325,7 @@ class Arm:
         goal = np.array(q)
         n = max(1, int(math.ceil(float(np.max(np.abs(goal - now))) / (max_deg_s * STREAM_DT))))
         path = [now + (goal - now) * (k / n) for k in range(1, n + 1)]
+        prev = KIN.fk_pose(now)
         for k, qk in enumerate(path):
             pose = KIN.fk_pose(qk)
             low = min(float(t[2]) for t in tip_points(pose))
@@ -268,6 +334,11 @@ class Arm:
                                f"below the floor ({self.floor_z_mm:.0f} mm)")
             if pose[2] > CEILING_FLANGE_MM:
                 raise ArmError(f"the wrist would rise to {pose[2]:.0f} mm, above the ceiling ({CEILING_FLANGE_MM:.0f} mm)")
+            try:
+                check_walls(pose, prev, self.walls)
+            except ArmError as e:
+                raise ArmError(f"{100 * (k + 1) // n}% of the way there {e}") from None
+            prev = pose
         self._req("/api/speed", {"speed": self.speed})
         for k, qk in enumerate(path):
             self._check()
