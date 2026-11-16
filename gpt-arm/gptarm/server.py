@@ -368,15 +368,21 @@ class Service:
     def wrist_jpeg(self):
         return to_jpeg(self.wrist.frame(), 80, 960)
 
-    def depth_jpeg(self):
+    def depth_jpeg(self, view="map"):
+        """view "map": the top-down height map the model gets as image 3; "camera": the depth camera's own view
+        with the fingertips projected onto it."""
         from . import depth as Dp
         if self.sim or self.depth is None:
             raise CameraError("no depth camera")
         try:
             d = self.depth.frame()
-            if self.mount is not None:                   # the same marked-up view the model gets
+            if self.mount is not None:
                 try:
-                    return to_jpeg(Dp.model_view(d, self.arm.raw_state()["pose_current"], self.mount, scale=2), 85)
+                    pose = self.arm.raw_state()["pose_current"]
+                    if view == "camera":
+                        return to_jpeg(Dp.model_view(d, pose, self.mount, scale=2), 85)
+                    objs = Dp.summary(d, pose, self.mount).get("objects_below")
+                    return to_jpeg(Dp.top_view(d, pose, self.mount, objects=objs), 85)
                 except A.ArmError:
                     pass
             return to_jpeg(Dp.colourise(d), 85)
@@ -457,10 +463,19 @@ class Handler(BaseHTTPRequestHandler):
             if m:
                 try:
                     data = (s.overhead_jpeg(q.get("annotated", ["0"])[0] == "1") if m.group(1) == "overhead"
-                            else s.wrist_jpeg() if m.group(1) == "wrist" else s.depth_jpeg())
+                            else s.wrist_jpeg() if m.group(1) == "wrist" else s.depth_jpeg(q.get("view", ["map"])[0]))
                 except CameraError as e:
                     return self.send(404, {"error": str(e)})
                 return self.send(200, data, "image/jpeg")
+            if path == "/api/depth/summary":                 # what the model would be told now (read-only)
+                if s.sim or s.depth is None or s.mount is None:
+                    return self.send(404, {"error": "no calibrated depth camera"})
+                from . import depth as Dp
+                try:
+                    pose = s.arm.raw_state()["pose_current"]
+                    return self.send(200, {"flange": pose, **Dp.summary(s.depth.settled(3), pose, s.mount)})
+                except (Dp.DepthError, A.ArmError) as e:
+                    return self.send(503, {"error": str(e)})
             if path == "/api/runs":
                 return self.send(200, {"runs": s.runs(int(q.get("limit", ["50"])[0]))})
             m = re.fullmatch(r"/api/runs/([A-Za-z0-9._-]+)", path)
