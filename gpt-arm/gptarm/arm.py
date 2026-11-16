@@ -214,6 +214,7 @@ class Arm:
         t_end = time.time() + timeout
         still = 0
         last = None
+        retried = False
         while True:
             self._check()
             r = self._req("/api/servo", body)
@@ -232,6 +233,12 @@ class Arm:
                 return self.state()
             still = still + 1 if (last is not None and math.dist(p[:3], last) < 0.3 and not moving) else 0
             last = p[:3]
+            if still > 25 and not retried and time.time() < t_end:
+                # The driver took the goal but the arm did not start (seen once on a 14 mm line): stop, re-send once.
+                retried, still = True, 0
+                self.hold()
+                time.sleep(0.3)
+                continue
             if still > 25 or time.time() > t_end:           # ~2.5 s without motion, short of the goal
                 plan = s.get("plan") or {}
                 self.hold()

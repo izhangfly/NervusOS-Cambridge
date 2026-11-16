@@ -29,7 +29,7 @@ def render(flange_pose, cap_xy, cap_top=125.0, cap_r=20.0, mount=MOUNT):
     p, R = A.K.pose_to_rt(flange_pose)
     Rc = np.asarray(R) @ mount.R
     oc = np.asarray(R) @ mount.t + np.asarray(p, float)
-    vs, us = np.mgrid[0:D.H, 0:D.W]
+    vs, us = np.mgrid[0:D.H, 0:D.W]                           # the depth mode in use
     rays = np.stack([(us - cx) / fx, (vs - cy) / fy, np.ones_like(us, float)], axis=-1)      # z = 1 in camera
     dirs = rays @ Rc.T
     out = np.zeros((D.H, D.W), np.uint16)

@@ -464,8 +464,13 @@ class World:
         if img is None:
             img = self.overhead.frame()
         self.last_frames["overhead"] = img
-        sc = self.perceive(img, self.arm.state()["joints"])
+        joints = self.arm.state()["joints"]
+        sc = self.perceive(img, joints)
         self.scene = sc
+        try:
+            self.objects = P.objects(img, self.cam, joints)
+        except Exception:                                   # noqa: BLE001 (the bottle and basket still count)
+            self.objects = []
         now = time.time()
         if sc.basket:
             self.basket = {"xy": sc.basket["xy"], "t": now, "size_mm": sc.basket["size_mm"]}
@@ -513,7 +518,7 @@ class World:
             img = self.last_frames.get("overhead")
         if img is not None and grid:
             from .direct import grid as draw_grid
-            img = draw_grid(img, self.cam)
+            img = P.draw_objects(draw_grid(img, self.cam), getattr(self, "objects", []))
         ann = P.draw(img, self.cam, self._scene_for_drawing(), tool, self.start_xy) if img is not None else None
         wrist = None
         try:

@@ -200,6 +200,65 @@ def _pose(img, g, level, cam, cap, arm, bottle_height):
     return out
 
 
+def _colour_name(bgr_mean, hsv_mean):
+    h, sat, v = hsv_mean
+    if v < 70:
+        return "black"
+    if sat < 45:
+        return "grey" if v < 150 else "white"
+    for lim, name in ((8, "red"), (22, "orange"), (35, "yellow"), (85, "green"), (130, "blue"), (160, "purple"), (180, "red")):
+        if h <= lim:
+            return name
+    return "colourful"
+
+
+def objects(img, cam, joints_deg=None, max_n=8):
+    """Anything on the table that is not table: dark things and colourful things (shadows are neither dark
+    enough nor coloured). [{"label": "O1", "xy_mm", "size_mm", "colour", "px", "box_px"}], biggest first.
+    Positions are where the thing's middle meets the table (z = 0): for a tall object, its base is a little
+    nearer the point under the camera."""
+    g = cv2.GaussianBlur(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY), (5, 5), 0)
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    table = C.table_mask(cam, img.shape) > 0
+    arm = arm_mask(cam, joints_deg, img.shape) > 0
+    free = table & ~arm
+    if free.sum() < 5000:
+        return []
+    level = float(np.percentile(g[free], 80))
+    sat_t = float(np.percentile(hsv[..., 1][free], 80))
+    thing = free & ((g < DARK * level) | (hsv[..., 1] > max(60.0, sat_t + 35.0)))
+    thing = cv2.morphologyEx(thing.astype(np.uint8), cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+    thing = cv2.morphologyEx(thing, cv2.MORPH_CLOSE, np.ones((15, 15), np.uint8))
+    n, lab, st, cen = cv2.connectedComponentsWithStats(thing)
+    k = px_per_mm(cam, [300.0, 0.0, 0.0])
+    out = []
+    for i in sorted(range(1, n), key=lambda i: -st[i, cv2.CC_STAT_AREA]):
+        if st[i, cv2.CC_STAT_AREA] < (20.0 * k) ** 2:
+            continue
+        m = lab == i
+        u, v = float(cen[i][0]), float(cen[i][1])
+        ys, xs = np.nonzero(m)
+        pts = np.array([cam.ground(float(a), float(b), 0.0) for a, b in zip(xs[::max(1, len(xs) // 200)], ys[::max(1, len(ys) // 200)])])
+        size = np.ptp(pts, axis=0)
+        out.append({"label": f"O{len(out) + 1}", "xy_mm": [round(c) for c in cam.ground(u, v, 0.0)],
+                    "size_mm": [round(float(size[0])), round(float(size[1]))],
+                    "colour": _colour_name(img[m].mean(axis=0), hsv[m].mean(axis=0)),
+                    "px": [round(u), round(v)], "box_px": [int(q) for q in st[i, :4]]})
+        if len(out) >= max_n:
+            break
+    return out
+
+
+def draw_objects(img, objs):
+    out = img.copy()
+    for o in objs:
+        x, y, w, h = o["box_px"]
+        cv2.rectangle(out, (x, y), (x + w, y + h), (255, 255, 255), 1)
+        cv2.putText(out, o["label"], (x + 2, max(16, y - 4)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 4, cv2.LINE_AA)
+        cv2.putText(out, o["label"], (x + 2, max(16, y - 4)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2, cv2.LINE_AA)
+    return out
+
+
 def draw(img, cam, scene, tool_xyz=None, start_xy=None):
     """The detections on the photograph, for the portal and the model."""
     out = img.copy()

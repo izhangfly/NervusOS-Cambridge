@@ -32,8 +32,9 @@ HOME = Path(os.environ.get("GPTARM_HOME", "~/.config/gptarm")).expanduser()
 CAL_PATH = HOME / "wrist_depth.json"
 REDIST = [Path(os.environ.get("GPTARM_OPENNI", "~/gpt-arm/vendor-openni")).expanduser(),
           Path("~/src/ros2_astra_camera/astra_camera/openni2_redist/x64").expanduser()]
-W, H = 640, 480
-HFOV, VFOV = 67.7, 45.5        # degrees, as the driver reports them for the 640x480 depth mode
+W, H = 320, 200               # the depth mode used: 320x200 at 10 fps, about 10 Mbit/s (640x480 at 30 fps is about
+MODE = (320, 200, 10)          # 150 Mbit/s and starved the arm's CAN adapter on the shared USB 2 hub)
+HFOV, VFOV = 67.7, 45.5        # degrees; replaced by what the driver reports for the mode in use
 
 
 class DepthError(Exception):
@@ -51,8 +52,9 @@ def backproject(u, v, z_mm, K=None):
     return np.array([(u - cx) * z_mm / fx, (v - cy) * z_mm / fy, z_mm], float)
 
 
-def cloud(depth, step=4, K=None):
+def cloud(depth, step=None, K=None):
     """(N, 3) camera-frame points (mm) from a depth image, every `step` pixels."""
+    step = step or max(1, depth.shape[1] // 160)
     fx, fy, cx, cy = K or intrinsics(depth.shape[1], depth.shape[0])
     d = depth[::step, ::step].astype(float)
     vs, us = np.mgrid[0:depth.shape[0]:step, 0:depth.shape[1]:step]
@@ -80,15 +82,25 @@ class WristDepth:
         if redist is None:
             self.error = "the OpenNI2 runtime is missing (see gptarm/depth.py)"
             return
+        global HFOV, VFOV
         while not self._stop.is_set():
             try:
                 openni2.initialize(redist)
                 dev = openni2.Device.open_any()
                 s = dev.create_depth_stream()
+                modes = dev.get_sensor_info(openni2.SENSOR_DEPTH).videoModes
+                want = [m for m in modes if (m.resolutionX, m.resolutionY, m.fps) == MODE
+                        and m.pixelFormat == openni2.PIXEL_FORMAT_DEPTH_1_MM]
+                if want:
+                    s.set_video_mode(want[0])
                 s.set_mirroring_enabled(False)
                 s.start()
+                HFOV, VFOV = math.degrees(s.get_horizontal_fov()), math.degrees(s.get_vertical_fov())
                 self.error = None
                 while not self._stop.is_set():
+                    # read_frame() blocks for ever once the device is gone (a USB reset): wait with a timeout
+                    if openni2.wait_for_any_stream([s], 3.0) is None:
+                        raise DepthError("no depth frames for 3 s")
                     f = s.read_frame()
                     a = np.frombuffer(f.get_buffer_as_uint16(), dtype=np.uint16).reshape(f.height, f.width).copy()
                     with self.lock:
@@ -162,11 +174,12 @@ def kabsch(P, Q):
     return R, t, np.linalg.norm(P @ R.T + t - Q, axis=1)
 
 
-def nearest_top(depth, max_range_mm=None, min_px=150):
+def nearest_top(depth, max_range_mm=None, min_px=None):
     """The nearest compact surface in the depth image (a cap seen from above): (u, v, depth mm, pixels), or None."""
     d = depth.astype(float)
+    min_px = min_px or int(150 * d.size / (640 * 480))
     ok = d > 60
-    if ok.sum() < 500:
+    if ok.sum() < 0.002 * d.size:
         return None
     near = np.percentile(d[ok], 0.3)               # the nearest surface, robust to a few noisy pixels
     band = ok & (d < near + 18.0)

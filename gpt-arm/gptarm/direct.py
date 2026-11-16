@@ -86,7 +86,10 @@ the arm's left, +z up. The table top is z = 0.
 
 - Overhead: the whole table from above. A green grid is drawn on the table top every 100 mm, labelled in
   the arm's x and y. The magenta cross is the tool point. Yellow and blue marks are an automatic detector's
-  guesses (bottle, basket); they can be wrong, and the arm hides part of the table.
+  guesses (bottle, basket); white boxes labelled O1, O2, ... are everything else that stands out from the
+  table (listed in `objects_on_table` with position, size and colour; positions are where the object's middle
+  meets the table, so a tall object's base is a little nearer the middle of the picture). They can be wrong,
+  and the arm hides part of the table.
 - Wrist: looks down along the gripper, between the two fingers (the dark shapes at the bottom corners).
   It is not mirrored: UP in the wrist picture is the tool's yaw direction (away from the base when yaw is
   null), LEFT is 90 degrees counter-clockwise from that seen from above. A compass drawn in the corner
@@ -168,6 +171,7 @@ def state(world):
         "gripper_mm": None if st["gripper_mm"] is None else round(float(st["gripper_mm"]), 1),
         "holding": bool(w.holding),
         "detector_guess": det or None,
+        "objects_on_table": [{k: o[k] for k in ("label", "xy_mm", "size_mm", "colour")} for o in getattr(w, "objects", [])] or None,
         "wrist_depth": wd,
         "bottle_start_xy_mm": None if w.start_xy is None else [round(v) for v in w.start_xy],
         "steps_used": w.steps_used, "steps_left": max(0, w.cfg.max_steps_direct - w.steps_used),
