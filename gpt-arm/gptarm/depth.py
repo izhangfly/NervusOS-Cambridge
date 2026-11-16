@@ -138,11 +138,13 @@ class WristDepth:
 
 
 class Mount:
-    """Where the depth camera sits in the flange frame: p_flange = R @ p_cam + t."""
+    """Where the depth camera sits in the flange frame: p_flange = R @ p_cam + t. focal_scale corrects the
+    driver's field of view (fitted with the mount)."""
 
-    def __init__(self, R, t, residual_mm=None, when=None):
+    def __init__(self, R, t, residual_mm=None, when=None, focal_scale=1.0):
         self.R, self.t = np.asarray(R, float).reshape(3, 3), np.asarray(t, float).reshape(3)
         self.residual_mm, self.when = residual_mm, when or time.time()
+        self.focal_scale = float(focal_scale)
 
     def to_base(self, pts_cam, flange_pose):
         p, R = A.K.pose_to_rt(flange_pose)
@@ -152,13 +154,13 @@ class Mount:
         path = Path(path or CAL_PATH)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps({"R": self.R.tolist(), "t": self.t.tolist(), "residual_mm": self.residual_mm,
-                                    "when": self.when}, indent=1))
+                                    "when": self.when, "focal_scale": self.focal_scale}, indent=1))
 
     @classmethod
     def load(cls, path=None):
         try:
             d = json.loads(Path(path or CAL_PATH).read_text())
-            return cls(d["R"], d["t"], d.get("residual_mm"), d.get("when"))
+            return cls(d["R"], d["t"], d.get("residual_mm"), d.get("when"), d.get("focal_scale", 1.0))
         except (OSError, ValueError, KeyError):
             return None
 
@@ -220,7 +222,9 @@ def colourise(depth, near=100.0, far=600.0):
 
 def summary(depth, flange_pose, mount, table_z=0.0):
     """What the model is told: the surface under the fingertips and the nearest object below the gripper."""
-    pts = mount.to_base(cloud(depth), flange_pose)
+    pts = cloud(depth)
+    pts[:, :2] /= getattr(mount, "focal_scale", 1.0)
+    pts = mount.to_base(pts, flange_pose)
     if len(pts) < 200:
         return {"seen": False}
     p, R = A.K.pose_to_rt(flange_pose)
@@ -315,14 +319,61 @@ def _pose_with_twist(x, y, z, lean, twist):
     return p, R
 
 
+def _fit_views(raw, scale):
+    """Planes from each view's points with the focal length scaled by `scale`, then the mount."""
+    views = []
+    for R, p, pts in raw:
+        q = pts.copy()
+        q[:, :2] /= scale                                   # x = (u - cx) z / (scale * f)
+        n = np.linalg.svd(q - q.mean(axis=0))[2][-1]
+        if n[2] > 0:
+            n = -n
+        views.append((R, p, n, float(-(n @ q.mean(axis=0)))))
+    return plane_fit_mount(views)
+
+
+def solve_mount(raw, log=print):
+    """raw: [(R_flange, p_flange, table points in the camera frame)]. Drops views that disagree, fits the focal
+    length's scale (the driver's field of view for a mode is approximate) and the mount. -> (Mount, quality, scale)."""
+    raw = list(raw)
+    best = None
+    while True:
+        best = None
+        for scale in np.arange(0.70, 1.36, 0.01):
+            m, q = _fit_views(raw, scale)
+            cost = q["angle_err_deg"] + q["height_err_mm"] / 3.0
+            if best is None or cost < best[0]:
+                best = (cost, m, q, float(scale))
+        _, m, q, scale = best
+        if len(raw) <= 6:
+            break
+        # each view's own disagreement with the fit; drop the worst if it stands out
+        errs = []
+        for R, p, pts in raw:
+            qq = pts.copy()
+            qq[:, :2] /= scale
+            n = np.linalg.svd(qq - qq.mean(axis=0))[2][-1]
+            n = -n if n[2] > 0 else n
+            a = np.asarray(R).T @ np.array([0.0, 0.0, 1.0])
+            ang = math.degrees(math.acos(max(-1.0, min(1.0, float((m.R @ n) @ a)))))
+            h = float(-(n @ qq.mean(axis=0)))
+            errs.append(ang + abs(a @ m.t + p[2] - h) / 3.0)
+        worst = int(np.argmax(errs))
+        if errs[worst] > max(3.0 * float(np.median(errs)), 4.0):
+            log(f"  dropped a view that disagrees ({errs[worst]:.1f})")
+            raw.pop(worst)
+            continue
+        break
+    return m, q, scale
+
+
 def calibrate_on_table(arm, depth, log=print, save=True):
     """Calibrate the mount from views of the bare table (no object needed). The arm moves over free table."""
-    views = []
+    raw = []
     for x, y, z, lean, twist in table_poses():
         p, R = _pose_with_twist(x, y, z, lean, twist)
         q = A.KIN.nearest_ik(A.K.rt_to_pose(p, R), arm.state()["joints"])
         if q is None:
-            log(f"  ({x:.0f}, {y:.0f}, {z:.0f}) lean {lean:.0f} twist {twist:.0f}: out of reach")
             continue
         try:
             arm.move_joints([float(v) for v in q], max_deg_s=25.0)
@@ -332,20 +383,28 @@ def calibrate_on_table(arm, depth, log=print, save=True):
         time.sleep(0.8)
         pose = arm.raw_state()["pose_current"]
         pf, Rf = A.K.pose_to_rt(pose)
-        fit = fit_plane(cloud(depth.settled(5)))
+        pts = cloud(depth.settled(5))
+        fit = fit_plane(pts)
         if fit is None:
             log(f"  ({x:.0f}, {y:.0f}, {z:.0f}) lean {lean:.0f} twist {twist:.0f}: no table plane in view")
             continue
         n, d, k = fit
-        views.append((np.asarray(Rf), np.asarray(pf, float), n, d))
+        inl = pts[np.abs(pts @ n + d) < 6.0]
+        inl = inl[np.random.default_rng(0).choice(len(inl), min(1500, len(inl)), replace=False)]
+        raw.append((np.asarray(Rf), np.asarray(pf, float), inl))
         log(f"  ({x:.0f}, {y:.0f}, {z:.0f}) lean {lean:.0f} twist {twist:.0f}: table {d:.0f} mm away, {k} points")
-    if len(views) < 6:
-        raise DepthError(f"only {len(views)} views of the table; at least 6 are needed")
-    m, q = plane_fit_mount(views)
+    if len(raw) < 6:
+        raise DepthError(f"only {len(raw)} views of the table; at least 6 are needed")
+    HOME.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(HOME / "depth_views.npz", R=np.array([r[0] for r in raw]), p=np.array([r[1] for r in raw]),
+                        **{f"pts{i}": r[2] for i, r in enumerate(raw)}, hfov=HFOV, vfov=VFOV)
+    m, q, scale = solve_mount(raw, log)
     log(f"mount: camera at {np.round(m.t).tolist()} mm in the flange frame; up agrees to {q['angle_err_deg']} deg, "
-        f"heights to {q['height_err_mm']} mm (conditioning {q['conditioning']})")
+        f"heights to {q['height_err_mm']} mm (focal scale {scale:.2f}, driver FOV {HFOV:.1f}x{VFOV:.1f}, "
+        f"conditioning {q['conditioning']})")
     if q["conditioning"] < 0.05:
         raise DepthError("the views did not vary enough to fix the camera's position")
+    m.focal_scale = scale
     if save:
         m.save()
     return m
