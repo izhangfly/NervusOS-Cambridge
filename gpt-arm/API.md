@@ -237,3 +237,6 @@ Runs live under `~/gptarm-runs/<id>/`: `run.json` (the Run with steps), the step
   failure_kind, explanation, critique, confidence`). The verdict follows the checker (`outcome.checks.judge`);
   `reason` is the checker's `failure_kind`, or `not_checked` if it could not be asked.
 - A run in direct mode starts with an `info` step "Plan: ..." (`run.plan`: `[{goal, done_when}]`).
+- Direct mode also gives the model `objects_on_table`: everything on the white table that is dark or colourful
+  (`[{label: "O1", xy_mm, size_mm, colour}]`, biggest first, at most 8), drawn as labelled white boxes on the
+  overhead picture it sees. `xy_mm` is where the object's middle meets the table.
