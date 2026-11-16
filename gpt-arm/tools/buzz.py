@@ -5,13 +5,16 @@ Record (read-only; candump only listens, nothing is sent to the arm):
 
     python tools/buzz.py record /tmp/can.log            # until Ctrl-C / SIGTERM
     python tools/buzz.py analyze /tmp/can.log [--run ~/gptarm-runs/<id>]
+    XDG_RUNTIME_DIR=/run/user/1000 pw-record --rate 16000 --channels 1 /tmp/arm.wav   # the Dell's microphone
+    python tools/buzz.py audio /tmp/arm.wav --can /tmp/can.log [--run ~/gptarm-runs/<id>]
 
-What it looks at: each motor's own high-speed feedback (CAN 0x251-0x256, about 200 Hz each: speed in
-0.001 rad/s, current in 0.001 A), the joint angles (0x2A5-0x2A7) and the joint commands the driver
-streams (0x155-0x157). In each 0.25 s window and for each joint it measures how much the motor speed
-shakes around its own mean (speed ripple), how often it changes sign, and how much the current shakes,
-next to how far the joint actually moved. A buzz is a window where the motor speed ripples hard and
-flips sign many times while the joint goes nowhere.
+What it looks at: each motor's own high-speed feedback (CAN 0x251-0x256, about 100 Hz each on this arm:
+speed in 0.001 rad/s, current in 0.001 A), the joint angles (0x2A5-0x2A7) and the joint commands the
+driver streams (0x155-0x157; on the Dell the adapter does not echo the driver's own frames, so these are
+missing there). In each 0.25 s window and for each joint it measures how much the motor speed shakes around
+its own mean (speed ripple), how often it changes sign, and how much the current shakes, next to how far the
+joint actually moved. 100 Hz is too slow to see an audible buzz itself, hence `audio`: the microphone finds
+the loud, tonal stretches and the CAN log says what each joint was doing then.
 """
 import argparse
 import json
@@ -20,6 +23,7 @@ import os
 import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -186,6 +190,75 @@ def analyze(path, run_dir=None, show=40):
     return rows, buzz, eps
 
 
+def load_wav(path):
+    """-> (t0 wall-clock s, rate, mono float samples). pw-record writes the header when it starts and the
+    file's mtime when it stops, so the start is the mtime minus the length."""
+    import wave
+    with wave.open(str(path)) as w:
+        rate, n, ch, width = w.getframerate(), w.getnframes(), w.getnchannels(), w.getsampwidth()
+        raw = w.readframes(n)
+    x = np.frombuffer(raw, {2: np.int16, 4: np.int32}[width]).astype(np.float32)
+    x = x.reshape(-1, ch).mean(axis=1) / float(2 ** (8 * width - 1))
+    return os.path.getmtime(path) - len(x) / rate, rate, x
+
+
+def audio_windows(path, win=WIN_S, lo_hz=150.0):
+    """Per window: level (dBFS) above lo_hz, the strongest frequency and how far it stands above the
+    spectrum's median (dB): a buzz is loud AND tonal (a motor's whine or a PWM tone), unlike speech or
+    footsteps."""
+    t0, rate, x = load_wav(path)
+    n = int(win * rate)
+    f = np.fft.rfftfreq(n, 1.0 / rate)
+    band = f >= lo_hz
+    hann = np.hanning(n)
+    rows = []
+    for k in range(0, len(x) - n, n):
+        s = np.abs(np.fft.rfft(x[k:k + n] * hann)) + 1e-12
+        p = s[band] ** 2
+        level = 10 * np.log10(p.sum() / n + 1e-20)
+        i = int(np.argmax(p))
+        tonal = 10 * np.log10(p[i] / (np.median(p) + 1e-20))
+        rows.append({"t": t0 + k / rate, "level_db": float(level), "peak_hz": float(f[band][i]), "tonal_db": float(tonal)})
+    return rows
+
+
+def analyze_audio(wav, can_log=None, run_dir=None, loud_db=12.0, tonal_db=25.0, show=40):
+    rows = audio_windows(wav)
+    floor = float(np.percentile([r["level_db"] for r in rows], 30))
+    print(f"{wav}: {len(rows) * WIN_S:.0f} s, background level {floor:.0f} dBFS (30th percentile above 150 Hz)")
+    loud = [r for r in rows if r["level_db"] > floor + loud_db and r["tonal_db"] > tonal_db]
+    can = None
+    if can_log:
+        speed, joints, cmds, _ = load(can_log)
+        can = {round(r["t"] / WIN_S): r for r in windows(speed, joints, cmds)}
+    steps = run_steps(run_dir) if run_dir else []
+    eps = []
+    for r in loud:
+        if eps and r["t"] - eps[-1]["t1"] <= WIN_S * 1.5:
+            eps[-1]["t1"] = r["t"] + WIN_S
+            eps[-1]["rows"].append(r)
+        else:
+            eps.append({"t0": r["t"], "t1": r["t"] + WIN_S, "rows": [r]})
+    print(f"{len(loud)} loud tonal windows (> {loud_db:.0f} dB over background, peak > {tonal_db:.0f} dB over the "
+          f"spectrum's median) in {len(eps)} episodes:")
+    for e in eps[:show]:
+        hz = np.median([r["peak_hz"] for r in e["rows"]])
+        lv = max(r["level_db"] for r in e["rows"]) - floor
+        line = f"  {time.strftime('%H:%M:%S', time.localtime(e['t0']))} +{e['t1'] - e['t0']:4.2f}s  {hz:6.0f} Hz  +{lv:.0f} dB"
+        if can:
+            c = can.get(round(e["t0"] / WIN_S)) or can.get(round(e["t0"] / WIN_S) + 1) or {}
+            moving = [f"J{j + 1} {c[j]['travel']:.1f}deg" for j in range(6) if j in c and c[j]["travel"] > 0.3]
+            shaky = [f"J{j + 1}" for j in range(6) if j in c and c[j]["flips_s"] >= 8]
+            cur = [f"J{j + 1} {c[j]['cur']:.1f}A" for j in range(6) if j in c]
+            line += f"  moving: {', '.join(moving) or 'none'}; speed sign flipping: {', '.join(shaky) or 'none'}; |I| {' '.join(cur)}"
+        lab = ""
+        for ts, s in steps:
+            if ts <= e["t0"]:
+                lab = s
+        print(line + (f"  [{lab}]" if lab else ""))
+    return eps
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -195,9 +268,16 @@ def main():
     a.add_argument("path")
     a.add_argument("--run")
     a.add_argument("--show", type=int, default=40)
+    s = sub.add_parser("audio", help="loud tonal stretches in a microphone recording (pw-record), with the CAN log")
+    s.add_argument("wav")
+    s.add_argument("--can")
+    s.add_argument("--run")
+    s.add_argument("--show", type=int, default=40)
     args = ap.parse_args()
     if args.cmd == "record":
         record(args.path)
+    elif args.cmd == "audio":
+        analyze_audio(args.wav, args.can, args.run, show=args.show)
     else:
         analyze(args.path, args.run, args.show)
 
