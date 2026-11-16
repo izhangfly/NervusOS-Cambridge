@@ -224,9 +224,10 @@ Runs live under `~/gptarm-runs/<id>/`: `run.json` (the Run with steps), the step
 
 ## Wrist depth and the checker (backend additions)
 
-- `POST /api/calibrate/depth`: fit where the wrist depth camera sits on the gripper. The bottle must stand on
-  the table; the arm grips it once (to know its position exactly), lets go and looks at its cap from about a
-  dozen poses. 409 while busy. `busy` is `calibrate` meanwhile.
+- `POST /api/calibrate/depth` `{"method": "table"|"bottle"}`: fit where the wrist depth camera sits on the gripper.
+  `table` (default): the arm views the bare table from about 18 poses with different tilts and twists; each view
+  gives 'up' and the camera's height, which fix the mount. `bottle`: the bottle stands on the table; the arm grips it
+  once (to know its position exactly), lets go and looks at its cap from about a dozen poses. 409 while busy.
 - `status.cameras.depth`: `{ok, age_s, error, size, calibrated}`; `GET /api/camera/depth.jpg` is the depth picture
   (near warm, far cool, black = no reading, with a millimetre scale and the nearest distance).
 - Direct-mode decisions record what the model was given under `state.model_saw`, including `wrist_depth`:

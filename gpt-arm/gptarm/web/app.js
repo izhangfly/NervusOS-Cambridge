@@ -1019,7 +1019,7 @@
       if (await confirmBox('Calibrate the overhead camera?', 'The arm will move to a series of points over the table. Clear the table of anything it could hit, and keep hands away.', 'Calibrate, the arm will move')) act('api/calibrate', {}, 'Calibrate');
     });
     if ($('btn-cal-depth')) $('btn-cal-depth').addEventListener('click', async () => {
-      if (await confirmBox('Calibrate the wrist depth camera?', 'Stand the bottle upright on the table, clear of the basket. The arm grips it once to find its exact position, lets go, then looks at its cap from about a dozen poses.', 'Calibrate, the arm will move')) act('api/calibrate/depth', {}, 'Calibrate depth');
+      if (await confirmBox('Calibrate the wrist depth camera?', 'The arm looks at the bare table from about 18 poses over its free side (away from the basket), tilting and twisting the gripper. Keep hands away.', 'Calibrate, the arm will move')) act('api/calibrate/depth', { method: 'table' }, 'Calibrate depth');
     });
 
     $('instruct').addEventListener('submit', (e) => { e.preventDefault(); runInstruction(); });

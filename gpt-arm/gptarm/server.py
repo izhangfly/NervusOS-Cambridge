@@ -195,12 +195,25 @@ class Service:
             raise Busy("there is nothing to calibrate in the simulator")
         self._start("calibrate", go)
 
-    def calibrate_depth(self):
-        """Find the standing bottle, grip it once (that centres it exactly under the tool point), let go, and
-        fit the wrist depth camera's mount from views of its cap."""
+    def calibrate_depth(self, method="table"):
+        """Fit where the wrist depth camera sits on the gripper. "table": from views of the bare table at many
+        tilts and twists (no object needed). "bottle": grip the standing bottle once (that centres it exactly
+        under the tool point), let go, and fit from views of its cap."""
         from . import depth as Dp
         if self.sim:
             raise Busy("there is nothing to calibrate in the simulator")
+        if method == "table":
+            def table():
+                w = self.make_world()
+                tool, _ = w.tool()
+                if tool[2] < w.cfg.travel_z - 15.0:
+                    w._go(tool[0], tool[1], w.cfg.travel_z, min_tip_z=tool[2] - 30.0)
+                self.mount = Dp.calibrate_on_table(self.arm, self.depth, log=print)
+                x, y, z = w.cfg.park[0]
+                w._go(x, y, z, lean=40.0)
+            self._ready()
+            self._start("calibrate", table)
+            return
 
         def go():
             w = self.make_world()
@@ -508,7 +521,7 @@ class Handler(BaseHTTPRequestHandler):
                 s.calibrate()
                 return self.send(200, {"ok": True})
             if path == "/api/calibrate/depth":
-                s.calibrate_depth()
+                s.calibrate_depth(b.get("method") or "table")
                 return self.send(200, {"ok": True})
             if path == "/api/record":
                 on = self.flag(b, "on")

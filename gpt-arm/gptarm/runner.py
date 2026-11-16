@@ -209,6 +209,9 @@ def _cycle(world, llm, instruction, context, run, stop_event, mode):
         while world.steps_used < max_steps:
             if stop_event.is_set():
                 raise A.Stop("stopped")
+            if not _arm_connected(world, run, stop_event):
+                run.step("error", note="The arm's connection did not come back within 2 minutes (USB or CAN).")
+                return finish("failed", "arm_fault")
             if direct:
                 try:
                     world.observe()
@@ -331,6 +334,27 @@ def _judge(world, run, llm, instruction):
              detail=f"Before: {j.get('before', '')} After: {j.get('after', '')}" + (f" Fix: {j['critique']}" if j.get("critique") else ""),
              tokens=int(use.get("tokens", 0)), llm_s=round(float(use.get("seconds", 0.0)), 2), images=names)
     return j
+
+
+def _arm_connected(world, run, stop_event, wait_s=120.0):
+    """True when the arm answers with fresh feedback. If it does not (a USB or CAN dropout: the driver restarts
+    itself), wait for it rather than spend the model's turns on moves that cannot happen."""
+    def fresh():
+        try:
+            return world.arm.state()["fresh"]
+        except A.ArmError:
+            return False
+    if fresh():
+        return True
+    run.step("info", note="The arm's connection dropped (USB or CAN); waiting for the driver to come back.")
+    t_end = time.time() + wait_s
+    while time.time() < t_end and not stop_event.is_set():
+        time.sleep(2.0)
+        if fresh():
+            time.sleep(2.0)                                  # let the driver settle after its restart
+            run.step("info", note="The arm is back.")
+            return True
+    return False
 
 
 def _free_verdict(world, run, declared):

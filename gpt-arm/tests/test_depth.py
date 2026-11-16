@@ -79,5 +79,26 @@ class DepthTest(unittest.TestCase):
         self.assertLess(np.linalg.norm(t - MOUNT.t), 8.0)
 
 
+class TablePlaneTest(unittest.TestCase):
+    def test_the_bare_table_gives_back_the_mount(self):
+        views = []
+        for x, y, z, lean, twist in D.table_poses():
+            p, R = D._pose_with_twist(x, y, z, lean, twist)
+            if A.KIN.nearest_ik(A.K.rt_to_pose(p, R), [0, 45, -60, 0, 45, 0]) is None:
+                continue
+            pose = A.K.rt_to_pose(p, R)
+            d = render(pose, (900.0, 900.0))                   # no cap in view: bare table
+            fit = D.fit_plane(D.cloud(d))
+            self.assertIsNotNone(fit)
+            n, dist, _ = fit
+            pf, Rf = A.K.pose_to_rt(pose)
+            views.append((np.asarray(Rf), np.asarray(pf, float), n, dist))
+        self.assertGreaterEqual(len(views), 6)
+        m, q = D.plane_fit_mount(views)
+        self.assertGreater(q["conditioning"], 0.05, q)
+        np.testing.assert_allclose(m.R, MOUNT.R, atol=0.02)
+        self.assertLess(np.linalg.norm(m.t - MOUNT.t), 4.0, (m.t, MOUNT.t))
+
+
 if __name__ == "__main__":
     unittest.main()

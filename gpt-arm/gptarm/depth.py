@@ -245,6 +245,112 @@ def summary(depth, flange_pose, mount, table_z=0.0):
     return out
 
 
+def fit_plane(pts, max_angle_deg=60.0, iters=300, tol_mm=6.0, rng=None):
+    """The dominant plane facing the camera in camera-frame points: (unit normal pointing at the camera, distance
+    from the camera, inlier count), or None. RANSAC, then a least-squares refit on the inliers."""
+    pts = np.asarray(pts, float)
+    if len(pts) < 100:
+        return None
+    rng = rng or np.random.default_rng(0)
+    best = None
+    cos_max = math.cos(math.radians(max_angle_deg))
+    for _ in range(iters):
+        a, b, c = pts[rng.choice(len(pts), 3, replace=False)]
+        n = np.cross(b - a, c - a)
+        if np.linalg.norm(n) < 1e-6:
+            continue
+        n /= np.linalg.norm(n)
+        if n[2] > 0:
+            n = -n                                         # point from the plane towards the camera
+        if -n[2] < cos_max:                                # the camera looks along +z: the table must face it
+            continue
+        d = -float(n @ a)
+        inl = np.abs(pts @ n + d) < tol_mm
+        if best is None or inl.sum() > best[1].sum():
+            best = (n, inl)
+    if best is None or best[1].sum() < 0.3 * len(pts):
+        return None
+    q = pts[best[1]]
+    c = q.mean(axis=0)
+    n = np.linalg.svd(q - c)[2][-1]
+    if n[2] > 0:
+        n = -n
+    return n, float(-(n @ c)), int(best[1].sum())
+
+
+def plane_fit_mount(views):
+    """views: [(R_flange (3x3), p_flange (3,), n_cam, d_cam)] -> Mount. The table is z = 0. In the flange frame
+    'up' is a = R_flange^T e_z; the camera sees it as n_cam, so R @ n_cam = a (direction pairs: Kabsch); and the
+    camera's height above the table, d_cam, is a . t + p_z (one linear equation per view)."""
+    A_dirs = np.array([np.asarray(R).T @ np.array([0.0, 0.0, 1.0]) for R, _, _, _ in views])
+    N = np.array([n for _, _, n, _ in views])
+    U, _, Vt = np.linalg.svd(N.T @ A_dirs)
+    dsign = np.sign(np.linalg.det(Vt.T @ U.T))
+    R = Vt.T @ np.diag([1.0, 1.0, dsign]) @ U.T
+    b = np.array([d - float(p[2]) for _, p, _, d in views])
+    t, *_ = np.linalg.lstsq(A_dirs, b, rcond=None)
+    ang = [math.degrees(math.acos(max(-1.0, min(1.0, float((R @ n) @ a))))) for n, a in zip(N, A_dirs)]
+    res_h = np.abs(A_dirs @ t - b)
+    sv = np.linalg.svd(A_dirs, compute_uv=False)
+    return Mount(R, t, round(float(np.sqrt((res_h ** 2).mean())), 1)), {"angle_err_deg": round(float(np.mean(ang)), 2),
+                                                                        "height_err_mm": round(float(res_h.mean()), 1),
+                                                                        "conditioning": round(float(sv[-1] / sv[0]), 3)}
+
+
+def table_poses():
+    """Tool points over free table (y > 0: away from where the basket usually stands), with leans and twists of
+    the gripper about its own axis, so that 'up' takes many directions in the flange frame."""
+    out = []
+    for x, y, z in ((260.0, 150.0, 260.0), (320.0, 220.0, 280.0), (220.0, 60.0, 280.0)):
+        for lean in (30.0, 45.0):
+            for twist in (-60.0, 0.0, 60.0):
+                out.append((x, y, z, lean, twist))
+    return out
+
+
+def _pose_with_twist(x, y, z, lean, twist):
+    yaw = math.degrees(math.atan2(y, x))
+    R = A.tool_rotation(yaw, lean) @ A._rz(math.radians(twist))
+    p = np.array([x, y, z]) - R @ np.array([0.0, 0.0, A.GRASP_OFFSET_MM])
+    return p, R
+
+
+def calibrate_on_table(arm, depth, log=print, save=True):
+    """Calibrate the mount from views of the bare table (no object needed). The arm moves over free table."""
+    views = []
+    for x, y, z, lean, twist in table_poses():
+        p, R = _pose_with_twist(x, y, z, lean, twist)
+        q = A.KIN.nearest_ik(A.K.rt_to_pose(p, R), arm.state()["joints"])
+        if q is None:
+            log(f"  ({x:.0f}, {y:.0f}, {z:.0f}) lean {lean:.0f} twist {twist:.0f}: out of reach")
+            continue
+        try:
+            arm.move_joints([float(v) for v in q], max_deg_s=25.0)
+        except A.ArmError as e:
+            log(f"  ({x:.0f}, {y:.0f}, {z:.0f}) lean {lean:.0f} twist {twist:.0f}: {e}")
+            continue
+        time.sleep(0.8)
+        pose = arm.raw_state()["pose_current"]
+        pf, Rf = A.K.pose_to_rt(pose)
+        fit = fit_plane(cloud(depth.settled(5)))
+        if fit is None:
+            log(f"  ({x:.0f}, {y:.0f}, {z:.0f}) lean {lean:.0f} twist {twist:.0f}: no table plane in view")
+            continue
+        n, d, k = fit
+        views.append((np.asarray(Rf), np.asarray(pf, float), n, d))
+        log(f"  ({x:.0f}, {y:.0f}, {z:.0f}) lean {lean:.0f} twist {twist:.0f}: table {d:.0f} mm away, {k} points")
+    if len(views) < 6:
+        raise DepthError(f"only {len(views)} views of the table; at least 6 are needed")
+    m, q = plane_fit_mount(views)
+    log(f"mount: camera at {np.round(m.t).tolist()} mm in the flange frame; up agrees to {q['angle_err_deg']} deg, "
+        f"heights to {q['height_err_mm']} mm (conditioning {q['conditioning']})")
+    if q["conditioning"] < 0.05:
+        raise DepthError("the views did not vary enough to fix the camera's position")
+    if save:
+        m.save()
+    return m
+
+
 def calibrate(arm, depth, x, y, top_z, log=print, save=True):
     """Look at a standing object's top (centre (x, y), height top_z, mm) from several poses; fit the mount."""
     P, Q = [], []
@@ -288,6 +394,7 @@ def main():
     import argparse
     ap = argparse.ArgumentParser(description="Wrist depth camera: calibrate its mount, or print what it sees")
     sub = ap.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("table", help="calibrate from views of the bare table (no object needed); the arm moves")
     c = sub.add_parser("calibrate", help="a standing object's top at (x, y), top_z mm high; the arm moves")
     c.add_argument("x", type=float)
     c.add_argument("y", type=float)
@@ -298,6 +405,8 @@ def main():
     try:
         if a.cmd == "calibrate":
             calibrate(arm, dep, a.x, a.y, a.top_z)
+        elif a.cmd == "table":
+            calibrate_on_table(arm, dep)
         else:
             m = Mount.load()
             if m is None:
