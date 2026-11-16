@@ -33,10 +33,10 @@ _num = {"anyOf": [{"type": "number"}, {"type": "null"}]}
 _str = {"anyOf": [{"type": "string"}, {"type": "null"}]}
 SCHEMA = {
     "type": "object", "additionalProperties": False,
-    "required": ["action", "x", "y", "z", "lean", "yaw", "joints", "gripper_mm", "skill", "expect", "note"],
+    "required": ["action", "x", "y", "z", "lean", "yaw", "grip", "joints", "gripper_mm", "skill", "expect", "note"],
     "properties": {
         "action": {"type": "string", "enum": list(ACTIONS)},
-        "x": _num, "y": _num, "z": _num, "lean": _num, "yaw": _num,
+        "x": _num, "y": _num, "z": _num, "lean": _num, "yaw": _num, "grip": _num,
         "joints": {"anyOf": [{"type": "array", "items": {"type": "number"}}, {"type": "null"}]},
         "gripper_mm": _num,
         "skill": {"anyOf": [{"type": "string", "enum": list(SKILLS)}, {"type": "null"}]},
@@ -60,25 +60,30 @@ you why. Nothing else plans for you.
 Coordinates are millimetres from the arm's base: +x forward (away from the base, across the table), +y to
 the arm's left, +z up. The table top is z = 0.
 
-A backboard (a white sheet against the wall) stands just past the far edge of the table, at about x = 500.
+A backboard (a white sheet against the wall) stands just past the far edge of the table, at about x = 480
+(a little nearer at the sides).
 No part of the arm may touch it, and the wrist camera sticks out about 4 cm past the fingers on the far side
 of the gripper (when the tool leans outward) and is the first thing to hit it. Code refuses a motion that would
 bring any part within 15 mm of the backboard, and stops one that gets that close on the way;
 `nearest_wall` in the state says how far the closest part is now. Things pushed against the backboard
-cannot be reached from above with the tool leaning outward: lean less, turn the yaw, or pull them
-towards you first.
+cannot be reached from above with the tool leaning outward: lean less, or pull them towards you first.
 
 ## Motions (one per answer; the fields a motion does not use are null)
 
 - move_tool: put the TOOL POINT (the point midway between the two finger pads) at x, y, z. The tool points
   down. `lean` (degrees, optional) tips the fingertips outward, away from the base, about the line the
   fingers close along: the pads stay level. Where the wrist cannot reach with a vertical tool, or would come
-  too near the backboard, the smallest lean that works is used anyway; leave lean null unless you want more. `yaw` (degrees, optional) is the
-  direction, in the table plane, that the tool leans towards; the fingers close at right angles to it.
-  Null yaw means the bearing of the point from the base (x axis = 0, +y = 90), so the fingers close
-  sideways. The arm moves there in a path of its own choosing; it does not travel in a straight line.
-- move_by: move the tool point BY x, y, z millimetres from where it is now (relative; null counts as 0).
-  Best for small corrections you read off the wrist picture ("the bottle is 15 mm to the left").
+  too near the backboard, the smallest lean that works is used anyway; leave lean null unless you want more.
+  `yaw` (degrees, optional) is the direction, in the table plane, that the tool leans towards. Null yaw
+  means the bearing of the point from the base (x axis = 0, +y = 90). The arm can only lean roughly away
+  from its base: a yaw more than about 50 degrees from the bearing is usually out of reach, so leave yaw
+  null. `grip` (degrees, optional) is the direction, in the table plane, of the line the two fingers close
+  along: the gripper turns about its own axis to match (grip and grip + 180 are the same). Null grip: at
+  right angles to the yaw. To close across an object lying down, set grip to its long axis + 90. The arm
+  moves there in a path of its own choosing; it does not travel in a straight line.
+- move_by: move the tool point BY x, y, z millimetres from where it is now (relative; null counts as 0). The
+  tool keeps its present lean, yaw and grip unless you give new ones. Best for small corrections, and for
+  going straight down onto something once the depth map's ring is on it.
 - move_joints: set all six joint angles (degrees), moved together along a straight line in joint space.
   J1 turns the arm about the vertical (positive turns it to the left, +y). J2 is the shoulder, J3 the elbow,
   J4 rolls the forearm, J5 bends the wrist, J6 turns the gripper about its own axis.
@@ -120,10 +125,14 @@ towards you first.
   floor around it, nearest first: centre (x, y), top height, length and width, `long_axis_deg` (the direction
   of its long side in the table plane: 0 = +x, 90 = +y), its offset from the tool point, and whether the view
   cuts it off (then it may be bigger). A bottle lying down is about 125 x 45 mm with its top about 45 mm
-  above what it lies on; a basket wall is long, thin and about 100 mm high. Since the fingers close at right
-  angles to `yaw`, a yaw along an object's long axis closes the fingers across it. Trust these over the
-  detector's guesses and over estimates from the pictures. The depth camera reads nothing closer than about
-  15 cm and little from black fabric: `seen: false` means no reading, not an empty table.
+  above what it lies on; a basket wall is long, thin and about 100 mm high. Trust these over the detector's
+  guesses and over estimates from the pictures. The depth camera reads nothing closer than about 15 cm and
+  little from black fabric: `seen: false` means no reading, not an empty table.
+- The depth camera looks AHEAD of the gripper (towards the yaw direction): what is right under the tool point
+  and behind it (towards the base) is often out of its view. The map therefore keeps what it saw at earlier
+  steps of this run, drawn DIMMER ("remembered"); it is forgotten whenever the gripper opens or closes.
+  Positions are in the arm's coordinates and stay true after the arm moves: you can look at an object from a
+  little behind it, read its centre and long axis, then move the tool point straight to that centre.
 
 Fill `expect` with what you expect to see after the motion; the next step shows it next to what happened.
 
@@ -200,6 +209,7 @@ def state(world):
         "nearest_wall": near,
         "joints_deg": [round(v, 1) for v in st["joints"]],
         "tool_point_mm": [round(v) for v in tool], "tool_lean_deg": round(lean), "tool_yaw_deg": round(yaw),
+        "fingers_close_along_deg": None if st.get("grip") is None else round(st["grip"]),
         "gripper_mm": None if st["gripper_mm"] is None else round(float(st["gripper_mm"]), 1),
         "holding": bool(w.holding),
         "detector_guess": det or None,
@@ -274,14 +284,15 @@ def prompt(instruction, context, st, history, plan=None, depth_image=None):
 def describe(ans):
     a = ans.get("action")
     if a == "move_tool":
-        extra = "".join(f" {k} {ans[k]:.0f}" for k in ("lean", "yaw") if ans.get(k) is not None)
+        extra = "".join(f" {k} {ans[k]:.0f}" for k in ("lean", "yaw", "grip") if ans.get(k) is not None)
         return f"move_tool ({_f(ans.get('x'))}, {_f(ans.get('y'))}, {_f(ans.get('z'))}){extra}"
     if a == "move_joints":
         return "move_joints [" + ", ".join(_f(v, 1) for v in (ans.get("joints") or [])) + "]"
     if a == "gripper":
         return f"gripper {_f(ans.get('gripper_mm'))} mm"
     if a == "move_by":
-        return f"move_by ({_f(ans.get('x') or 0)}, {_f(ans.get('y') or 0)}, {_f(ans.get('z') or 0)})"
+        extra = "".join(f" {k} {ans[k]:.0f}" for k in ("lean", "yaw", "grip") if ans.get(k) is not None)
+        return f"move_by ({_f(ans.get('x') or 0)}, {_f(ans.get('y') or 0)}, {_f(ans.get('z') or 0)}){extra}"
     if a == "skill":
         return f"skill {ans.get('skill')}"
     return str(a)
@@ -337,17 +348,21 @@ def execute(world, ans):
         d = [float(ans.get(k) or 0.0) for k in ("x", "y", "z")]
         if max(abs(v) for v in d) > 300.0:
             raise Refused("move_by is for moves of up to 300 mm per axis")
-        ans = {**ans, "x": st["tool"][0] + d[0], "y": st["tool"][1] + d[1], "z": st["tool"][2] + d[2]}
+        # relative: the tool keeps its lean, yaw and grip unless the answer gives new ones
+        keep = {"lean": st["lean"], "yaw": st.get("yaw"), "grip": st.get("grip")}
+        ans = {**ans, "x": st["tool"][0] + d[0], "y": st["tool"][1] + d[1], "z": st["tool"][2] + d[2],
+               **{k: v for k, v in keep.items() if ans.get(k) is None and v is not None}}
         a = "move_tool"
     if a == "move_tool":
         x, y, z = (ans.get(k) for k in ("x", "y", "z"))
         if None in (x, y, z):
             raise Refused("move_tool needs x, y and z")
-        lean, yaw = ans.get("lean"), ans.get("yaw")
+        lean, yaw, grip = ans.get("lean"), ans.get("yaw"), ans.get("grip")
         if lean is not None and not 0.0 <= float(lean) <= A.LEAN_MAX_DEG:
             raise Refused(f"lean must be 0 to {A.LEAN_MAX_DEG:.0f} degrees")
         arm.move_tool(float(x), float(y), float(z), lean=None if lean is None else float(lean),
-                      yaw_deg=None if yaw is None else float(yaw), speed=cfg.speed, min_tip_z=arm.floor_z_mm)
+                      yaw_deg=None if yaw is None else float(yaw), speed=cfg.speed, min_tip_z=arm.floor_z_mm,
+                      grip_deg=None if grip is None else float(grip))
     if a == "move_joints":
         q = ans.get("joints")
         if not q or len(q) != 6:
@@ -355,4 +370,5 @@ def execute(world, ans):
         arm.move_joints([float(v) for v in q], max_deg_s=cfg.joint_speed_deg_s)
     world.after_motion()
     st = arm.state()
-    return f"reached: tool point now ({st['tool'][0]:.0f}, {st['tool'][1]:.0f}, {st['tool'][2]:.0f}), lean {st['lean']:.0f}"
+    return (f"reached: tool point now ({st['tool'][0]:.0f}, {st['tool'][1]:.0f}, {st['tool'][2]:.0f}), lean {st['lean']:.0f}"
+            + (f", yaw {st['yaw']:.0f}, fingers close along {st['grip']:.0f}" if st.get("grip") is not None else ""))

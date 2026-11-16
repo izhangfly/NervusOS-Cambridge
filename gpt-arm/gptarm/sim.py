@@ -48,6 +48,7 @@ class SimArm:
         self.t = table or Table()
         self.tool = [138.0 + 60.0, 0.0, 300.0]
         self.lean = 40.0
+        self.yaw, self.grip_dir = None, None          # None: towards the bearing, fingers across the lean
         self.width = A.GRIPPER_OPEN_MM
         self.grip_cmd = None
         self.move_s = move_s
@@ -63,18 +64,22 @@ class SimArm:
             raise A.Stop("stopped")
 
     def raw_state(self):
-        pose = A.flange_pose(*self.tool, self.lean)
+        pose = self._pose()
         return {"enabled": self.enabled, "feedback_fresh": True, "arm_status": "NORMAL", "pose_current": pose,
                 "current": self._joints(pose), "gripper_actual_mm": self.width, "trajectory": {"moving": False}}
+
+    def _pose(self):
+        return A.flange_pose(*self.tool, self.lean, self.yaw, self.grip_dir)
 
     def _joints(self, pose):
         q = A.KIN.nearest_ik(pose, [0, 45, -60, 0, 45, 0])
         return [round(float(v), 1) for v in q] if q is not None else [0.0] * 6
 
     def state(self):
-        pose = A.flange_pose(*self.tool, self.lean)
+        pose = self._pose()
         return {"enabled": self.enabled, "fresh": True, "status": "NORMAL", "teaching": False,
                 "flange": [round(v, 1) for v in pose], "tool": [round(v, 1) for v in self.tool], "lean": self.lean,
+                "yaw": A.tool_from_flange(pose)[2], "grip": A.grip_of(pose),
                 "joints": self._joints(pose), "gripper_mm": self.width, "moving": False, "plan": None,
                 "plan_reason": None, "guard": None, "owner": A.CLIENT, "speed": self.speed}
 
@@ -82,12 +87,13 @@ class SimArm:
         self.enabled = True
 
     def home(self, timeout=40.0):
-        self.tool, self.lean = [198.0, 0.0, 300.0], 40.0
+        self.tool, self.lean, self.yaw, self.grip_dir = [198.0, 0.0, 300.0], 40.0, None, None
 
-    def move_tool(self, x, y, z, lean=None, yaw_deg=None, tol_mm=4.0, timeout=60.0, speed=None, min_tip_z=None):
+    def move_tool(self, x, y, z, lean=None, yaw_deg=None, tol_mm=4.0, timeout=60.0, speed=None, min_tip_z=None,
+                  grip_deg=None):
         self._check()
         self.enable()                     # as arm.Arm does: a new move after an e-stop re-enables
-        use, goal = A.goal_for(x, y, z, lean, yaw_deg, A.flange_pose(*self.tool, self.lean), self.walls)
+        use, goal = A.goal_for(x, y, z, lean, yaw_deg, self._pose(), self.walls, grip_deg)
         low = min(float(t[2]) for t in A.tip_points(goal))
         if low < self.floor_z_mm:
             raise A.ArmError(f"z={z:.0f} mm would put the fingertips at {low:.0f} mm, below the floor ({self.floor_z_mm:.0f} mm)")
@@ -100,6 +106,7 @@ class SimArm:
             self._check()
             time.sleep(0.02)
         self.tool, self.lean = [float(x), float(y), float(z)], use
+        self.yaw, self.grip_dir = yaw_deg, grip_deg
         if self.t.bottle["held"]:
             self.t.bottle["xy"] = [float(x), float(y)]
         return self.state()
@@ -113,9 +120,9 @@ class SimArm:
         pose = A.KIN.fk_pose(q)
         if min(float(t[2]) for t in A.tip_points(pose)) < self.floor_z_mm:
             raise A.ArmError("the fingertips would go below the floor")
-        A.check_walls(pose, A.flange_pose(*self.tool, self.lean), self.walls)
-        tool, lean, _ = A.tool_from_flange(pose)
-        self.tool, self.lean = tool, lean
+        A.check_walls(pose, self._pose(), self.walls)
+        tool, lean, yaw = A.tool_from_flange(pose)
+        self.tool, self.lean, self.yaw, self.grip_dir = tool, lean, yaw, A.grip_of(pose)
         if self.t.bottle["held"]:
             self.t.bottle["xy"] = [tool[0], tool[1]]
         return self.state()

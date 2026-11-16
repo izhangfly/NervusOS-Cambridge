@@ -105,17 +105,19 @@ def wall_clearance(pose, walls):
     return best
 
 
-def goal_for(x, y, z, lean, yaw_deg, now_pose, walls):
+def goal_for(x, y, z, lean, yaw_deg, now_pose, walls, grip_deg=None):
     """(lean used, flange pose) for a tool point: the smallest lean, at least `lean`, that reaches it and keeps
     every part clear of the walls (more lean swings the wrist and its camera back towards the base).
     Raises ArmError if no lean does."""
-    use = min_lean(x, y, z, yaw_deg, at_least=lean or 0.0)
+    use = min_lean(x, y, z, yaw_deg, at_least=lean or 0.0, grip_deg=grip_deg)
     if use is None:
-        raise ArmError(f"({x:.0f}, {y:.0f}, {z:.0f}) mm is out of the arm's reach")
+        raise ArmError(f"({x:.0f}, {y:.0f}, {z:.0f}) mm is out of the arm's reach"
+                       + (" with that yaw (lean towards a direction near the base's bearing, and turn the fingers "
+                          "with grip instead)" if yaw_deg is not None else ""))
     first = None
     while use <= LEAN_MAX_DEG + 1e-6:
-        if reachable(x, y, z, use, yaw_deg):
-            goal = flange_pose(x, y, z, use, yaw_deg)
+        if reachable(x, y, z, use, yaw_deg, grip_deg):
+            goal = flange_pose(x, y, z, use, yaw_deg, grip_deg)
             try:
                 check_walls(goal, now_pose, walls)
                 return use, goal
@@ -154,35 +156,67 @@ def _ry(a):
     return np.array([[c, 0.0, s], [0.0, 1.0, 0.0], [-s, 0.0, c]])
 
 
-def tool_rotation(yaw_deg: float, lean_deg: float) -> np.ndarray:
-    """Tool down, tips leaning `lean` towards the yaw direction; the fingers close across it, level."""
-    return _rz(math.radians(yaw_deg)) @ _ry(-math.radians(lean_deg)) @ R_DOWN
+def tool_rotation(yaw_deg: float, lean_deg: float, twist_deg: float = 0.0) -> np.ndarray:
+    """Tool down, tips leaning `lean` towards the yaw direction. With no twist the fingers close across the lean,
+    level; `twist` turns the gripper about its own axis (J6) from there."""
+    return _rz(math.radians(yaw_deg)) @ _ry(-math.radians(lean_deg)) @ R_DOWN @ _rz(math.radians(twist_deg))
 
 
-def flange_pose(x, y, z, lean_deg=0.0, yaw_deg=None):
-    """Driver pose [x, y, z, rx, ry, rz] of the flange for a tool point at (x, y, z). yaw defaults to the
-    target's bearing from the base, so the lean points outward and the fingers close sideways."""
+def twist_for_grip(yaw_deg, lean_deg, grip_deg):
+    """The turn of the gripper about its own axis (deg, -90..90) that makes the fingers close along the table
+    direction grip_deg while the tool leans lean_deg towards yaw_deg; 0 for no grip. The fingers are
+    symmetric, so a grip and the grip +-180 are the same."""
+    if grip_deg is None:
+        return 0.0
+    d = math.radians(float(grip_deg) - float(yaw_deg))
+    t = math.degrees(math.atan2(math.cos(d), math.sin(d) * math.cos(math.radians(lean_deg))))
+    while t > 90.0:
+        t -= 180.0
+    while t <= -90.0:
+        t += 180.0
+    return t
+
+
+def _rotation(x, y, lean_deg, yaw_deg, grip_deg):
     yaw = math.degrees(math.atan2(y, x)) if yaw_deg is None else float(yaw_deg)
-    R = tool_rotation(yaw, lean_deg)
+    return tool_rotation(yaw, lean_deg, twist_for_grip(yaw, lean_deg, grip_deg))
+
+
+def flange_pose(x, y, z, lean_deg=0.0, yaw_deg=None, grip_deg=None):
+    """Driver pose [x, y, z, rx, ry, rz] of the flange for a tool point at (x, y, z). yaw defaults to the
+    target's bearing from the base, so the lean points outward; the fingers close along grip_deg (a table
+    direction), or at right angles to the yaw when it is None."""
+    R = _rotation(x, y, lean_deg, yaw_deg, grip_deg)
     p = np.array([x, y, z], float) - R @ np.array([0.0, 0.0, GRASP_OFFSET_MM])
     return K.rt_to_pose(p, R)
 
 
-def reachable(x, y, z, lean_deg, yaw_deg=None) -> bool:
-    yaw = math.degrees(math.atan2(y, x)) if yaw_deg is None else float(yaw_deg)
-    R = tool_rotation(yaw, lean_deg)
+def reachable(x, y, z, lean_deg, yaw_deg=None, grip_deg=None) -> bool:
+    R = _rotation(x, y, lean_deg, yaw_deg, grip_deg)
     p = np.array([x, y, z], float) - R @ np.array([0.0, 0.0, GRASP_OFFSET_MM])
     return len(KIN.ik_all_rt(p, R)) > 0
 
 
-def min_lean(x, y, z, yaw_deg=None, at_least=0.0):
+def min_lean(x, y, z, yaw_deg=None, at_least=0.0, grip_deg=None):
     """The smallest lean (deg, in LEAN_STEP steps) that reaches the tool point, or None."""
     lean = float(at_least)
     while lean <= LEAN_MAX_DEG + 1e-6:
-        if reachable(x, y, z, lean, yaw_deg):
+        if reachable(x, y, z, lean, yaw_deg, grip_deg):
             return lean
         lean += LEAN_STEP_DEG
     return None
+
+
+def grip_of(pose):
+    """The table direction (deg, -90..90) the fingers close along, for a driver flange pose."""
+    _, R = K.pose_to_rt(pose)
+    c = np.asarray(R, float)[:, 1]
+    g = math.degrees(math.atan2(c[1], c[0]))
+    while g > 90.0:
+        g -= 180.0
+    while g <= -90.0:
+        g += 180.0
+    return round(g, 1)
 
 
 def tip_points(pose):
@@ -239,7 +273,8 @@ class Arm:
             "enabled": bool(s.get("enabled")), "fresh": bool(s.get("feedback_fresh")),
             "status": s.get("arm_status"), "teaching": bool(s.get("teaching")),
             "flange": [round(v, 1) for v in p],
-            "tool": tool_from_flange(p)[0], "lean": tool_from_flange(p)[1],
+            "tool": tool_from_flange(p)[0], "lean": tool_from_flange(p)[1], "yaw": tool_from_flange(p)[2],
+            "grip": grip_of(p),
             "joints": [round(v, 1) for v in s.get("current") or []],
             "gripper_mm": s.get("gripper_actual_mm"), "moving": bool((s.get("trajectory") or {}).get("moving")),
             "plan": (s.get("plan") or {}).get("kind"), "plan_reason": (s.get("plan") or {}).get("reason"),
@@ -278,12 +313,14 @@ class Arm:
         self._req("/api/stop", {})
         raise ArmError("the arm did not reach its ready pose in time")
 
-    def move_tool(self, x, y, z, lean=None, yaw_deg=None, tol_mm=4.0, timeout=60.0, speed=None, min_tip_z=None):
+    def move_tool(self, x, y, z, lean=None, yaw_deg=None, tol_mm=4.0, timeout=60.0, speed=None, min_tip_z=None,
+                  grip_deg=None):
         """Move the tool point to (x, y, z). lean None = the smallest lean that reaches it; a number = at least
-        that lean. Blocks until there; returns the state, with the lean used. min_tip_z: hold and fail if a
-        fingertip dips below this height on the way (the path is the driver's, this is the check on it)."""
+        that lean. grip_deg: the table direction the fingers close along (None: across the lean). Blocks until
+        there; returns the state, with the lean used. min_tip_z: hold and fail if a fingertip dips below this
+        height on the way (the path is the driver's, this is the check on it)."""
         start = self.raw_state()["pose_current"]
-        use, goal = goal_for(x, y, z, lean, yaw_deg, start, self.walls)
+        use, goal = goal_for(x, y, z, lean, yaw_deg, start, self.walls, grip_deg)
         low = min(float(t[2]) for t in tip_points(goal))
         if low < self.floor_z_mm:
             raise ArmError(f"z={z:.0f} mm would put the fingertips at {low:.0f} mm, below the floor ({self.floor_z_mm:.0f} mm)")
