@@ -131,7 +131,10 @@ class WristDepth:
             time.sleep(0.06)
         a = np.stack(frames)
         a[a == 0] = np.nan
-        return np.nan_to_num(np.nanmedian(a, axis=0)).astype(np.uint16)
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)          # pixels with no reading in any frame
+            return np.nan_to_num(np.nanmedian(a, axis=0)).astype(np.uint16)
 
     def close(self):
         self._stop.set()
