@@ -48,15 +48,16 @@ class HuntTest(unittest.TestCase):
     """The hold-still buzz: a joint's motor oscillating in place gets its target nudged, a quiet arm never."""
 
     def feed(self, w, t0, t1, hunting_joint=None, amp=0.4, targets=READY):
-        out, t = [], t0
-        while t < t1:
+        out, k = [], 0
+        while t0 + k * 0.01 < t1:
+            t = t0 + k * 0.01
             s = [0.002 * math.sin(7 * t)] * 6
             if hunting_joint is not None:
-                s[hunting_joint] = amp * (1 if int(t * 200) % 2 else -1)       # a 100 Hz square wave
+                s[hunting_joint] = amp * (1 if k % 2 else -1)                    # flips every sample
             r = w.update(t, s, targets)
             if r:
                 out.append((t, r))
-            t += 0.01
+            k += 1
         return out
 
     def test_a_quiet_hold_is_left_alone(self):
