@@ -28,3 +28,6 @@ venv/
 # Agent worktrees (Claude Code)
 /.claude/worktrees/
 gpt-arm/vendor-openni/
+
+# GPT Arm report page: built media (tools/build_media.sh); deployed with rsync, not kept in git
+gpt-arm/site/media/

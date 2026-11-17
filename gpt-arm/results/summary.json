@@ -1,0 +1,90 @@
+{
+ "generated_utc": "2026-11-17T02:12:36Z",
+ "benchmark": {
+  "id": "bench-20261116-133321",
+  "state": "done",
+  "instruction": "Pick up the hair gel bottle from the table and put it into the basket. Then take it back out of the basket and put it down on the table beside the basket. Standing or lying on the table are both fine.",
+  "runs_per_model": 5,
+  "lessons": false,
+  "models": {
+   "gpt-6.1-sol": {
+    "runs": 3,
+    "successes": 3,
+    "rate": 1.0,
+    "mean_stage": 5,
+    "stage_counts": [
+     0,
+     0,
+     0,
+     0,
+     0,
+     3
+    ],
+    "median_decisions": 21.0,
+    "mean_decisions": 28.0,
+    "median_minutes": 13.1,
+    "mean_minutes": 22.4,
+    "mean_tokens": 396661,
+    "median_tokens": 292504,
+    "tokens_total": 1189983,
+    "thinking_share": 0.868,
+    "moving_share": 0.11,
+    "refused_or_failed": 2,
+    "decisions_total": 84,
+    "minutes_per_success": 22.4,
+    "tokens_per_success": 396661,
+    "failures": {}
+   },
+   "gpt-5.6-sol": {
+    "runs": 3,
+    "successes": 0,
+    "rate": 0.0,
+    "mean_stage": 2.67,
+    "stage_counts": [
+     0,
+     1,
+     0,
+     1,
+     1,
+     0
+    ],
+    "median_decisions": 60.0,
+    "mean_decisions": 49.7,
+    "median_minutes": 31.2,
+    "mean_minutes": 30.3,
+    "mean_tokens": 698256,
+    "median_tokens": 803404,
+    "tokens_total": 2094767,
+    "thinking_share": 0.839,
+    "moving_share": 0.132,
+    "refused_or_failed": 12,
+    "decisions_total": 149,
+    "minutes_per_success": null,
+    "tokens_per_success": null,
+    "failures": {
+     "dropped the bottle while carrying it out of the basket": 1,
+     "lost the bottle in the basket, then ran out of steps": 1,
+     "the bottle slipped out on every lift": 1
+    }
+   }
+  }
+ },
+ "all_runs": {
+  "runs": 19,
+  "direct": 18,
+  "successes": 5,
+  "decisions": 416,
+  "tokens": 5585034,
+  "median_think_s": 20.7,
+  "p90_think_s": 61.6,
+  "refused_or_failed": 31
+ },
+ "stages": [
+  "No purposeful approach",
+  "Gripper around the bottle, no grasp",
+  "Grasped and lifted off the table",
+  "Released inside the basket",
+  "Re-grasped and lifted out of the basket",
+  "Put down on the table (complete)"
+ ]
+}

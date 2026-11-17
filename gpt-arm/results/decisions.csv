@@ -1,0 +1,417 @@
+run_id,model,n,action,target,ok,t_end_s,think_s,motion_s,tokens,tool_x_mm,tool_y_mm,tool_z_mm,holding,gripper_mm,result
+20261115-213705-scripted,scripted,2,move_above,bottle,True,15.8,0.3,6.76,0,160,0,330,False,,above bottle at carry height
+20261115-213705-scripted,scripted,3,lower,,True,23.4,0.3,7.13,0,295,183,250,False,,lowered to 75 mm above bottle
+20261115-213705-scripted,scripted,4,close_gripper,,True,25.5,0.3,1.61,0,295,183,75,False,,closed on something 43 mm wide: holding
+20261115-213705-scripted,scripted,5,lift,,True,33.0,0.3,7.08,0,295,183,75,True,,"lifted, but the bottle slipped out of the fingers"
+20261115-213705-scripted,scripted,6,open_gripper,,True,35.1,0.3,1.62,0,295,183,250,False,,opened (it held nothing)
+20261115-213705-scripted,scripted,7,look,,True,44.6,0.3,8.79,0,295,183,250,False,,"looked: the bottle is on the table at (371, 201)"
+20261115-213705-scripted,scripted,8,move_above,bottle,True,53.5,0.3,8.28,0,160,0,330,False,,above bottle at carry height
+20261115-213705-scripted,scripted,9,lower,,True,61.9,0.3,7.53,0,371,200,250,False,,lowered to 75 mm above bottle
+20261115-215743-gpt-5.6-sol,gpt-5.6-sol,2,move_tool,"(348, 217, 160) yaw 55",True,52.7,40.8,9.34,11623,,,,False,,"reached: tool point now (348, 216, 160), lean 15"
+20261115-215743-gpt-5.6-sol,gpt-5.6-sol,3,move_tool,"(348, 216, 65) yaw 55",True,73.7,16.87,3.91,9556,,,,False,,"reached: tool point now (348, 216, 65), lean 0"
+20261115-215743-gpt-5.6-sol,gpt-5.6-sol,4,gripper,0 mm,True,83.1,7.39,1.62,8817,,,,False,,the fingers are now 0 mm apart; they closed on nothing
+20261115-215743-gpt-5.6-sol,gpt-5.6-sol,5,gripper,65 mm,True,93.1,8.1,1.61,8842,,,,False,,the fingers are now 64 mm apart
+20261115-215743-gpt-5.6-sol,gpt-5.6-sol,6,move_tool,"(348, 216, 28) yaw 55",True,106.9,11.88,1.66,9239,,,,False,,"reached: tool point now (348, 216, 29), lean 0"
+20261115-215743-gpt-5.6-sol,gpt-5.6-sol,7,gripper,0 mm,True,114.0,5.23,1.62,8723,,,,False,,the fingers are now 43 mm apart; they stopped on something: holding
+20261115-215743-gpt-5.6-sol,gpt-5.6-sol,8,move_tool,"(348, 216, 170) yaw 55",True,132.9,12.91,5.66,9183,,,,True,,"reached: tool point now (348, 216, 170), lean 20"
+20261115-215743-gpt-5.6-sol,gpt-5.6-sol,9,move_tool,"(348, 216, 170) lean 90 yaw 55",False,184.9,51.72,0.0,12301,,,,True,,refused: lean must be 0 to 65 degrees
+20261115-215743-gpt-5.6-sol,gpt-5.6-sol,10,move_tool,"(348, 216, 170) lean 65 yaw 55",True,220.8,29.19,6.43,10790,,,,True,,"reached: tool point now (348, 216, 170), lean 65"
+20261115-215743-gpt-5.6-sol,gpt-5.6-sol,11,move_tool,"(348, 216, 70) lean 65 yaw 55",True,278.6,52.75,4.44,12443,,,,True,,"reached: tool point now (348, 216, 70), lean 65"
+20261115-215743-gpt-5.6-sol,gpt-5.6-sol,12,gripper,65 mm,True,334.6,53.86,1.62,12587,,,,True,,the fingers are now 64 mm apart
+20261115-215743-gpt-5.6-sol,gpt-5.6-sol,13,move_tool,"(348, 216, 170) lean 65 yaw 55",True,353.0,13.63,4.47,9469,,,,False,,"reached: tool point now (348, 216, 170), lean 65"
+20261115-215743-gpt-5.6-sol,gpt-5.6-sol,14,move_tool,"(348, 216, 29) yaw 55",True,387.3,27.57,6.39,10690,,,,False,,"reached: tool point now (348, 215, 29), lean 0"
+20261115-215743-gpt-5.6-sol,gpt-5.6-sol,15,move_tool,"(208, 140, 160) yaw 55",True,412.0,17.25,7.16,9527,,,,False,,"reached: tool point now (208, 140, 160), lean 10"
+20261115-215743-gpt-5.6-sol,gpt-5.6-sol,16,move_tool,"(208, 140, 29) yaw 55",True,452.5,34.67,5.54,11395,,,,False,,"reached: tool point now (209, 140, 29), lean 0"
+20261115-215743-gpt-5.6-sol,gpt-5.6-sol,17,move_tool,"(209, 140, 90) yaw 55",True,532.8,77.47,2.61,14431,,,,False,,"reached: tool point now (209, 140, 90), lean 0"
+20261115-215743-gpt-5.6-sol,gpt-5.6-sol,18,move_tool,"(148, 183, 90) yaw 55",True,627.3,91.13,3.18,16421,,,,False,,"reached: tool point now (148, 183, 90), lean 0"
+20261115-215743-gpt-5.6-sol,gpt-5.6-sol,19,move_tool,"(148, 183, 29) yaw 55",True,656.5,26.39,2.54,10673,,,,False,,"reached: tool point now (148, 183, 30), lean 0"
+20261115-215743-gpt-5.6-sol,gpt-5.6-sol,20,gripper,0 mm,True,674.0,15.73,1.62,9374,,,,False,,the fingers are now 32 mm apart; they stopped on something: holding
+20261115-215743-gpt-5.6-sol,gpt-5.6-sol,21,move_tool,"(149, 183, 170) yaw 55",True,696.8,16.43,6.04,10022,,,,True,,"reached: tool point now (149, 183, 170), lean 15"
+20261115-215743-gpt-5.6-sol,gpt-5.6-sol,22,move_tool,"(149, 183, 170) lean 65 yaw -125",False,786.7,89.63,0.01,16335,,,,True,,"failed: (149, 183, 170) mm is out of the arm's reach"
+20261115-215743-gpt-5.6-sol,gpt-5.6-sol,23,move_tool,"(100, 120, 140) lean 65 yaw -125",False,845.3,58.34,0.0,13616,,,,True,,"failed: (100, 120, 140) mm is out of the arm's reach"
+20261115-215743-gpt-5.6-sol,gpt-5.6-sol,24,move_tool,"(60, 60, 100) lean 65 yaw -125",False,895.6,49.99,0.01,12658,,,,True,,"failed: (60, 60, 100) mm is out of the arm's reach"
+20261115-215743-gpt-5.6-sol,gpt-5.6-sol,25,move_tool,"(348, 216, 70) lean 65 yaw 55",True,1106.5,19.56,7.96,10144,,,,True,,"reached: tool point now (348, 217, 70), lean 65"
+20261115-215743-gpt-5.6-sol,gpt-5.6-sol,26,gripper,65 mm,True,1123.1,14.71,1.62,9687,,,,True,,the fingers are now 64 mm apart
+20261115-222706-gpt-5.6-sol,gpt-5.6-sol,3,move_tool,"(280, 271, 170)",True,37.7,6.73,9.45,9258,280,270,170,False,74.7,"reached: tool point now (280, 270, 170), lean 15"
+20261115-222706-gpt-5.6-sol,gpt-5.6-sol,4,move_by,"(10, -10, 0)",False,101.5,60.31,3.22,13750,278,269,168,False,74.7,failed: stopped 13 mm short of the target (line: )
+20261115-222706-gpt-5.6-sol,gpt-5.6-sol,5,move_by,"(0, 0, -35)",True,132.9,29.73,1.25,11215,278,269,134,False,74.8,"reached: tool point now (278, 269, 134), lean 10"
+20261115-222706-gpt-5.6-sol,gpt-5.6-sol,6,move_by,"(20, -2, 0)",True,148.3,14.31,0.95,10017,298,267,134,False,74.8,"reached: tool point now (298, 267, 134), lean 10"
+20261115-222706-gpt-5.6-sol,gpt-5.6-sol,7,move_by,"(0, 0, -45)",True,159.1,8.58,1.94,9539,298,268,89,False,74.8,"reached: tool point now (298, 268, 89), lean 5"
+20261115-222706-gpt-5.6-sol,gpt-5.6-sol,8,gripper,0 mm,True,169.8,8.8,1.62,9679,298,268,89,True,74.8,the fingers are now 42 mm apart; they stopped on something: holding
+20261115-222706-gpt-5.6-sol,gpt-5.6-sol,9,move_by,"(0, 0, 160)",True,184.2,7.57,6.54,9515,298,268,249,True,42.0,"reached: tool point now (298, 268, 249), lean 30"
+20261115-222706-gpt-5.6-sol,gpt-5.6-sol,10,move_tool,"(313, -150, 300)",True,215.7,15.8,15.43,10213,313,-150,300,True,42.0,"reached: tool point now (313, -150, 300), lean 35"
+20261115-222706-gpt-5.6-sol,gpt-5.6-sol,11,move_by,"(0, 0, -120)",True,260.6,40.5,4.17,12406,313,-150,181,True,42.0,"reached: tool point now (313, -150, 181), lean 15"
+20261115-222706-gpt-5.6-sol,gpt-5.6-sol,12,move_by,"(0, 0, -80)",True,294.4,30.16,3.32,11558,313,-150,101,True,42.0,"reached: tool point now (313, -150, 101), lean 0"
+20261115-222706-gpt-5.6-sol,gpt-5.6-sol,13,gripper,75 mm,True,305.1,8.8,1.61,9923,313,-150,100,False,42.0,the fingers are now 75 mm apart
+20261115-222706-gpt-5.6-sol,gpt-5.6-sol,14,gripper,0 mm,True,316.0,8.95,1.61,10025,313,-150,100,False,74.7,the fingers are now 0 mm apart; they closed on nothing
+20261115-222706-gpt-5.6-sol,gpt-5.6-sol,15,gripper,75 mm,True,330.4,12.41,1.61,10173,313,-150,100,False,0.4,the fingers are now 75 mm apart
+20261115-222706-gpt-5.6-sol,gpt-5.6-sol,16,move_by,"(0, 0, -60)",True,343.9,10.88,2.41,10242,313,-150,41,False,74.7,"reached: tool point now (313, -150, 41), lean 0"
+20261115-222706-gpt-5.6-sol,gpt-5.6-sol,17,gripper,0 mm,True,352.0,6.09,1.61,9903,313,-150,40,False,74.8,the fingers are now 0 mm apart; they closed on nothing
+20261115-222706-gpt-5.6-sol,gpt-5.6-sol,18,skill,stand_up,False,361.5,9.03,0.0,10141,313,-150,40,False,0.4,"refused: stand_up needs an open, empty gripper"
+20261115-222706-gpt-5.6-sol,gpt-5.6-sol,19,gripper,75 mm,True,373.8,10.47,1.61,10218,313,-150,40,False,0.4,the fingers are now 75 mm apart
+20261115-222706-gpt-5.6-sol,gpt-5.6-sol,20,move_tool,"(317, -284, 150)",True,394.3,13.75,6.23,10660,318,-284,151,False,74.7,"reached: tool point now (318, -284, 151), lean 15"
+20261115-222706-gpt-5.6-sol,gpt-5.6-sol,21,move_by,"(0, 0, -55)",True,406.4,9.41,2.4,10114,317,-284,96,False,74.8,"reached: tool point now (317, -284, 96), lean 5"
+20261115-222706-gpt-5.6-sol,gpt-5.6-sol,22,gripper,0 mm,True,414.3,5.92,1.61,9891,317,-284,96,False,74.8,the fingers are now 2 mm apart; they closed on nothing
+20261115-222706-gpt-5.6-sol,gpt-5.6-sol,23,gripper,75 mm,True,424.3,8.1,1.61,10060,317,-284,96,False,2.3,the fingers are now 75 mm apart
+20261115-222706-gpt-5.6-sol,gpt-5.6-sol,24,move_tool,"(361, -79, 180)",True,441.3,8.91,7.78,10224,361,-79,180,False,74.7,"reached: tool point now (361, -79, 180), lean 15"
+20261115-222706-gpt-5.6-sol,gpt-5.6-sol,25,move_by,"(70, 5, 0)",True,485.8,41.42,2.8,12977,431,-75,180,False,74.8,"reached: tool point now (431, -75, 180), lean 20"
+20261115-222706-gpt-5.6-sol,gpt-5.6-sol,26,move_by,"(-2, -10, -60)",True,538.7,50.11,2.51,13602,428,-84,120,False,74.8,"reached: tool point now (428, -84, 120), lean 10"
+20261115-222706-gpt-5.6-sol,gpt-5.6-sol,27,gripper,0 mm,True,547.0,6.43,1.61,9891,428,-84,120,False,74.8,the fingers are now 0 mm apart; they closed on nothing
+20261115-222706-gpt-5.6-sol,gpt-5.6-sol,28,gripper,75 mm,True,570.5,21.65,1.62,11017,428,-84,120,False,0.4,the fingers are now 0 mm apart
+20261116-104408-gpt-6.1-sol,gpt-6.1-sol,3,move_tool,"(358, -50, 220) yaw -25",True,71.0,17.15,6.42,10165,358,-50,220,False,74.7,"reached: tool point now (358, -50, 220), lean 25"
+20261116-104408-gpt-6.1-sol,gpt-6.1-sol,4,move_by,"(28, -9, 0)",False,105.4,34.03,0.01,10651,358,-50,220,False,74.8,"failed: the arm is not sending feedback (is it powered, is CAN plugged in?)"
+20261116-104408-gpt-6.1-sol,gpt-6.1-sol,5,move_by,"(28, -9, 0)",False,125.6,19.64,0.01,10403,358,-50,220,False,74.8,"failed: the arm is not sending feedback (is it powered, is CAN plugged in?)"
+20261116-104408-gpt-6.1-sol,gpt-6.1-sol,6,move_by,"(28, -9, 0)",False,146.1,20.2,0.01,10434,358,-50,220,False,74.8,"failed: the arm is not sending feedback (is it powered, is CAN plugged in?)"
+20261116-104408-gpt-6.1-sol,gpt-6.1-sol,7,skill,look,True,187.9,28.68,12.84,10752,160,0,330,False,74.8,looked: the bottle is in the basket
+20261116-104408-gpt-6.1-sol,gpt-6.1-sol,8,move_tool,"(386, -59, 220) yaw -25",True,224.9,23.93,7.16,10067,386,-58,220,False,74.8,"reached: tool point now (386, -58, 220), lean 25"
+20261116-104408-gpt-6.1-sol,gpt-6.1-sol,9,move_by,"(18, -5, 0)",True,266.0,38.32,2.45,11144,404,-63,221,False,74.8,"reached: tool point now (404, -63, 221), lean 25"
+20261116-104408-gpt-6.1-sol,gpt-6.1-sol,10,move_by,"(0, 0, -35)",True,301.1,33.49,1.16,11062,404,-63,186,False,74.8,"reached: tool point now (404, -63, 186), lean 20"
+20261116-104408-gpt-6.1-sol,gpt-6.1-sol,11,move_tool,"(414, -58, 161) lean 20 yaw -25",True,342.5,38.71,2.45,11147,414,-58,162,False,74.8,"reached: tool point now (414, -58, 162), lean 20"
+20261116-104408-gpt-6.1-sol,gpt-6.1-sol,12,move_by,"(-3, -6, -20)",True,383.4,38.3,2.41,11373,411,-64,141,False,74.8,"reached: tool point now (411, -64, 141), lean 15"
+20261116-104408-gpt-6.1-sol,gpt-6.1-sol,13,gripper,35 mm,True,422.7,37.41,1.61,11356,411,-64,141,False,74.8,the fingers are now 35 mm apart
+20261116-104408-gpt-6.1-sol,gpt-6.1-sol,14,gripper,25 mm,True,475.9,51.33,1.61,11715,411,-64,141,False,35.4,the fingers are now 25 mm apart
+20261116-104408-gpt-6.1-sol,gpt-6.1-sol,15,gripper,65 mm,True,509.3,31.5,1.61,11385,411,-64,141,False,25.1,the fingers are now 64 mm apart
+20261116-104408-gpt-6.1-sol,gpt-6.1-sol,16,move_by,"(1, 5, -25)",True,647.3,136.67,1.05,14668,411,-59,117,False,64.4,"reached: tool point now (411, -59, 117), lean 10"
+20261116-104408-gpt-6.1-sol,gpt-6.1-sol,17,gripper,35 mm,True,678.5,29.25,1.61,11308,411,-59,116,False,64.4,the fingers are now 35 mm apart
+20261116-104408-gpt-6.1-sol,gpt-6.1-sol,18,gripper,65 mm,True,700.9,20.56,1.61,10924,411,-59,116,False,35.4,the fingers are now 64 mm apart
+20261116-104408-gpt-6.1-sol,gpt-6.1-sol,19,move_by,"(0, 0, -20)",True,750.2,47.93,0.94,11886,411,-59,95,False,64.4,"reached: tool point now (411, -59, 95), lean 5"
+20261116-104408-gpt-6.1-sol,gpt-6.1-sol,20,move_by,"(2, 10, 0)",True,803.6,52.44,0.63,12045,412,-49,96,False,64.4,"reached: tool point now (412, -49, 96), lean 5"
+20261116-104408-gpt-6.1-sol,gpt-6.1-sol,21,move_by,"(1, 10, 0)",True,911.6,107.13,0.63,13943,414,-40,96,False,64.4,"reached: tool point now (414, -40, 96), lean 5"
+20261116-104408-gpt-6.1-sol,gpt-6.1-sol,22,move_by,"(0, 12, 0)",True,1025.8,113.15,0.64,14063,414,-28,96,False,64.4,"reached: tool point now (414, -28, 96), lean 5"
+20261116-104408-gpt-6.1-sol,gpt-6.1-sol,23,move_by,"(0, 10, 0)",True,1075.4,48.71,0.63,11900,414,-19,96,False,64.4,"reached: tool point now (414, -19, 96), lean 5"
+20261116-104408-gpt-6.1-sol,gpt-6.1-sol,24,move_by,"(0, 10, 0)",True,1106.0,29.69,0.63,11254,414,-9,96,False,64.4,"reached: tool point now (414, -9, 96), lean 5"
+20261116-111806-gpt-5.6-sol,gpt-5.6-sol,3,move_tool,"(360, 6, 250) yaw 0",True,35.5,10.08,6.34,9784,360,6,249,False,74.7,"reached: tool point now (360, 6, 249), lean 25"
+20261116-111806-gpt-5.6-sol,gpt-5.6-sol,4,move_tool,"(248, -182, 250) yaw -45",True,64.0,20.32,7.59,10853,248,-182,250,False,74.8,"reached: tool point now (248, -182, 250), lean 30"
+20261116-111806-gpt-5.6-sol,gpt-5.6-sol,5,move_tool,"(360, 8, 220) yaw 0",True,103.2,22.96,7.69,11026,360,8,220,False,74.8,"reached: tool point now (360, 8, 220), lean 20"
+20261116-111806-gpt-5.6-sol,gpt-5.6-sol,6,move_by,"(35, 0, 0)",True,124.0,18.65,1.46,10427,395,8,219,False,74.8,"reached: tool point now (395, 8, 219), lean 25"
+20261116-111806-gpt-5.6-sol,gpt-5.6-sol,7,move_tool,"(403, 2, 219) yaw -35",True,149.8,21.44,3.77,10804,403,1,219,False,74.8,"reached: tool point now (403, 1, 219), lean 30"
+20261116-111806-gpt-5.6-sol,gpt-5.6-sol,8,move_by,"(0, 0, -50)",True,167.5,13.36,3.81,10253,403,2,169,False,74.8,"reached: tool point now (403, 2, 169), lean 15"
+20261116-111806-gpt-5.6-sol,gpt-5.6-sol,9,move_by,"(18, 10, 0)",True,205.4,35.82,1.46,12340,421,12,169,False,74.8,"reached: tool point now (421, 12, 169), lean 15"
+20261116-111806-gpt-5.6-sol,gpt-5.6-sol,10,move_by,"(0, 0, -70)",True,226.5,17.83,2.72,10741,421,12,98,False,74.8,"reached: tool point now (421, 12, 98), lean 10"
+20261116-111806-gpt-5.6-sol,gpt-5.6-sol,11,move_by,"(-12, 14, 0)",True,248.9,20.54,1.36,10971,408,26,99,False,74.8,"reached: tool point now (408, 26, 99), lean 5"
+20261116-111806-gpt-5.6-sol,gpt-5.6-sol,12,move_by,"(-22, 18, 0)",True,264.3,13.22,1.59,10578,386,43,98,False,74.8,"reached: tool point now (386, 43, 98), lean 5"
+20261116-111806-gpt-5.6-sol,gpt-5.6-sol,13,move_by,"(-11, 8, 0)",True,276.1,10.44,0.75,10503,376,50,99,False,74.8,"reached: tool point now (376, 50, 99), lean 5"
+20261116-111806-gpt-5.6-sol,gpt-5.6-sol,14,move_by,"(18, -9, 0)",True,321.3,43.12,1.47,13279,393,42,99,False,74.8,"reached: tool point now (393, 42, 99), lean 5"
+20261116-111806-gpt-5.6-sol,gpt-5.6-sol,15,move_tool,"(379, 52, 99) yaw -34",True,389.6,64.27,3.36,14691,380,52,99,False,74.8,"reached: tool point now (380, 52, 99), lean 5"
+20261116-111806-gpt-5.6-sol,gpt-5.6-sol,16,move_by,"(17, -11, 0)",True,460.1,66.58,3.4,14871,396,41,99,False,74.8,"reached: tool point now (396, 41, 99), lean 5"
+20261116-111806-gpt-5.6-sol,gpt-5.6-sol,17,move_by,"(-13, 14, 0)",True,477.5,15.98,0.85,11154,383,54,99,False,74.8,"reached: tool point now (383, 54, 99), lean 5"
+20261116-111806-gpt-5.6-sol,gpt-5.6-sol,18,move_by,"(-8, 5, 0)",True,494.5,15.86,0.64,10965,375,59,99,False,74.8,"reached: tool point now (375, 59, 99), lean 5"
+20261116-111806-gpt-5.6-sol,gpt-5.6-sol,19,move_by,"(-7, 7, 0)",True,511.8,16.14,0.63,11124,369,66,99,False,74.8,"reached: tool point now (369, 66, 99), lean 5"
+20261116-111806-gpt-5.6-sol,gpt-5.6-sol,20,move_by,"(0, 0, -25)",True,525.5,11.57,1.46,10760,369,66,74,False,74.8,"reached: tool point now (369, 66, 74), lean 0"
+20261116-111806-gpt-5.6-sol,gpt-5.6-sol,21,move_tool,"(420, 47, 115) yaw -20",True,552.5,23.61,2.83,11772,420,47,115,False,74.8,"reached: tool point now (420, 47, 115), lean 10"
+20261116-111806-gpt-5.6-sol,gpt-5.6-sol,22,move_by,"(-11, 12, 0)",True,567.0,11.14,2.72,10708,409,59,115,False,74.8,"reached: tool point now (409, 59, 115), lean 10"
+20261116-112819-gpt-5.6-sol,gpt-5.6-sol,3,move_tool,"(368, 64, 250) yaw -35",True,46.3,15.7,7.22,11099,368,64,250,False,74.8,"reached: tool point now (368, 64, 250), lean 50"
+20261116-112819-gpt-5.6-sol,gpt-5.6-sol,4,move_by,"(70, 30, 0)",True,99.1,46.58,5.19,13259,438,94,250,False,74.8,"reached: tool point now (438, 94, 250), lean 30"
+20261116-112819-gpt-5.6-sol,gpt-5.6-sol,5,move_by,"(0, -20, 0)",True,113.7,12.76,0.75,10721,438,74,250,False,74.8,"reached: tool point now (438, 74, 250), lean 30"
+20261116-112819-gpt-5.6-sol,gpt-5.6-sol,6,move_by,"(0, 0, -60)",True,193.8,76.87,2.28,15950,438,74,190,False,74.8,"reached: tool point now (438, 74, 190), lean 20"
+20261116-112819-gpt-5.6-sol,gpt-5.6-sol,7,move_by,"(28, -40, 0)",True,205.3,8.89,1.81,10841,465,34,190,False,74.8,"reached: tool point now (465, 34, 190), lean 25"
+20261116-112819-gpt-5.6-sol,gpt-5.6-sol,8,move_by,"(0, 0, -25)",True,235.7,28.48,0.96,12247,464,34,166,False,74.8,"reached: tool point now (464, 34, 166), lean 20"
+20261116-112819-gpt-5.6-sol,gpt-5.6-sol,9,move_by,"(-12, 4, 0)",True,249.1,11.73,0.84,11043,454,38,165,False,74.8,"reached: tool point now (454, 38, 165), lean 20"
+20261116-112819-gpt-5.6-sol,gpt-5.6-sol,10,gripper,35 mm,True,264.8,13.15,1.61,11186,454,38,166,False,74.8,the fingers are now 35 mm apart; they closed on nothing
+20261116-112819-gpt-5.6-sol,gpt-5.6-sol,11,move_by,"(0, 0, -15)",True,276.8,9.64,1.47,10961,454,38,151,False,35.4,"reached: tool point now (454, 38, 151), lean 15"
+20261116-112819-gpt-5.6-sol,gpt-5.6-sol,12,gripper,0 mm,True,293.6,14.33,1.61,11367,454,38,151,False,35.4,the fingers are now 0 mm apart; they closed on nothing
+20261116-112819-gpt-5.6-sol,gpt-5.6-sol,13,skill,look,True,326.0,17.19,14.15,11589,160,0,330,False,0.4,looked: the bottle is in the basket
+20261116-112819-gpt-5.6-sol,gpt-5.6-sol,14,gripper,75 mm,True,336.5,8.17,1.61,11142,160,0,330,False,0.4,the fingers are now 75 mm apart
+20261116-112819-gpt-5.6-sol,gpt-5.6-sol,15,move_tool,"(220, -140, 250)",True,350.4,8.73,4.4,11324,220,-140,250,False,74.7,"reached: tool point now (220, -140, 250), lean 30"
+20261116-112819-gpt-5.6-sol,gpt-5.6-sol,16,move_by,"(0, -30, 0)",True,415.0,61.6,1.58,15814,220,-170,249,False,74.7,"reached: tool point now (220, -170, 249), lean 30"
+20261116-120425-gpt-5.6-sol,gpt-5.6-sol,3,move_tool,"(198, -217, 300)",True,36.2,13.92,5.73,11173,198,-217,300,False,74.8,"reached: tool point now (198, -217, 300), lean 35"
+20261116-120425-gpt-5.6-sol,gpt-5.6-sol,4,move_tool,"(270, -46, 220) lean 0 yaw 90",False,75.6,38.64,0.01,13267,198,-217,300,False,74.8,"failed: (270, -46, 220) mm is out of the arm's reach"
+20261116-120425-gpt-5.6-sol,gpt-5.6-sol,5,move_tool,"(270, -46, 300)",True,102.4,19.77,6.22,11678,270,-46,300,False,74.8,"reached: tool point now (270, -46, 300), lean 40"
+20261116-120425-gpt-5.6-sol,gpt-5.6-sol,6,move_tool,"(198, -217, 240)",True,132.2,21.45,7.21,12077,198,-217,240,False,74.8,"reached: tool point now (198, -217, 240), lean 25"
+20261116-120425-gpt-5.6-sol,gpt-5.6-sol,7,move_by,"(80, 0, 0)",True,159.1,23.16,2.89,12010,278,-217,240,False,74.8,"reached: tool point now (278, -217, 240), lean 25"
+20261116-120425-gpt-5.6-sol,gpt-5.6-sol,8,move_by,"(-20, -15, 0)",True,185.9,25.0,0.95,12513,258,-232,240,False,74.8,"reached: tool point now (258, -232, 240), lean 25"
+20261116-120425-gpt-5.6-sol,gpt-5.6-sol,9,move_by,"(35, 25, 0)",True,248.9,60.31,1.8,15124,293,-207,240,False,74.8,"reached: tool point now (293, -207, 240), lean 25"
+20261116-120425-gpt-5.6-sol,gpt-5.6-sol,10,move_by,"(0, 0, -60)",True,278.3,26.35,2.33,12549,293,-207,181,False,74.8,"reached: tool point now (293, -207, 181), lean 15"
+20261116-120425-gpt-5.6-sol,gpt-5.6-sol,11,move_by,"(25, 35, 0)",True,318.4,37.53,1.83,13617,318,-172,181,False,74.8,"reached: tool point now (318, -172, 181), lean 15"
+20261116-120425-gpt-5.6-sol,gpt-5.6-sol,12,move_by,"(20, 25, 0)",True,347.4,27.03,1.06,12682,338,-148,181,False,74.8,"reached: tool point now (338, -148, 181), lean 15"
+20261116-120425-gpt-5.6-sol,gpt-5.6-sol,13,move_tool,"(245, -225, 181)",True,395.7,43.21,4.3,13755,245,-225,181,False,74.8,"reached: tool point now (245, -225, 181), lean 15"
+20261116-120425-gpt-5.6-sol,gpt-5.6-sol,14,move_by,"(90, 10, 0)",True,417.7,18.18,2.98,12020,335,-215,181,False,74.8,"reached: tool point now (335, -215, 181), lean 20"
+20261116-121848-gpt-5.6-sol,gpt-5.6-sol,3,skill,look,True,32.4,6.1,2.14,10818,160,0,330,False,74.8,looked: the bottle is in the basket
+20261116-121848-gpt-5.6-sol,gpt-5.6-sol,4,move_tool,"(198, -217, 230) lean 0 yaw -45",True,54.1,14.79,6.3,11457,198,-217,230,False,74.8,"reached: tool point now (198, -217, 230), lean 25"
+20261116-121848-gpt-5.6-sol,gpt-5.6-sol,5,move_tool,"(317, -92, 190) yaw -22",True,79.3,17.67,7.01,11961,317,-92,190,False,74.8,"reached: tool point now (317, -92, 190), lean 15"
+20261116-121848-gpt-5.6-sol,gpt-5.6-sol,6,move_tool,"(353, -123, 190) yaw 83",False,91.4,11.5,0.02,11645,317,-92,189,False,74.8,"failed: (353, -123, 190) mm is out of the arm's reach"
+20261116-121848-gpt-5.6-sol,gpt-5.6-sol,7,move_tool,"(342, -123, 150) yaw 80",False,111.5,19.38,0.02,12407,317,-92,189,False,74.8,"failed: (342, -123, 150) mm is out of the arm's reach"
+20261116-121848-gpt-5.6-sol,gpt-5.6-sol,8,move_tool,"(332, -112, 189) yaw 82",False,136.9,24.91,0.01,12676,317,-92,189,False,74.8,"failed: (332, -112, 189) mm is out of the arm's reach"
+20261116-121848-gpt-5.6-sol,gpt-5.6-sol,9,move_tool,"(202, -229, 220) yaw -45",True,191.2,46.99,6.74,14834,202,-229,220,False,74.8,"reached: tool point now (202, -229, 220), lean 20"
+20261116-121848-gpt-5.6-sol,gpt-5.6-sol,10,move_tool,"(308, -91, 190) yaw -20",True,209.3,11.53,6.04,12021,308,-91,190,False,74.8,"reached: tool point now (308, -91, 190), lean 15"
+20261116-121848-gpt-5.6-sol,gpt-5.6-sol,11,move_tool,"(308, -91, 190) yaw -102",False,304.9,95.11,0.02,18939,308,-91,190,False,74.8,"failed: (308, -91, 190) mm is out of the arm's reach"
+20261116-121848-gpt-5.6-sol,gpt-5.6-sol,12,move_tool,"(206, -234, 220) yaw -45",True,556.5,61.43,6.25,16261,206,-234,220,False,74.8,"reached: tool point now (206, -234, 220), lean 20"
+20261116-121848-gpt-5.6-sol,gpt-5.6-sol,13,move_by,"(25, 10, 0)",True,582.6,23.85,1.67,13054,230,-224,220,False,74.8,"reached: tool point now (230, -224, 220), lean 20"
+20261116-121848-gpt-5.6-sol,gpt-5.6-sol,14,move_tool,"(317, -92, 190) yaw -28",True,603.4,14.87,5.44,12436,317,-92,190,False,74.8,"reached: tool point now (317, -92, 190), lean 15"
+20261116-121848-gpt-5.6-sol,gpt-5.6-sol,15,move_tool,"(317, -92, 190) lean 15 yaw 79",False,630.8,26.86,0.01,13463,317,-92,190,False,74.8,"failed: (317, -92, 190) mm is out of the arm's reach"
+20261116-122955-gpt-5.6-sol,gpt-5.6-sol,3,move_tool,"(117, -128, 300)",False,47.1,28.04,0.06,12934,160,0,330,False,74.8,"failed: target [54.979866432812514, -60.148913704273525, 377.13451316238474] is outside the driver's workspace box"
+20261116-122955-gpt-5.6-sol,gpt-5.6-sol,4,move_tool,"(130, -145, 250)",True,95.8,43.92,4.29,14226,130,-145,251,False,74.8,"reached: tool point now (130, -145, 251), lean 35, yaw -48, fingers close along 42"
+20261116-122955-gpt-5.6-sol,gpt-5.6-sol,5,move_tool,"(202, -220, 200) lean 0 yaw -48 grip 42",True,152.3,50.95,4.97,14928,203,-220,200,False,74.8,"reached: tool point now (203, -220, 200), lean 20, yaw -47, fingers close along 42"
+20261116-122955-gpt-5.6-sol,gpt-5.6-sol,6,move_by,"(0, 0, -155)",True,183.7,24.49,6.31,12965,203,-220,45,False,74.8,"reached: tool point now (203, -220, 45), lean 20, yaw -47, fingers close along 42"
+20261116-122955-gpt-5.6-sol,gpt-5.6-sol,7,gripper,0 mm,True,195.6,9.6,1.61,11851,203,-220,46,True,74.8,the fingers are now 42 mm apart; they stopped on something: holding
+20261116-122955-gpt-5.6-sol,gpt-5.6-sol,8,move_by,"(0, 0, 180)",True,211.3,7.77,7.3,11323,203,-220,225,True,42.2,"reached: tool point now (203, -220, 225), lean 25, yaw -47, fingers close along 42"
+20261116-122955-gpt-5.6-sol,gpt-5.6-sol,9,move_tool,"(200, 100, 225)",True,234.6,15.39,7.26,12412,200,100,225,True,42.2,"reached: tool point now (200, 100, 225), lean 25, yaw 27, fingers close along -63"
+20261116-122955-gpt-5.6-sol,gpt-5.6-sol,10,move_by,"(0, 0, -180)",True,252.6,9.48,7.65,11806,201,101,46,True,42.2,"reached: tool point now (201, 101, 46), lean 25, yaw 27, fingers close along -63"
+20261116-122955-gpt-5.6-sol,gpt-5.6-sol,11,gripper,52 mm,True,266.5,11.49,1.61,12222,201,100,46,False,42.2,the fingers are now 52 mm apart; they closed on nothing
+20261116-122955-gpt-5.6-sol,gpt-5.6-sol,12,move_by,"(0, 0, 150)",True,280.1,6.4,6.61,11565,201,100,195,False,51.7,"reached: tool point now (201, 100, 195), lean 25, yaw 27, fingers close along -63"
+20261116-122955-gpt-5.6-sol,gpt-5.6-sol,13,done,,True,292.0,11.34,0.0,11813,201,100,195,False,51.7,you said done
+20261116-124052-gpt-6.1-sol,gpt-6.1-sol,3,move_by,"(0, 0, 40)",True,62.3,31.89,1.79,12311,110,230,340,False,74.8,"reached: tool point now (110, 230, 340), lean 45, yaw 64, fingers close along -26"
+20261116-124052-gpt-6.1-sol,gpt-6.1-sol,4,move_by,"(0, -60, 0)",False,82.0,19.19,0.01,12069,110,230,340,False,74.8,"failed: (110, 170, 340) mm is out of the arm's reach with that yaw (lean towards a direction near the base's bearing, and turn the fingers with grip instead)"
+20261116-124052-gpt-6.1-sol,gpt-6.1-sol,5,move_joints,"[44.5, 57.0, -72.4, 0.0, 65.5, 0.0]",True,111.5,27.95,0.86,12448,179,181,339,False,74.8,"reached: tool point now (179, 181, 339), lean 45, yaw 45, fingers close along -45"
+20261116-125757-gpt-5.6-sol,gpt-5.6-sol,3,move_tool,"(267, 234, 200)",True,29.8,10.15,8.0,11393,267,233,200,False,74.8,"reached: tool point now (267, 233, 200), lean 20, yaw 41, fingers close along -49"
+20261116-130056-gpt-5.6-sol,gpt-5.6-sol,3,move_tool,"(267, 234, 270) grip 90",True,36.6,9.45,7.16,11289,267,234,270,False,74.8,"reached: tool point now (267, 234, 270), lean 30, yaw 41, fingers close along 90"
+20261116-130056-gpt-5.6-sol,gpt-5.6-sol,4,move_by,"(16, 23, 0)",True,50.0,11.12,1.63,11555,283,256,270,False,74.8,"reached: tool point now (283, 256, 270), lean 30, yaw 41, fingers close along -90"
+20261116-130056-gpt-5.6-sol,gpt-5.6-sol,5,move_by,"(0, 0, -190)",True,100.3,41.63,7.9,14128,283,257,81,False,74.8,"reached: tool point now (283, 257, 81), lean 30, yaw 41, fingers close along 90"
+20261116-130056-gpt-5.6-sol,gpt-5.6-sol,6,gripper,35 mm,True,109.8,7.35,1.63,11541,283,256,80,True,74.8,the fingers are now 44 mm apart; they stopped on something: holding
+20261116-130056-gpt-5.6-sol,gpt-5.6-sol,7,move_by,"(0, 0, 190)",True,127.6,8.84,8.22,11339,283,256,270,True,43.6,"reached: tool point now (283, 256, 270), lean 30, yaw 41, fingers close along 90"
+20261116-130056-gpt-5.6-sol,gpt-5.6-sol,8,move_tool,"(259, -166, 270) grip 90",True,143.9,6.82,8.9,11487,260,-166,270,True,43.6,"reached: tool point now (260, -166, 270), lean 30, yaw -33, fingers close along -90"
+20261116-130056-gpt-5.6-sol,gpt-5.6-sol,9,move_by,"(40, 0, 0)",True,186.9,40.47,1.92,14161,299,-166,270,True,43.6,"reached: tool point now (299, -166, 270), lean 30, yaw -33, fingers close along -90"
+20261116-130056-gpt-5.6-sol,gpt-5.6-sol,10,move_by,"(0, 0, -150)",True,210.6,16.78,6.27,12243,299,-166,120,True,43.6,"reached: tool point now (299, -166, 120), lean 30, yaw -33, fingers close along 90"
+20261116-130056-gpt-5.6-sol,gpt-5.6-sol,11,move_by,"(0, 0, -35)",True,226.0,12.74,1.7,12126,300,-167,86,True,43.6,"reached: tool point now (300, -167, 86), lean 30, yaw -33, fingers close along 90"
+20261116-130056-gpt-5.6-sol,gpt-5.6-sol,12,gripper,60 mm,True,235.3,6.84,1.62,11742,299,-166,85,False,43.6,the fingers are now 60 mm apart; they closed on nothing
+20261116-130056-gpt-5.6-sol,gpt-5.6-sol,13,move_by,"(0, 0, 150)",True,253.3,10.98,6.36,11901,299,-166,234,False,59.8,"reached: tool point now (299, -166, 234), lean 30, yaw -33, fingers close along 90"
+20261116-130056-gpt-5.6-sol,gpt-5.6-sol,14,move_by,"(0, 0, -148)",True,301.7,41.37,6.36,14710,299,-166,87,False,59.8,"reached: tool point now (299, -166, 87), lean 30, yaw -33, fingers close along 90"
+20261116-130056-gpt-5.6-sol,gpt-5.6-sol,15,move_by,"(0, 0, 150)",True,330.6,21.52,6.42,12910,299,-166,237,False,59.8,"reached: tool point now (299, -166, 237), lean 30, yaw -33, fingers close along 90"
+20261116-130056-gpt-5.6-sol,gpt-5.6-sol,16,move_by,"(0, 0, -148)",True,360.3,22.53,6.16,13270,299,-166,90,False,59.8,"reached: tool point now (299, -166, 90), lean 30, yaw -33, fingers close along 90"
+20261116-130056-gpt-5.6-sol,gpt-5.6-sol,17,move_by,"(0, 0, 150)",True,383.3,15.85,6.37,12725,299,-166,240,False,59.8,"reached: tool point now (299, -166, 240), lean 30, yaw -33, fingers close along 90"
+20261116-130056-gpt-5.6-sol,gpt-5.6-sol,18,move_tool,"(340, -110, 240)",True,407.6,20.68,2.87,13124,340,-110,240,False,59.8,"reached: tool point now (340, -110, 240), lean 25, yaw -18, fingers close along 72"
+20261116-130056-gpt-5.6-sol,gpt-5.6-sol,19,skill,look,True,477.4,60.51,8.68,16689,160,0,330,False,59.8,looked: the bottle is in the basket
+20261116-130056-gpt-5.6-sol,gpt-5.6-sol,20,move_tool,"(296, -152, 240) grip 90",True,495.0,10.67,6.17,12504,296,-152,240,False,59.8,"reached: tool point now (296, -152, 240), lean 25, yaw -27, fingers close along -90"
+20261116-130056-gpt-5.6-sol,gpt-5.6-sol,21,move_tool,"(386, -114, 240) grip 90",True,520.7,20.83,3.98,13307,386,-114,240,False,59.8,"reached: tool point now (386, -114, 240), lean 25, yaw -16, fingers close along 90"
+20261116-130056-gpt-5.6-sol,gpt-5.6-sol,22,move_tool,"(307, -168, 240) grip 90",True,601.6,76.82,3.5,18226,307,-168,240,False,59.8,"reached: tool point now (307, -168, 240), lean 25, yaw -29, fingers close along -90"
+20261116-130056-gpt-5.6-sol,gpt-5.6-sol,23,move_by,"(0, 0, -70)",True,627.5,22.25,2.99,13256,307,-168,170,False,59.8,"reached: tool point now (307, -168, 170), lean 25, yaw -29, fingers close along -90"
+20261116-130056-gpt-5.6-sol,gpt-5.6-sol,24,move_by,"(0, 0, -65)",True,647.7,16.66,2.78,12802,308,-168,105,False,59.8,"reached: tool point now (308, -168, 105), lean 25, yaw -29, fingers close along 90"
+20261116-130056-gpt-5.6-sol,gpt-5.6-sol,25,gripper,30 mm,True,658.1,7.95,1.61,12165,308,-168,105,True,59.8,the fingers are now 42 mm apart; they stopped on something: holding
+20261116-130056-gpt-5.6-sol,gpt-5.6-sol,26,move_by,"(0, 0, 150)",True,672.1,7.04,6.39,12091,308,-168,255,True,42.1,"reached: tool point now (308, -168, 255), lean 30, yaw -29, fingers close along -90"
+20261116-130056-gpt-5.6-sol,gpt-5.6-sol,27,move_tool,"(267, 234, 255) grip -90",True,700.6,20.07,7.73,13427,267,234,255,True,42.1,"reached: tool point now (267, 234, 255), lean 30, yaw 41, fingers close along -90"
+20261116-130056-gpt-5.6-sol,gpt-5.6-sol,28,move_by,"(0, 0, -140)",True,730.1,22.92,5.97,13384,267,234,116,True,42.1,"reached: tool point now (267, 234, 116), lean 30, yaw 41, fingers close along -90"
+20261116-130056-gpt-5.6-sol,gpt-5.6-sol,29,gripper,52 mm,True,739.4,6.88,1.62,11971,267,234,116,False,42.1,the fingers are now 52 mm apart; they closed on nothing
+20261116-130056-gpt-5.6-sol,gpt-5.6-sol,30,done,,True,748.4,8.26,0.0,12180,267,234,116,False,51.7,you said done
+20261116-133324-gpt-6.1-sol,gpt-6.1-sol,3,move_tool,"(200, 215, 290)",True,52.4,24.62,5.69,12088,200,215,290,False,74.7,"reached: tool point now (200, 215, 290), lean 35, yaw 47, fingers close along -43"
+20261116-133324-gpt-6.1-sol,gpt-6.1-sol,4,move_tool,"(262, 245, 200)",True,103.4,45.69,4.7,13017,262,245,200,False,74.7,"reached: tool point now (262, 245, 200), lean 20, yaw 43, fingers close along -47"
+20261116-133324-gpt-6.1-sol,gpt-6.1-sol,5,move_by,"(0, 0, -125)",True,141.9,32.84,5.14,12717,262,245,75,False,74.7,"reached: tool point now (262, 245, 75), lean 20, yaw 43, fingers close along -47"
+20261116-133324-gpt-6.1-sol,gpt-6.1-sol,6,gripper,30 mm,True,166.0,21.9,1.61,12435,262,245,75,True,74.7,the fingers are now 43 mm apart; they stopped on something: holding
+20261116-133324-gpt-6.1-sol,gpt-6.1-sol,7,move_by,"(0, 0, 175)",True,195.4,21.17,7.61,12059,262,245,250,True,43.2,"reached: tool point now (262, 245, 250), lean 25, yaw 43, fingers close along -47"
+20261116-133324-gpt-6.1-sol,gpt-6.1-sol,8,move_tool,"(258, -167, 280)",True,250.1,37.88,16.29,12818,258,-167,280,True,43.2,"reached: tool point now (258, -167, 280), lean 35, yaw -33, fingers close along 57"
+20261116-133324-gpt-6.1-sol,gpt-6.1-sol,9,move_by,"(0, 0, -180)",True,282.8,24.59,7.4,12378,258,-167,101,True,43.2,"reached: tool point now (258, -167, 101), lean 35, yaw -33, fingers close along 57"
+20261116-133324-gpt-6.1-sol,gpt-6.1-sol,10,move_by,"(0, 0, -20)",True,329.7,44.96,1.37,13148,259,-167,82,True,43.2,"reached: tool point now (259, -167, 82), lean 35, yaw -33, fingers close along 57"
+20261116-133324-gpt-6.1-sol,gpt-6.1-sol,11,gripper,75 mm,True,343.2,11.4,1.61,12111,257,-166,80,False,43.2,the fingers are now 75 mm apart
+20261116-133324-gpt-6.1-sol,gpt-6.1-sol,12,gripper,30 mm,True,367.6,22.23,1.61,12549,259,-167,81,False,74.7,the fingers are now 30 mm apart; they closed on nothing
+20261116-133324-gpt-6.1-sol,gpt-6.1-sol,13,move_by,"(0, 0, 170)",True,441.6,66.33,7.12,14008,259,-167,251,False,30.4,"reached: tool point now (259, -167, 251), lean 35, yaw -33, fingers close along 57"
+20261116-133324-gpt-6.1-sol,gpt-6.1-sol,14,gripper,75 mm,True,466.8,22.97,1.61,12804,259,-167,251,False,30.3,the fingers are now 75 mm apart
+20261116-133324-gpt-6.1-sol,gpt-6.1-sol,15,move_by,"(30, -16, 0)",True,488.8,19.31,1.89,12725,289,-183,252,False,74.7,"reached: tool point now (289, -183, 252), lean 36, yaw -33, fingers close along 57"
+20261116-133324-gpt-6.1-sol,gpt-6.1-sol,16,move_by,"(0, 0, -175)",True,517.0,20.28,7.31,12605,289,-184,78,False,74.7,"reached: tool point now (289, -184, 78), lean 36, yaw -33, fingers close along 56"
+20261116-133324-gpt-6.1-sol,gpt-6.1-sol,17,gripper,30 mm,True,547.3,28.13,1.61,13051,289,-184,78,True,74.7,the fingers are now 43 mm apart; they stopped on something: holding
+20261116-133324-gpt-6.1-sol,gpt-6.1-sol,18,move_by,"(0, 0, 175)",True,582.7,27.59,7.26,13084,289,-183,253,True,43.3,"reached: tool point now (289, -183, 253), lean 36, yaw -33, fingers close along 56"
+20261116-133324-gpt-6.1-sol,gpt-6.1-sol,19,move_tool,"(260, 100, 253)",True,650.7,56.96,10.55,13808,260,100,253,True,43.3,"reached: tool point now (260, 100, 253), lean 30, yaw 21, fingers close along -69"
+20261116-133324-gpt-6.1-sol,gpt-6.1-sol,20,move_by,"(0, 0, -175)",True,694.9,36.37,7.17,13227,260,100,78,True,43.3,"reached: tool point now (260, 100, 78), lean 30, yaw 21, fingers close along -69"
+20261116-133324-gpt-6.1-sol,gpt-6.1-sol,21,gripper,75 mm,True,717.3,20.15,1.61,12687,260,100,78,False,43.3,the fingers are now 75 mm apart
+20261116-133324-gpt-6.1-sol,gpt-6.1-sol,22,move_by,"(0, 0, 150)",True,738.5,14.3,6.33,12371,260,100,228,False,74.7,"reached: tool point now (260, 100, 228), lean 30, yaw 21, fingers close along -69"
+20261116-133324-gpt-6.1-sol,gpt-6.1-sol,23,done,,True,760.4,21.33,0.0,12871,260,100,228,False,74.7,you said done
+20261116-134633-gpt-5.6-sol,gpt-5.6-sol,3,move_tool,"(150, 56, 300)",True,34.9,20.53,2.62,12412,150,56,300,False,74.7,"reached: tool point now (150, 56, 300), lean 50, yaw 20, fingers close along -70"
+20261116-134633-gpt-5.6-sol,gpt-5.6-sol,4,move_tool,"(236, 92, 170)",True,51.2,8.26,7.57,11342,236,92,170,False,74.7,"reached: tool point now (236, 92, 170), lean 15, yaw 21, fingers close along -69"
+20261116-134633-gpt-5.6-sol,gpt-5.6-sol,5,move_by,"(4, 1, -65)",True,74.9,20.3,2.7,12503,240,93,106,False,74.7,"reached: tool point now (240, 93, 106), lean 15, yaw 21, fingers close along -69"
+20261116-134633-gpt-5.6-sol,gpt-5.6-sol,6,gripper,30 mm,True,88.1,10.87,1.62,11850,240,93,106,True,74.7,the fingers are now 34 mm apart; they stopped on something: holding
+20261116-134633-gpt-5.6-sol,gpt-5.6-sol,7,move_by,"(0, 0, 140)",True,102.0,8.33,5.01,11157,240,93,245,True,34.2,"reached: tool point now (240, 93, 245), lean 30, yaw 21, fingers close along -69"
+20261116-134633-gpt-5.6-sol,gpt-5.6-sol,8,move_tool,"(280, -165, 290)",True,132.7,19.91,10.05,12354,280,-165,290,True,34.2,"reached: tool point now (280, -165, 290), lean 35, yaw -30, fingers close along 60"
+20261116-134633-gpt-5.6-sol,gpt-5.6-sol,9,move_by,"(0, 0, -120)",True,159.3,20.75,5.05,12708,280,-165,170,True,34.1,"reached: tool point now (280, -165, 170), lean 35, yaw -30, fingers close along 60"
+20261116-134633-gpt-5.6-sol,gpt-5.6-sol,10,gripper,75 mm,True,173.1,11.51,1.61,11996,281,-165,170,False,34.1,the fingers are now 75 mm apart
+20261116-134633-gpt-5.6-sol,gpt-5.6-sol,11,move_tool,"(323, -188, 170) lean 15 grip 60",True,194.4,16.99,3.78,12265,323,-188,170,False,74.7,"reached: tool point now (323, -188, 170), lean 15, yaw -30, fingers close along 60"
+20261116-134633-gpt-5.6-sol,gpt-5.6-sol,12,move_by,"(0, 0, -60)",True,251.1,53.31,2.66,15294,323,-188,110,False,74.7,"reached: tool point now (323, -188, 110), lean 15, yaw -30, fingers close along 60"
+20261116-134633-gpt-5.6-sol,gpt-5.6-sol,13,gripper,30 mm,True,271.5,18.12,1.63,12491,324,-187,110,True,74.7,the fingers are now 34 mm apart; they stopped on something: holding
+20261116-134633-gpt-5.6-sol,gpt-5.6-sol,14,move_by,"(0, 0, 160)",True,291.3,13.06,6.07,12422,324,-187,270,True,34.2,"reached: tool point now (324, -187, 270), lean 30, yaw -29, fingers close along 60"
+20261116-134633-gpt-5.6-sol,gpt-5.6-sol,15,move_tool,"(223, 83, 250)",True,325.0,21.68,11.51,13456,223,83,250,False,34.1,"reached: tool point now (223, 83, 250), lean 30, yaw 20, fingers close along -70"
+20261116-134633-gpt-5.6-sol,gpt-5.6-sol,16,done,,True,336.5,10.84,0.0,12186,223,83,250,False,34.0,you said done
+20261116-134633-gpt-5.6-sol,gpt-5.6-sol,18,gripper,75 mm,True,397.9,10.44,1.63,12107,160,0,330,False,34.0,the fingers are now 75 mm apart
+20261116-134633-gpt-5.6-sol,gpt-5.6-sol,19,move_tool,"(220, -80, 280) lean 15 yaw 10 grip 65",False,475.2,76.67,0.01,17932,160,0,330,False,74.7,"failed: (220, -80, 280) mm is out of the arm's reach with that yaw (lean towards a direction near the base's bearing, and turn the fingers with grip instead)"
+20261116-134633-gpt-5.6-sol,gpt-5.6-sol,20,move_tool,"(262, -37, 220) lean 15 grip 66",True,489.1,9.12,4.18,12019,262,-37,220,False,74.7,"reached: tool point now (262, -37, 220), lean 25, yaw -8, fingers close along 66"
+20261116-134633-gpt-5.6-sol,gpt-5.6-sol,21,skill,look,True,520.1,22.18,8.24,13429,160,0,330,False,74.7,looked: the bottle is in the basket
+20261116-134633-gpt-5.6-sol,gpt-5.6-sol,22,move_tool,"(280, -44, 280) grip 20",True,581.2,55.94,4.53,15798,280,-44,280,False,74.7,"reached: tool point now (280, -44, 280), lean 35, yaw -9, fingers close along 20"
+20261116-134633-gpt-5.6-sol,gpt-5.6-sol,23,move_by,"(38, -35, 0)",True,724.2,140.08,2.37,22687,318,-79,280,False,74.7,"reached: tool point now (318, -79, 280), lean 35, yaw -9, fingers close along 20"
+20261116-134633-gpt-5.6-sol,gpt-5.6-sol,24,move_by,"(0, 0, -110)",True,849.9,120.67,4.48,22227,318,-79,170,False,74.7,"reached: tool point now (318, -79, 170), lean 35, yaw -9, fingers close along 20"
+20261116-134633-gpt-5.6-sol,gpt-5.6-sol,25,move_by,"(-10, 35, 0)",True,964.7,112.06,2.03,20207,308,-44,170,False,74.7,"reached: tool point now (308, -44, 170), lean 35, yaw -9, fingers close along 20"
+20261116-134633-gpt-5.6-sol,gpt-5.6-sol,26,move_by,"(0, 0, -25)",True,1111.7,144.95,1.46,21163,309,-44,146,False,74.7,"reached: tool point now (309, -44, 146), lean 35, yaw -9, fingers close along 20"
+20261116-134633-gpt-5.6-sol,gpt-5.6-sol,27,move_by,"(0, 15, 0)",True,1258.4,144.41,1.49,22719,309,-29,146,False,74.7,"reached: tool point now (309, -29, 146), lean 35, yaw -9, fingers close along 20"
+20261116-134633-gpt-5.6-sol,gpt-5.6-sol,28,move_by,"(0, 0, -45)",True,1317.0,55.83,2.11,15846,308,-30,100,False,74.7,"reached: tool point now (308, -30, 100), lean 35, yaw -9, fingers close along 20"
+20261116-134633-gpt-5.6-sol,gpt-5.6-sol,29,move_by,"(0, 0, 70)",True,1351.9,31.33,2.97,13927,309,-29,170,False,74.7,"reached: tool point now (309, -29, 170), lean 35, yaw -9, fingers close along 20"
+20261116-134633-gpt-5.6-sol,gpt-5.6-sol,30,move_tool,"(259, -208, 170) lean 20 grip 20",True,1379.5,18.55,8.31,13012,259,-208,170,False,74.7,"reached: tool point now (259, -208, 170), lean 20, yaw -39, fingers close along 20"
+20261116-134633-gpt-5.6-sol,gpt-5.6-sol,31,move_tool,"(147, 16, 200)",True,1401.4,8.92,12.12,12736,147,16,201,False,74.7,"reached: tool point now (147, 16, 201), lean 35, yaw 6, fingers close along -84"
+20261116-134633-gpt-5.6-sol,gpt-5.6-sol,32,done,,True,1415.9,13.9,0.0,12681,147,16,201,False,74.7,you said done
+20261116-141102-gpt-6.1-sol,gpt-6.1-sol,3,move_tool,"(100, 10, 300)",False,68.9,37.12,0.17,12491,110,230,300,False,74.7,"failed: target [-8.217194465405768, -0.8217194465405768, 350.71419140888395] is outside the driver's workspace box"
+20261116-141102-gpt-6.1-sol,gpt-6.1-sol,4,move_tool,"(130, 10, 250)",False,119.7,49.63,0.17,13133,110,230,300,False,74.7,"failed: target [38.34543422735942, 2.949648786719955, 327.13451316238474] is outside the driver's workspace box"
+20261116-141102-gpt-6.1-sol,gpt-6.1-sol,5,move_tool,"(150, 10, 220)",True,219.3,93.08,5.53,14651,150,10,220,False,74.7,"reached: tool point now (150, 10, 220), lean 35, yaw 4, fingers close along -86"
+20261116-141102-gpt-6.1-sol,gpt-6.1-sol,6,move_by,"(22, 9, 0)",True,252.4,30.3,1.85,12669,172,18,219,False,74.7,"reached: tool point now (172, 18, 219), lean 35, yaw 4, fingers close along -86"
+20261116-141102-gpt-6.1-sol,gpt-6.1-sol,7,move_by,"(0, 0, -150)",True,297.7,38.63,6.08,12963,172,18,70,False,74.7,"reached: tool point now (172, 18, 70), lean 35, yaw 4, fingers close along -86"
+20261116-141102-gpt-6.1-sol,gpt-6.1-sol,8,gripper,30 mm,True,313.5,13.32,1.61,12244,172,18,70,True,74.7,the fingers are now 43 mm apart; they stopped on something: holding
+20261116-141102-gpt-6.1-sol,gpt-6.1-sol,9,move_by,"(0, 0, 180)",True,336.8,15.66,7.05,12002,172,18,250,True,42.8,"reached: tool point now (172, 18, 250), lean 40, yaw 4, fingers close along -86"
+20261116-141102-gpt-6.1-sol,gpt-6.1-sol,10,move_tool,"(285, -211, 250)",True,388.7,39.38,12.02,12936,285,-210,250,True,42.8,"reached: tool point now (285, -210, 250), lean 25, yaw -36, fingers close along 54"
+20261116-141102-gpt-6.1-sol,gpt-6.1-sol,11,move_by,"(0, 0, -165)",True,428.3,32.14,6.95,12915,286,-211,86,True,42.8,"reached: tool point now (286, -211, 86), lean 25, yaw -36, fingers close along 54"
+20261116-141102-gpt-6.1-sol,gpt-6.1-sol,12,gripper,75 mm,True,451.2,20.6,1.62,12297,286,-211,86,False,42.8,the fingers are now 75 mm apart
+20261116-141102-gpt-6.1-sol,gpt-6.1-sol,13,move_by,"(0, 0, 150)",True,487.7,29.37,6.55,12746,286,-211,235,False,74.7,"reached: tool point now (286, -211, 235), lean 25, yaw -36, fingers close along 54"
+20261116-141102-gpt-6.1-sol,gpt-6.1-sol,14,move_by,"(-17, 16, 0)",True,501.8,12.49,0.99,12467,269,-194,235,False,74.7,"reached: tool point now (269, -194, 235), lean 25, yaw -36, fingers close along 54"
+20261116-141102-gpt-6.1-sol,gpt-6.1-sol,15,move_by,"(0, 0, -160)",True,551.3,42.26,6.7,13836,268,-194,76,False,74.7,"reached: tool point now (268, -194, 76), lean 25, yaw -36, fingers close along 54"
+20261116-141102-gpt-6.1-sol,gpt-6.1-sol,16,gripper,30 mm,True,569.5,15.89,1.62,12908,268,-194,76,True,74.7,the fingers are now 43 mm apart; they stopped on something: holding
+20261116-141102-gpt-6.1-sol,gpt-6.1-sol,17,move_by,"(0, 0, 180)",True,593.6,15.92,7.49,12462,268,-194,255,True,42.9,"reached: tool point now (268, -194, 255), lean 30, yaw -36, fingers close along 54"
+20261116-141102-gpt-6.1-sol,gpt-6.1-sol,18,move_tool,"(240, 20, 255)",True,633.2,30.19,8.75,13054,241,20,255,True,42.8,"reached: tool point now (241, 20, 255), lean 30, yaw 5, fingers close along -85"
+20261116-141102-gpt-6.1-sol,gpt-6.1-sol,19,move_by,"(0, 0, -175)",True,670.2,29.11,7.33,12997,241,20,81,True,42.8,"reached: tool point now (241, 20, 81), lean 30, yaw 5, fingers close along -85"
+20261116-141102-gpt-6.1-sol,gpt-6.1-sol,20,gripper,75 mm,True,695.1,22.55,1.63,12792,241,20,81,False,42.8,the fingers are now 75 mm apart
+20261116-141102-gpt-6.1-sol,gpt-6.1-sol,21,move_by,"(0, 0, 150)",True,718.6,16.62,6.35,12491,241,20,231,False,74.7,"reached: tool point now (241, 20, 231), lean 30, yaw 5, fingers close along -85"
+20261116-141102-gpt-6.1-sol,gpt-6.1-sol,22,done,,True,740.6,21.28,0.0,12938,241,20,231,False,74.7,you said done
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,3,move_tool,"(240, 19, 210) grip 90",True,25.1,8.07,3.95,11314,240,19,210,False,74.7,"reached: tool point now (240, 19, 210), lean 20, yaw 4, fingers close along 90"
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,4,move_by,"(5, 1, 0)",True,45.3,18.94,0.58,12157,244,20,210,False,74.7,"reached: tool point now (244, 20, 210), lean 20, yaw 5, fingers close along 90"
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,5,move_by,"(0, 0, -120)",True,67.1,15.81,5.11,11883,245,20,90,False,74.7,"reached: tool point now (245, 20, 90), lean 20, yaw 5, fingers close along 90"
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,6,gripper,0 mm,True,77.4,7.68,1.66,11347,244,20,90,True,74.7,the fingers are now 42 mm apart; they stopped on something: holding
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,7,move_by,"(0, 0, 170)",True,94.4,8.7,6.84,11237,244,20,260,True,42.2,"reached: tool point now (244, 20, 260), lean 30, yaw 5, fingers close along 90"
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,8,move_tool,"(285, -212, 260) grip 90",True,128.9,28.25,5.35,12943,285,-211,260,True,42.2,"reached: tool point now (285, -211, 260), lean 30, yaw -37, fingers close along -90"
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,9,move_tool,"(349, -234, 260) grip 90",True,168.6,36.07,3.02,13620,349,-234,260,True,42.2,"reached: tool point now (349, -234, 260), lean 30, yaw -34, fingers close along 90"
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,10,move_by,"(0, 0, -135)",True,202.8,27.64,5.92,13024,349,-234,126,True,42.2,"reached: tool point now (349, -234, 126), lean 30, yaw -34, fingers close along 90"
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,11,gripper,75 mm,True,213.6,8.47,1.61,11738,349,-234,126,False,42.2,the fingers are now 75 mm apart
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,12,move_by,"(0, 0, 134)",True,265.2,44.64,6.27,14573,349,-234,260,False,74.7,"reached: tool point now (349, -234, 260), lean 30, yaw -34, fingers close along 90"
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,13,move_by,"(-6, 66, 0) grip 10",True,319.2,47.26,6.05,14788,343,-169,260,False,74.7,"reached: tool point now (343, -169, 260), lean 30, yaw -34, fingers close along 10"
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,14,move_tool,"(395, -204, 260) grip 10",True,340.6,17.65,3.16,12768,395,-204,260,False,74.7,"reached: tool point now (395, -204, 260), lean 30, yaw -27, fingers close along 10"
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,15,move_by,"(-46, -30, 0)",True,379.3,35.32,2.4,14155,349,-234,259,False,74.7,"reached: tool point now (349, -234, 259), lean 30, yaw -27, fingers close along 10"
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,16,move_by,"(0, 42, 0) grip 10",True,478.6,96.74,2.02,18518,349,-192,259,False,74.7,"reached: tool point now (349, -192, 259), lean 30, yaw -27, fingers close along 10"
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,17,move_by,"(35, -20, 0) grip 10",True,511.1,29.64,2.26,13820,384,-211,259,False,74.7,"reached: tool point now (384, -211, 259), lean 30, yaw -27, fingers close along 10"
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,18,move_by,"(-35, -23, 0) grip 10",True,537.3,23.7,1.92,13237,349,-234,259,False,74.7,"reached: tool point now (349, -234, 259), lean 30, yaw -27, fingers close along 10"
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,19,move_tool,"(395, -204, 259) lean 10 grip 10",True,557.3,16.6,2.54,12779,395,-204,258,False,74.7,"reached: tool point now (395, -204, 258), lean 30, yaw -27, fingers close along 10"
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,20,move_by,"(-46, -30, 0) grip 10",True,579.4,18.94,2.44,13017,349,-234,259,False,74.7,"reached: tool point now (349, -234, 259), lean 30, yaw -27, fingers close along 10"
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,21,skill,look,True,622.6,32.02,10.69,14025,160,0,330,False,74.7,looked: the bottle is in the basket
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,22,move_tool,"(285, -172, 260) grip 0",True,661.8,32.5,6.09,13498,285,-172,260,False,74.7,"reached: tool point now (285, -172, 260), lean 30, yaw -31, fingers close along -0"
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,23,move_tool,"(395, -204, 260) grip 0",True,683.0,15.62,4.85,12777,395,-205,260,False,74.7,"reached: tool point now (395, -205, 260), lean 30, yaw -27, fingers close along -0"
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,24,move_by,"(-35, -35, 0) grip 65",True,837.5,148.84,5.07,23334,360,-239,260,False,74.7,"reached: tool point now (360, -239, 260), lean 30, yaw -27, fingers close along 65"
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,25,move_by,"(0, 0, -150) grip 10",True,876.3,32.93,5.29,14085,360,-240,110,False,74.7,"reached: tool point now (360, -240, 110), lean 30, yaw -28, fingers close along 10"
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,26,move_by,"(0, 0, -55)",True,923.2,43.87,2.23,15091,360,-240,56,False,74.7,"reached: tool point now (360, -240, 56), lean 30, yaw -28, fingers close along 10"
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,27,gripper,20 mm,True,933.9,8.07,1.61,12254,360,-240,56,True,75.0,the fingers are now 56 mm apart; they stopped on something: holding
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,28,move_by,"(0, 0, 180)",True,955.3,12.37,8.3,12427,360,-240,236,False,56.4,"reached: tool point now (360, -240, 236), lean 30, yaw -28, fingers close along 10"
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,29,gripper,75 mm,True,977.3,19.52,1.61,12959,360,-240,236,False,20.5,the fingers are now 75 mm apart
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,30,move_by,"(-8, -38, 0) grip 4",True,1014.0,34.32,1.82,14171,352,-277,236,False,74.7,"reached: tool point now (352, -277, 236), lean 30, yaw -28, fingers close along 4"
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,31,move_by,"(0, 0, -80)",True,1081.5,63.15,3.57,16637,352,-278,157,False,74.7,"reached: tool point now (352, -278, 157), lean 30, yaw -28, fingers close along 4"
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,32,move_by,"(0, 0, -55)",True,1113.3,28.8,2.37,13997,352,-278,103,False,74.7,"reached: tool point now (352, -278, 103), lean 30, yaw -28, fingers close along 4"
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,33,gripper,20 mm,True,1124.2,8.66,1.61,12233,353,-278,103,False,74.7,the fingers are now 20 mm apart; they closed on nothing
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,34,gripper,75 mm,True,1141.0,14.31,1.62,12820,352,-278,102,False,20.5,the fingers are now 75 mm apart
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,35,move_by,"(-18, -1, 0) grip -50",True,1168.5,19.3,7.65,12976,335,-278,102,False,74.7,"reached: tool point now (335, -278, 102), lean 30, yaw -28, fingers close along -50"
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,36,skill,look,True,1195.4,8.63,17.6,12023,160,0,330,False,74.8,looked: the bottle is in the basket
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,37,move_tool,"(231, -232, 260) grip 0",True,1216.5,12.98,6.74,12080,231,-232,260,False,74.8,"reached: tool point now (231, -232, 260), lean 30, yaw -45, fingers close along 0"
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,38,move_by,"(23, 15, 0) grip 60",True,1258.2,36.74,4.35,14599,254,-217,260,False,74.8,"reached: tool point now (254, -217, 260), lean 30, yaw -45, fingers close along 60"
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,39,move_by,"(21, 56, 0) grip 0",True,1283.7,19.67,5.23,12814,275,-161,260,False,74.8,"reached: tool point now (275, -161, 260), lean 30, yaw -45, fingers close along -0"
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,40,move_by,"(-10, -58, 0) grip 16",True,1318.7,31.52,2.85,14090,265,-219,259,False,74.8,"reached: tool point now (265, -219, 259), lean 30, yaw -45, fingers close along 16"
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,41,move_by,"(0, 0, -105)",True,1361.3,37.48,4.59,14687,265,-219,155,False,74.8,"reached: tool point now (265, -219, 155), lean 30, yaw -45, fingers close along 16"
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,42,gripper,30 mm,True,1375.8,12.36,1.62,12219,265,-219,155,False,74.8,the fingers are now 30 mm apart; they closed on nothing
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,43,gripper,75 mm,True,1392.7,14.56,1.61,12615,265,-219,155,False,30.4,the fingers are now 75 mm apart
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,44,move_by,"(0, 0, -45)",True,1414.9,19.57,2.12,12749,265,-219,110,False,74.7,"reached: tool point now (265, -219, 110), lean 30, yaw -45, fingers close along 16"
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,45,gripper,20 mm,True,1424.4,7.25,1.61,11853,265,-219,110,False,74.7,the fingers are now 20 mm apart; they closed on nothing
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,46,gripper,75 mm,True,1441.1,14.51,1.61,12283,265,-219,110,False,20.5,the fingers are now 75 mm apart
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,47,move_by,"(-22, -15, 0) grip -8",True,1453.9,10.21,1.99,12229,242,-234,110,False,74.7,"reached: tool point now (242, -234, 110), lean 30, yaw -45, fingers close along -8"
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,48,move_by,"(0, 0, -30)",True,1481.1,24.81,1.63,13554,242,-234,79,False,74.7,"reached: tool point now (242, -234, 79), lean 30, yaw -45, fingers close along -8"
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,49,gripper,25 mm,True,1492.3,8.98,1.61,11995,242,-234,79,False,75.2,the fingers are now 27 mm apart; they closed on nothing
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,50,move_by,"(0, 0, 111)",True,1578.6,81.06,4.52,13083,242,-234,190,False,26.9,"reached: tool point now (242, -234, 190), lean 30, yaw -45, fingers close along -8"
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,51,gripper,75 mm,True,1602.6,21.84,1.61,13260,242,-234,190,False,25.1,the fingers are now 75 mm apart
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,52,move_by,"(-10, -48, 0) grip 1",True,1618.6,12.84,2.47,12347,232,-281,190,False,74.7,"reached: tool point now (232, -281, 190), lean 30, yaw -45, fingers close along 1"
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,53,move_by,"(3, -23, 0) grip 8",True,1634.3,13.41,1.62,12595,235,-304,190,False,74.7,"reached: tool point now (235, -304, 190), lean 30, yaw -45, fingers close along 8"
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,54,move_by,"(15, 0, 0) grip 8",True,1756.4,120.68,0.76,20904,250,-304,190,False,74.7,"reached: tool point now (250, -304, 190), lean 30, yaw -45, fingers close along 8"
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,55,move_by,"(0, 0, -55)",True,1768.8,9.26,2.48,12117,250,-304,136,False,74.7,"reached: tool point now (250, -304, 136), lean 30, yaw -45, fingers close along 8"
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,56,move_by,"(30, -6, -45) grip 8",True,1857.4,85.5,2.5,18251,279,-310,91,False,74.7,"reached: tool point now (279, -310, 91), lean 30, yaw -45, fingers close along 8"
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,57,gripper,20 mm,True,1879.3,19.73,1.61,12709,279,-310,91,False,74.7,the fingers are now 21 mm apart; they closed on nothing
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,58,gripper,75 mm,True,1890.7,9.17,1.61,12230,280,-310,91,False,20.6,the fingers are now 75 mm apart
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,59,move_tool,"(185, -140, 55) grip 90",True,2032.6,133.73,7.41,22007,185,-140,55,False,74.7,"reached: tool point now (185, -140, 55), lean 0, yaw -0, fingers close along 90"
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,60,gripper,25 mm,True,2086.3,51.4,1.62,15531,185,-139,55,False,74.8,the fingers are now 25 mm apart; they closed on nothing
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,61,gripper,75 mm,True,2101.8,12.56,1.63,12049,185,-140,55,False,25.1,the fingers are now 75 mm apart
+20261116-142403-gpt-5.6-sol,gpt-5.6-sol,62,skill,stand_up,False,2130.8,28.15,0.0,13627,185,-139,55,False,74.7,"refused: stand_up is for a bottle lying on the table, and it is not lying there"
+20261116-150826-gpt-6.1-sol,gpt-6.1-sol,3,move_tool,"(230, 190, 280)",True,90.2,42.51,5.38,12680,230,190,280,False,74.7,"reached: tool point now (230, 190, 280), lean 35, yaw 40, fingers close along -50"
+20261116-150826-gpt-6.1-sol,gpt-6.1-sol,4,move_tool,"(300, 229, 230)",True,140.6,45.64,4.09,12844,300,229,230,False,74.7,"reached: tool point now (300, 229, 230), lean 25, yaw 37, fingers close along -53"
+20261116-150826-gpt-6.1-sol,gpt-6.1-sol,5,move_by,"(0, 0, -150)",True,175.9,28.32,6.35,12549,300,229,80,False,74.7,"reached: tool point now (300, 229, 80), lean 25, yaw 37, fingers close along -53"
+20261116-150826-gpt-6.1-sol,gpt-6.1-sol,6,gripper,0 mm,True,205.6,27.27,1.63,12670,300,229,81,True,74.7,the fingers are now 42 mm apart; they stopped on something: holding
+20261116-150826-gpt-6.1-sol,gpt-6.1-sol,7,move_by,"(0, 0, 180)",True,237.6,23.46,7.86,12155,300,229,261,True,42.5,"reached: tool point now (300, 229, 261), lean 30, yaw 37, fingers close along -53"
+20261116-150826-gpt-6.1-sol,gpt-6.1-sol,8,move_tool,"(250, -220, 300)",True,287.4,31.67,17.43,12712,250,-220,300,True,42.5,"reached: tool point now (250, -220, 300), lean 35, yaw -41, fingers close along 49"
+20261116-150826-gpt-6.1-sol,gpt-6.1-sol,9,move_by,"(0, 0, -170)",True,397.4,102.4,7.0,15187,249,-219,129,True,42.5,"reached: tool point now (249, -219, 129), lean 34, yaw -41, fingers close along 49"
+20261116-150826-gpt-6.1-sol,gpt-6.1-sol,10,move_by,"(0, 0, -44)",True,428.8,28.72,2.08,12757,250,-219,86,True,42.5,"reached: tool point now (250, -219, 86), lean 35, yaw -41, fingers close along 49"
+20261116-150826-gpt-6.1-sol,gpt-6.1-sol,11,gripper,75 mm,True,448.6,17.39,1.63,12417,248,-218,84,False,42.5,the fingers are now 75 mm apart
+20261116-150826-gpt-6.1-sol,gpt-6.1-sol,12,gripper,0 mm,True,472.4,21.49,1.62,12592,248,-218,84,False,74.7,the fingers are now 0 mm apart; they closed on nothing
+20261116-150826-gpt-6.1-sol,gpt-6.1-sol,13,gripper,75 mm,True,535.7,61.06,1.63,13956,248,-218,84,False,0.3,the fingers are now 75 mm apart
+20261116-150826-gpt-6.1-sol,gpt-6.1-sol,14,move_by,"(0, 0, 160)",True,592.6,49.52,6.69,13483,248,-218,244,False,74.7,"reached: tool point now (248, -218, 244), lean 34, yaw -41, fingers close along 49"
+20261116-150826-gpt-6.1-sol,gpt-6.1-sol,15,move_tool,"(305, -280, 244)",True,662.8,65.78,3.84,14204,306,-280,244,False,74.7,"reached: tool point now (306, -280, 244), lean 30, yaw -42, fingers close along 48"
+20261116-150826-gpt-6.1-sol,gpt-6.1-sol,16,move_by,"(10, -17, 0)",True,696.2,31.3,1.41,13308,316,-296,244,False,74.7,"reached: tool point now (316, -296, 244), lean 30, yaw -42, fingers close along 48"
+20261116-150826-gpt-6.1-sol,gpt-6.1-sol,17,move_by,"(0, 0, -164)",True,723.5,19.29,7.1,13006,316,-296,81,False,74.7,"reached: tool point now (316, -296, 81), lean 30, yaw -42, fingers close along 48"
+20261116-150826-gpt-6.1-sol,gpt-6.1-sol,18,gripper,0 mm,True,806.7,80.83,1.65,14778,315,-295,80,True,75.6,the fingers are now 31 mm apart; they stopped on something: holding
+20261116-150826-gpt-6.1-sol,gpt-6.1-sol,19,move_by,"(0, 0, 60)",True,851.0,40.61,2.65,13226,315,-295,140,True,31.0,"reached: tool point now (315, -295, 140), lean 30, yaw -42, fingers close along 48"
+20261116-150826-gpt-6.1-sol,gpt-6.1-sol,20,move_by,"(0, 0, 120)",True,981.0,123.52,5.81,16878,315,-295,260,True,30.9,"reached: tool point now (315, -295, 260), lean 30, yaw -42, fingers close along 47"
+20261116-150826-gpt-6.1-sol,gpt-6.1-sol,21,move_by,"(0, 0, -179)",True,1122.9,133.39,7.85,16706,315,-296,82,True,30.7,"reached: tool point now (315, -296, 82), lean 30, yaw -42, fingers close along 47"
+20261116-150826-gpt-6.1-sol,gpt-6.1-sol,22,gripper,75 mm,True,1158.2,33.11,1.62,13562,314,-294,80,False,30.6,the fingers are now 75 mm apart
+20261116-150826-gpt-6.1-sol,gpt-6.1-sol,23,move_by,"(0, 0, 180)",True,1236.4,69.16,8.31,14098,314,-294,260,False,74.7,"reached: tool point now (314, -294, 260), lean 30, yaw -42, fingers close along 47"
+20261116-150826-gpt-6.1-sol,gpt-6.1-sol,24,skill,look,True,1275.6,27.07,11.55,13124,160,0,330,False,74.7,looked: the bottle is in the basket
+20261116-150826-gpt-6.1-sol,gpt-6.1-sol,25,move_tool,"(210, -210, 300)",True,1319.1,37.07,5.69,13177,210,-210,300,False,74.7,"reached: tool point now (210, -210, 300), lean 35, yaw -45, fingers close along 45"
+20261116-150826-gpt-6.1-sol,gpt-6.1-sol,26,move_tool,"(278, -269, 300) grip 0",True,1388.6,65.03,3.84,14432,278,-269,300,False,74.7,"reached: tool point now (278, -269, 300), lean 35, yaw -44, fingers close along 0"
+20261116-150826-gpt-6.1-sol,gpt-6.1-sol,27,move_by,"(0, 0, -215)",True,1487.0,88.53,9.15,14850,278,-269,86,False,74.7,"reached: tool point now (278, -269, 86), lean 35, yaw -44, fingers close along 0"
+20261116-150826-gpt-6.1-sol,gpt-6.1-sol,28,move_by,"(0, 0, 160)",True,1553.4,58.85,6.89,14070,278,-269,246,False,74.7,"reached: tool point now (278, -269, 246), lean 35, yaw -44, fingers close along 0"
+20261116-150826-gpt-6.1-sol,gpt-6.1-sol,29,move_by,"(11, 4, 0)",True,1586.1,31.39,0.65,13410,288,-265,246,False,74.7,"reached: tool point now (288, -265, 246), lean 35, yaw -44, fingers close along 0"
+20261116-150826-gpt-6.1-sol,gpt-6.1-sol,30,move_by,"(0, 0, -85)",True,1707.2,116.85,3.77,16285,289,-265,161,False,74.7,"reached: tool point now (289, -265, 161), lean 35, yaw -44, fingers close along 0"
+20261116-150826-gpt-6.1-sol,gpt-6.1-sol,31,move_by,"(0, 0, -30)",True,1839.7,129.65,1.61,16678,289,-265,132,False,74.7,"reached: tool point now (289, -265, 132), lean 35, yaw -44, fingers close along 0"
+20261116-150826-gpt-6.1-sol,gpt-6.1-sol,32,gripper,0 mm,True,1864.0,21.85,1.62,13079,289,-265,132,False,74.7,the fingers are now 0 mm apart; they closed on nothing
+20261116-150826-gpt-6.1-sol,gpt-6.1-sol,33,gripper,75 mm,True,1897.9,31.25,1.61,13165,289,-265,132,False,0.3,the fingers are now 75 mm apart
+20261116-150826-gpt-6.1-sol,gpt-6.1-sol,34,move_tool,"(210, -235, 300) grip 0",True,1936.7,30.77,7.49,13155,210,-235,299,False,74.7,"reached: tool point now (210, -235, 299), lean 35, yaw -48, fingers close along -0"
+20261116-150826-gpt-6.1-sol,gpt-6.1-sol,35,move_by,"(39, -5, 0)",True,2016.9,77.68,1.97,14953,249,-240,299,False,74.7,"reached: tool point now (249, -240, 299), lean 35, yaw -48, fingers close along -0"
+20261116-150826-gpt-6.1-sol,gpt-6.1-sol,36,move_by,"(0, 0, -210)",True,2055.1,28.64,8.96,13222,250,-240,90,False,74.7,"reached: tool point now (250, -240, 90), lean 35, yaw -48, fingers close along -0"
+20261116-150826-gpt-6.1-sol,gpt-6.1-sol,37,gripper,0 mm,True,2086.3,28.93,1.61,13497,249,-240,89,True,74.7,the fingers are now 43 mm apart; they stopped on something: holding
+20261116-150826-gpt-6.1-sol,gpt-6.1-sol,38,move_by,"(0, 0, 210)",True,2118.9,22.93,9.05,12834,248,-240,300,True,43.3,"reached: tool point now (248, -240, 300), lean 35, yaw -48, fingers close along -0"
+20261116-150826-gpt-6.1-sol,gpt-6.1-sol,39,move_tool,"(250, 40, 300) grip 0",True,2192.2,58.15,14.58,14340,250,40,300,True,43.1,"reached: tool point now (250, 40, 300), lean 40, yaw 9, fingers close along 0"
+20261116-150826-gpt-6.1-sol,gpt-6.1-sol,40,move_by,"(0, 0, -190)",True,2241.4,40.73,7.87,13392,250,40,111,True,42.9,"reached: tool point now (250, 40, 111), lean 40, yaw 9, fingers close along 0"
+20261116-150826-gpt-6.1-sol,gpt-6.1-sol,41,move_by,"(0, 0, -20)",True,2291.9,48.4,1.46,13674,250,40,91,True,42.9,"reached: tool point now (250, 40, 91), lean 40, yaw 9, fingers close along 0"
+20261116-150826-gpt-6.1-sol,gpt-6.1-sol,42,gripper,75 mm,True,2316.8,22.63,1.62,12784,250,40,91,False,42.9,the fingers are now 75 mm apart
+20261116-150826-gpt-6.1-sol,gpt-6.1-sol,43,move_by,"(0, 0, 150)",True,2338.5,14.59,6.42,12547,250,40,241,False,74.7,"reached: tool point now (250, 40, 241), lean 40, yaw 9, fingers close along 0"
+20261116-150826-gpt-6.1-sol,gpt-6.1-sol,44,skill,look,True,2391.9,37.58,15.08,13366,110,230,299,False,74.7,"looked: the bottle is on the table at (164, -53)"
+20261116-150826-gpt-6.1-sol,gpt-6.1-sol,45,done,,True,2418.5,25.91,0.0,12766,110,230,299,False,74.7,you said done
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,3,move_tool,"(100, -30, 250)",False,43.6,16.55,0.36,11696,110,230,300,False,74.7,"failed: target [5.8473568464835495, -1.7542070539450627, 318.8291723621255] is outside the driver's workspace box"
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,4,move_tool,"(140, 20, 250) lean 0",False,62.7,18.11,0.25,11845,110,230,300,False,74.7,"failed: target [56.0, 8.0, 334.8528137423857] is outside the driver's workspace box"
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,5,skill,stand_up,False,108.5,44.65,0.06,13899,110,230,300,False,74.7,"failed: the arm cannot reach down to the lying bottle at (143, -39) with its fingers across it"
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,6,move_tool,"(140, 0, 200) lean 40 yaw -40",False,144.1,34.55,0.01,13209,110,230,300,False,74.7,"failed: (140, 0, 200) mm is out of the arm's reach with that yaw (lean towards a direction near the base's bearing, and turn the fingers with grip instead)"
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,7,move_tool,"(164, -53, 160) lean 40",False,226.6,21.51,60.07,12211,149,-66,156,False,74.7,failed: stopped 17 mm short of the target (line: )
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,8,move_by,"(42, 8, 0) grip 58",True,262.4,31.24,3.71,13437,195,-59,168,False,74.7,"reached: tool point now (195, -59, 168), lean 44, yaw -25, fingers close along 58"
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,9,move_by,"(0, 0, -125)",False,282.0,18.54,0.02,12331,195,-60,168,False,74.7,"failed: (195, -60, 43) mm is out of the arm's reach with that yaw (lean towards a direction near the base's bearing, and turn the fingers with grip instead)"
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,10,move_tool,"(195, -59, 43) grip 58",True,312.4,24.29,5.3,13099,195,-59,43,False,74.7,"reached: tool point now (195, -59, 43), lean 0, yaw -32, fingers close along 58"
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,11,gripper,0 mm,True,322.5,7.87,1.61,11751,196,-58,43,True,74.7,the fingers are now 35 mm apart; they stopped on something: holding
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,12,move_by,"(0, 0, 130)",True,347.6,18.43,5.95,12449,194,-59,172,False,34.6,"reached: tool point now (194, -59, 172), lean 20, yaw -32, fingers close along 58"
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,13,move_tool,"(240, -200, 200) grip 58",True,369.6,14.3,6.96,12371,240,-200,200,False,0.3,"reached: tool point now (240, -200, 200), lean 20, yaw -40, fingers close along 58"
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,14,skill,look,True,403.9,15.56,18.19,12327,110,230,300,False,0.3,"looked: the basket is in view, the bottle was not found"
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,15,gripper,75 mm,True,419.1,12.82,1.61,11735,110,230,300,False,0.3,the fingers are now 75 mm apart
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,16,move_tool,"(155, -50, 210) grip 58",True,516.3,90.04,6.49,19389,155,-50,210,False,74.7,"reached: tool point now (155, -50, 210), lean 30, yaw -18, fingers close along 58"
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,17,move_by,"(40, -9, 0) grip 58",True,570.1,51.33,1.96,15938,195,-59,210,False,74.7,"reached: tool point now (195, -59, 210), lean 30, yaw -18, fingers close along 58"
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,18,move_tool,"(195, -59, 43) lean 0 grip 58",True,589.6,10.9,7.92,12224,194,-59,43,False,74.7,"reached: tool point now (194, -59, 43), lean 0, yaw -32, fingers close along 58"
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,19,gripper,0 mm,True,607.2,15.34,1.61,12617,195,-59,43,True,74.7,the fingers are now 34 mm apart; they stopped on something: holding
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,20,move_by,"(0, 0, 130)",True,623.7,9.63,5.95,12059,195,-59,173,False,33.5,"reached: tool point now (195, -59, 173), lean 20, yaw -32, fingers close along 58"
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,21,gripper,75 mm,True,645.2,19.23,1.61,13068,195,-59,173,False,0.3,the fingers are now 75 mm apart
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,22,move_tool,"(195, -59, 43) lean 0 grip 58",True,696.5,44.5,6.12,15319,195,-59,44,False,74.7,"reached: tool point now (195, -59, 44), lean 0, yaw -32, fingers close along 58"
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,23,gripper,0 mm,True,705.6,6.84,1.61,11993,196,-58,43,True,74.7,the fingers are now 32 mm apart; they stopped on something: holding
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,24,move_by,"(0, 0, 140)",True,725.5,13.11,6.18,12101,195,-59,183,False,32.3,"reached: tool point now (195, -59, 183), lean 20, yaw -32, fingers close along 58"
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,25,gripper,75 mm,True,767.1,39.23,1.64,14423,195,-59,183,False,0.3,the fingers are now 75 mm apart
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,26,move_tool,"(196, -212, 180) grip 75",True,819.4,44.51,7.23,13072,196,-212,180,False,74.7,"reached: tool point now (196, -212, 180), lean 15, yaw -47, fingers close along 75"
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,27,skill,look,True,855.6,16.96,18.61,12694,110,230,300,False,74.7,"looked: the basket is in view, the bottle was not found"
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,28,move_tool,"(195, -59, 43) lean 0 grip 58",True,883.0,12.65,14.2,12363,195,-59,43,False,74.7,"reached: tool point now (195, -59, 43), lean 0, yaw -32, fingers close along 58"
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,29,gripper,0 mm,True,892.9,7.24,1.61,11943,195,-59,43,True,74.8,the fingers are now 32 mm apart; they stopped on something: holding
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,30,move_by,"(0, 0, 140)",True,907.8,7.44,6.15,11735,196,-58,183,False,32.3,"reached: tool point now (196, -58, 183), lean 20, yaw -33, fingers close along 57"
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,31,gripper,75 mm,True,926.8,16.02,1.61,12692,194,-58,182,False,0.3,the fingers are now 75 mm apart
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,32,move_tool,"(195, -59, 43) lean 0 grip 58",True,946.1,12.54,6.14,12510,195,-59,43,False,74.7,"reached: tool point now (195, -59, 43), lean 0, yaw -32, fingers close along 58"
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,33,gripper,0 mm,True,956.9,8.5,1.61,11955,196,-59,43,True,74.8,the fingers are now 34 mm apart; they stopped on something: holding
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,34,move_by,"(0, 0, 140)",True,973.8,10.11,6.13,11922,196,-59,183,False,33.9,"reached: tool point now (196, -59, 183), lean 20, yaw -32, fingers close along 58"
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,35,gripper,75 mm,True,985.3,9.27,1.61,11965,197,-59,183,False,0.4,the fingers are now 75 mm apart
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,36,move_tool,"(195, -59, 43) lean 0 grip 58",True,1000.0,7.8,6.16,11982,195,-59,43,False,74.7,"reached: tool point now (195, -59, 43), lean 0, yaw -32, fingers close along 58"
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,37,gripper,0 mm,True,1008.8,6.58,1.61,11778,195,-58,43,True,74.8,the fingers are now 32 mm apart; they stopped on something: holding
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,38,move_by,"(0, 0, 140)",True,1024.6,8.95,6.19,11844,195,-58,183,False,31.7,"reached: tool point now (195, -58, 183), lean 20, yaw -32, fingers close along 58"
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,39,gripper,75 mm,True,1036.2,9.35,1.61,12030,194,-58,183,False,0.4,the fingers are now 75 mm apart
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,40,move_tool,"(195, -59, 43) lean 0 grip 58",True,1053.3,10.43,6.15,12006,195,-59,43,False,74.7,"reached: tool point now (195, -59, 43), lean 0, yaw -32, fingers close along 58"
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,41,gripper,0 mm,True,1062.2,6.42,1.62,11813,195,-59,43,False,74.7,the fingers are now 0 mm apart; they closed on nothing
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,42,skill,look,True,1108.2,24.23,21.02,13266,110,230,299,False,0.3,"looked: the basket is in view, the bottle was not found"
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,43,gripper,75 mm,True,1118.1,7.71,1.62,11818,110,230,299,False,0.3,the fingers are now 75 mm apart
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,44,move_tool,"(150, -210, 260) lean 0",True,1148.2,20.29,9.15,12686,150,-210,261,False,74.7,"reached: tool point now (150, -210, 261), lean 30, yaw -54, fingers close along 36"
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,45,move_tool,"(140, -140, 220) lean 0",True,1170.5,18.4,3.24,12556,140,-140,220,False,74.7,"reached: tool point now (140, -140, 220), lean 30, yaw -45, fingers close along 45"
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,46,move_tool,"(110, -20, 220) lean 0",False,1208.6,37.28,0.06,14161,140,-140,220,False,74.7,"failed: target [19.557430713919686, -3.5558964934399384, 297.13451316238474] is outside the driver's workspace box"
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,47,move_tool,"(145, -100, 120) lean 0 grip 45",True,1286.8,73.69,3.95,17385,145,-100,120,False,74.7,"reached: tool point now (145, -100, 120), lean 5, yaw -35, fingers close along 45"
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,48,skill,look,True,1344.6,37.13,19.87,13939,110,230,300,False,74.7,"looked: the basket is in view, the bottle was not found"
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,49,move_tool,"(140, -80, 210) lean 0 grip 45",True,1444.9,92.44,7.31,18853,140,-80,210,False,74.7,"reached: tool point now (140, -80, 210), lean 35, yaw -30, fingers close along 45"
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,50,move_by,"(0, 0, -175) lean 0 grip 60",True,1501.2,47.15,8.68,15157,140,-80,36,False,74.7,"reached: tool point now (140, -80, 36), lean 0, yaw -30, fingers close along 60"
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,51,gripper,0 mm,True,1523.1,19.67,1.61,12067,140,-80,36,True,74.7,the fingers are now 42 mm apart; they stopped on something: holding
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,52,move_by,"(0, 0, 140)",True,1546.3,15.42,6.83,12457,140,-80,176,True,41.6,"reached: tool point now (140, -80, 176), lean 25, yaw -30, fingers close along 60"
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,53,move_tool,"(164, -53, 36) lean 0 grip 60",True,1568.7,14.3,7.39,12368,164,-53,36,True,41.6,"reached: tool point now (164, -53, 36), lean 0, yaw -30, fingers close along 60"
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,54,gripper,75 mm,True,1587.8,7.17,1.61,11792,164,-53,36,False,41.6,the fingers are now 75 mm apart
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,55,skill,look,True,1618.5,8.41,21.61,11764,110,230,299,False,74.7,"looked: the basket is in view, the bottle was not found"
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,56,done,,True,1629.0,9.93,0.0,12128,110,230,299,False,74.7,you said done
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,58,move_tool,"(164, -53, 36) lean 0 grip 60",True,1688.5,17.41,13.71,12600,164,-53,36,False,74.7,"reached: tool point now (164, -53, 36), lean 0, yaw -30, fingers close along 60"
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,59,gripper,0 mm,True,1699.5,8.76,1.61,11883,163,-53,36,True,74.8,the fingers are now 41 mm apart; they stopped on something: holding
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,60,move_tool,"(235, -210, 60) lean 0 grip 60",False,1727.2,20.67,6.46,12718,233,-206,60,True,41.0,failed: driver refused /api/servo: arm feedback is stale
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,63,move_tool,"(235, -210, 60) lean 0 grip 60",False,1758.9,24.98,0.04,13494,181,-67,10,True,47.7,failed: the fingertips dipped to -3 mm on the way: stopped
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,64,move_by,"(0, 0, 180)",False,1856.3,96.89,0.01,19365,181,-67,10,True,47.7,"failed: (181, -67, 190) mm is out of the arm's reach with that yaw (lean towards a direction near the base's bearing, and turn the fingers with grip instead)"
+20261116-154924-gpt-5.6-sol,gpt-5.6-sol,65,gripper,75 mm,True,1871.4,12.84,1.63,11943,186,-64,11,False,47.7,the fingers are now 75 mm apart

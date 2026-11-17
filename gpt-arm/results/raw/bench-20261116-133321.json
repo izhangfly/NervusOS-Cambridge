@@ -1,0 +1,50 @@
+{
+ "id": "bench-20261116-133321",
+ "state": "done",
+ "instruction": "Pick up the hair gel bottle from the table and put it into the basket. Then take it back out of the basket and put it down on the table beside the basket. Standing or lying on the table are both fine.",
+ "mode": "direct",
+ "models": [
+  "gpt-6.1-sol",
+  "gpt-5.6-sol"
+ ],
+ "runs_per_model": 5,
+ "lessons": false,
+ "started": 1794836001.658286,
+ "ended": 1794846036.594349,
+ "current": null,
+ "message": "",
+ "results": [
+  {
+   "model": "gpt-6.1-sol",
+   "runs": 3,
+   "successes": 3,
+   "rate": 1.0,
+   "mean_steps": 30.0,
+   "mean_s": 1342.7,
+   "tokens": 1189983,
+   "failures": {}
+  },
+  {
+   "model": "gpt-5.6-sol",
+   "runs": 3,
+   "successes": 0,
+   "rate": 0.0,
+   "mean_steps": 51.7,
+   "mean_s": 1818.6,
+   "tokens": 2094767,
+   "failures": {
+    "uncontrolled bottle drop": 1,
+    "step_limit": 2
+   }
+  }
+ ],
+ "run_ids": [
+  "20261116-133324-gpt-6.1-sol",
+  "20261116-134633-gpt-5.6-sol",
+  "20261116-141102-gpt-6.1-sol",
+  "20261116-142403-gpt-5.6-sol",
+  "20261116-150826-gpt-6.1-sol",
+  "20261116-154924-gpt-5.6-sol"
+ ],
+ "skipped": {}
+}
