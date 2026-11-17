@@ -215,7 +215,7 @@ docs/              BACKGROUND.md, REPORT-TEMPLATE.md, portal screenshots, README
 ## Tests
 
 ```sh
-python -m unittest discover -s tests          # 80 tests, no hardware
+python -m unittest discover -s tests          # 79 tests, no hardware
 python -m unittest discover -s driver -p "test_*.py"
 ```
 

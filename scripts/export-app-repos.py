@@ -98,8 +98,17 @@ REPOS = {
         "paths": [("gpt-arm", ".")] + DRIVER_ONLY,
     },
 }
-IGNORE = shutil.ignore_patterns("build", ".gradle", ".kotlin", "__pycache__", "*.pyc", ".pytest_cache",
-                                "*.pem", ".venv", "venv", ".DS_Store", "local.properties")
+_IGNORE_NAMES = shutil.ignore_patterns("build", ".gradle", ".kotlin", "__pycache__", "*.pyc", ".pytest_cache",
+                                       "*.pem", ".venv", "venv", ".DS_Store", "local.properties")
+
+
+def IGNORE(directory, names):
+    """The usual build and cache files, plus generated media the monorepo's .gitignore keeps out of git
+    (gpt-arm/site/media: the report page's videos, hundreds of MB, rebuilt with site/build_media.py)."""
+    skip = set(_IGNORE_NAMES(directory, names))
+    if Path(directory).name == "site" and "media" in names:
+        skip.add("media")
+    return skip
 
 
 def run(*cmd, cwd=None, check=True, capture=False):
