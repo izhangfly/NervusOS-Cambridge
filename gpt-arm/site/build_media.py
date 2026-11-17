@@ -117,12 +117,10 @@ def clips(a):
         """Same wall-clock speed, overhead views stacked: GPT-6.1 Sol 141102 against GPT-5.6 Sol 134633."""
         speed, length = 24.0, 1453.0 / 24.0
         left, right = cam("20261116-141102-gpt-6.1-sol"), cam("20261116-134633-gpt-5.6-sol")
-        lab = ("drawtext=text='{t}':x=16:y=16:fontsize=26:fontcolor=white:box=1:boxcolor=0x000000AA:boxborderw=8"
-               ":fontfile=/System/Library/Fonts/Supplemental/Arial.ttf")
+        # No text burned in (this ffmpeg has no drawtext): the page labels the two halves in HTML.
         ff("-i", str(left), "-i", str(right), "-filter_complex",
-           f"[0:v]crop=960:720:0:0,setpts=PTS/{speed},fps=24,scale=640:480,tpad=stop_mode=clone:stop_duration={length},"
-           f"{lab.format(t='GPT-6.1 Sol  (run 141102)')}[a];"
-           f"[1:v]crop=960:720:0:0,setpts=PTS/{speed},fps=24,scale=640:480,{lab.format(t='GPT-5.6 Sol  (run 134633)')}[b];"
+           f"[0:v]crop=960:720:0:0,setpts=PTS/{speed},fps=24,scale=640:480,tpad=stop_mode=clone:stop_duration={length}[a];"
+           f"[1:v]crop=960:720:0:0,setpts=PTS/{speed},fps=24,scale=640:480[b];"
            f"[a][b]hstack=inputs=2,trim=duration={length:.1f}[v]", "-map", "[v]", *ENC, "-crf", "28", str(out))
         return {"caption": "Same task, same speed (24x): GPT-6.1 Sol finishes in 13 minutes and holds still; GPT-5.6 Sol "
                            "drops the bottle on the way out of the basket and is still going at 24 minutes.",

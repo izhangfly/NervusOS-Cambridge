@@ -1,0 +1,326 @@
+/* GPT Arm report page. Everything is scoped under .gar so the page can be dropped into another site.
+   Structure after perit.ai (framed column, hairlines, mono eyebrows, stat rows); mood after jrhu.me (navy
+   gradient dark theme, yellow accent, serif long-form text, progressive blur at the viewport edges). */
+@import url("../fonts/fonts.css");
+
+.gar {
+  --bg: #efefef; --surface: #ffffff; --surface-2: #f7f7f7; --rule: #dcdcdc; --rule-strong: #bdbdbd;
+  --ink: #111111; --ink-2: #474747; --ink-3: #767676; --accent: #1a6dff; --accent-ink: #ffffff;
+  --accent-soft: #e8f0ff; --link: #1a5fd6; --mark-bg: #1a6dff; --mark-ink: #ffffff; --dot: #1a6dff;
+  --ok: #138a52; --warn: #a86200; --bad: #c8312b;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --think: #c4c4c4; --hold: rgba(26, 109, 255, 0.10);
+  --grid: #ececec; --tip-bg: #111111; --tip-ink: #ffffff; --shadow: 0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(0,0,0,.06);
+  --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-serif: "Newsreader", ui-serif, Georgia, "Times New Roman", serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --col: 1280px; --text: 680px; --gutter: clamp(16px, 4vw, 56px); --nav-h: 60px;
+  color-scheme: light;
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-sans); font-size: 15px; line-height: 1.55;
+  -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+  min-height: 100vh;
+}
+.gar-dark-vars {
+  --bg: #020208; --surface: rgba(255,255,255,0.025); --surface-2: rgba(255,255,255,0.05);
+  --rule: rgba(255,255,255,0.11); --rule-strong: rgba(255,255,255,0.24);
+  --ink: #ffffff; --ink-2: rgba(255,255,255,0.80); --ink-3: rgba(255,255,255,0.58);
+  --accent: #ffff00; --accent-ink: #050a39; --accent-soft: rgba(255,255,0,0.10); --link: #a8c1ff;
+  --mark-bg: #ffff00; --mark-ink: #050a39; --dot: #ffff00;
+  --ok: #3ccf8e; --warn: #f0b429; --bad: #ff6b61;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --think: rgba(255,255,255,0.26); --hold: rgba(255,255,0,0.07);
+  --grid: rgba(255,255,255,0.07); --tip-bg: #ffffff; --tip-ink: #050a39; --shadow: none;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) .gar { --bg: #020208; --surface: rgba(255,255,255,0.025); --surface-2: rgba(255,255,255,0.05);
+    --rule: rgba(255,255,255,0.11); --rule-strong: rgba(255,255,255,0.24); --ink: #ffffff; --ink-2: rgba(255,255,255,0.80);
+    --ink-3: rgba(255,255,255,0.58); --accent: #ffff00; --accent-ink: #050a39; --accent-soft: rgba(255,255,0,0.10); --link: #a8c1ff;
+    --mark-bg: #ffff00; --mark-ink: #050a39; --dot: #ffff00; --ok: #3ccf8e; --warn: #f0b429; --bad: #ff6b61;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --think: rgba(255,255,255,0.26); --hold: rgba(255,255,0,0.07);
+    --grid: rgba(255,255,255,0.07); --tip-bg: #ffffff; --tip-ink: #050a39; --shadow: none; color-scheme: dark; }
+}
+:root[data-theme="dark"] .gar { --bg: #020208; --surface: rgba(255,255,255,0.025); --surface-2: rgba(255,255,255,0.05);
+  --rule: rgba(255,255,255,0.11); --rule-strong: rgba(255,255,255,0.24); --ink: #ffffff; --ink-2: rgba(255,255,255,0.80);
+  --ink-3: rgba(255,255,255,0.58); --accent: #ffff00; --accent-ink: #050a39; --accent-soft: rgba(255,255,0,0.10); --link: #a8c1ff;
+  --mark-bg: #ffff00; --mark-ink: #050a39; --dot: #ffff00; --ok: #3ccf8e; --warn: #f0b429; --bad: #ff6b61;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --think: rgba(255,255,255,0.26); --hold: rgba(255,255,0,0.07);
+  --grid: rgba(255,255,255,0.07); --tip-bg: #ffffff; --tip-ink: #050a39; --shadow: none; color-scheme: dark; }
+
+/* The navy gradient (jrhu.me) sits behind the dark theme, fixed to the viewport. */
+.gar .gar-sky { position: fixed; inset: 0; z-index: 0; pointer-events: none; opacity: 0; transition: opacity .4s ease;
+  background: linear-gradient(180deg, #020208 0%, #020412 25%, #030621 50%, #050a39 75%, #080f4d 100%); }
+@media (prefers-color-scheme: dark) { :root:where(:not([data-theme="light"])) .gar .gar-sky { opacity: 1; } }
+:root[data-theme="dark"] .gar .gar-sky { opacity: 1; }
+
+.gar *, .gar *::before, .gar *::after { box-sizing: border-box; }
+.gar a { color: var(--link); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px;
+  text-decoration-color: color-mix(in srgb, currentColor 35%, transparent); }
+.gar a:hover { text-decoration-color: currentColor; }
+.gar :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.gar img, .gar video, .gar svg { display: block; max-width: 100%; }
+.gar .skip { position: absolute; left: -9999px; top: 8px; background: var(--ink); color: var(--bg); padding: 8px 12px; z-index: 100; }
+.gar .skip:focus { left: 8px; }
+
+/* ---- frame: a centred column with vertical rules and corner marks ---- */
+.gar .frame { position: relative; z-index: 1; max-width: var(--col); margin: 0 auto; border-left: 1px solid var(--rule);
+  border-right: 1px solid var(--rule); background: var(--surface); }
+.gar section.band { position: relative; padding: clamp(56px, 8vw, 112px) var(--gutter); border-top: 1px solid var(--rule); }
+.gar section.band::before, .gar section.band::after { content: ""; position: absolute; top: -4px; width: 7px; height: 7px;
+  background: var(--surface); border: 1px solid var(--rule-strong); }
+.gar section.band::before { left: -4px; } .gar section.band::after { right: -4px; }
+.gar section.band.tint { background: var(--surface-2); }
+
+/* ---- nav ---- */
+.gar .nav { position: sticky; top: 0; z-index: 30; height: var(--nav-h); display: flex; align-items: center; gap: 24px;
+  padding: 0 var(--gutter); border-bottom: 1px solid var(--rule);
+  background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: saturate(140%) blur(14px); -webkit-backdrop-filter: saturate(140%) blur(14px); }
+.gar .nav .brand { display: flex; align-items: center; gap: 10px; font-weight: 500; color: var(--ink); text-decoration: none; white-space: nowrap; }
+.gar .nav .brand .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dot); }
+.gar .nav ol { display: flex; gap: 4px; list-style: none; margin: 0 0 0 auto; padding: 0; overflow-x: auto; scrollbar-width: none; }
+.gar .nav ol::-webkit-scrollbar { display: none; }
+.gar .nav ol a { display: block; padding: 6px 10px; border-radius: 6px; color: var(--ink-3); text-decoration: none; font-size: 14px; white-space: nowrap; }
+.gar .nav ol a:hover { color: var(--ink); }
+.gar .nav ol a[aria-current="true"] { color: var(--ink); background: var(--surface-2); }
+@media (prefers-color-scheme: dark) { :root:where(:not([data-theme="light"])) .gar .nav ol a[aria-current="true"] { color: var(--accent); } }
+:root[data-theme="dark"] .gar .nav ol a[aria-current="true"] { color: var(--accent); }
+.gar .nav .tools { display: flex; gap: 6px; }
+.gar .iconbtn { display: inline-grid; place-items: center; width: 34px; height: 34px; border: 1px solid var(--rule); border-radius: 8px;
+  background: transparent; color: var(--ink-2); cursor: pointer; }
+.gar .iconbtn:hover { color: var(--ink); border-color: var(--rule-strong); }
+.gar .iconbtn svg { width: 16px; height: 16px; }
+.gar .iconbtn[aria-pressed="false"] .on, .gar .iconbtn[aria-pressed="true"] .off { display: none; }
+
+/* ---- progressive blur at the viewport's top and bottom (jrhu.me) ---- */
+.gar .edge-blur { position: fixed; left: 0; right: 0; height: 96px; z-index: 20; pointer-events: none; }
+.gar .edge-blur.top { top: var(--nav-h); } .gar .edge-blur.bottom { bottom: 0; }
+.gar .edge-blur > div { position: absolute; inset: 0; }
+.gar .edge-blur.bottom > div { transform: scaleY(-1); }
+.gar .edge-blur > div:nth-child(1) { backdrop-filter: blur(.2px);  -webkit-backdrop-filter: blur(.2px);  mask: linear-gradient(#000 0%, #000 12.5%, transparent 25%); }
+.gar .edge-blur > div:nth-child(2) { backdrop-filter: blur(.4px);  -webkit-backdrop-filter: blur(.4px);  mask: linear-gradient(transparent 0%, #000 12.5%, #000 25%, transparent 37.5%); }
+.gar .edge-blur > div:nth-child(3) { backdrop-filter: blur(.8px);  -webkit-backdrop-filter: blur(.8px);  mask: linear-gradient(transparent 12.5%, #000 25%, #000 37.5%, transparent 50%); }
+.gar .edge-blur > div:nth-child(4) { backdrop-filter: blur(1.6px); -webkit-backdrop-filter: blur(1.6px); mask: linear-gradient(transparent 25%, #000 37.5%, #000 50%, transparent 62.5%); }
+.gar .edge-blur > div:nth-child(5) { backdrop-filter: blur(3.1px); -webkit-backdrop-filter: blur(3.1px); mask: linear-gradient(transparent 37.5%, #000 50%, #000 62.5%, transparent 75%); }
+.gar .edge-blur > div:nth-child(6) { backdrop-filter: blur(6.2px); -webkit-backdrop-filter: blur(6.2px); mask: linear-gradient(transparent 50%, #000 62.5%, #000 75%, transparent 87.5%); }
+.gar .edge-blur > div:nth-child(7) { backdrop-filter: blur(12.5px); -webkit-backdrop-filter: blur(12.5px); mask: linear-gradient(transparent 62.5%, #000 75%, #000 87.5%, transparent 100%); }
+.gar .edge-blur > div:nth-child(8) { backdrop-filter: blur(25px);  -webkit-backdrop-filter: blur(25px);  mask: linear-gradient(transparent 75%, #000 87.5%, #000 100%); }
+/* the masks above fade the blur IN towards the edge; flip so the strongest blur is at the very edge */
+.gar .edge-blur.top > div { transform: scaleY(-1); } .gar .edge-blur.bottom > div { transform: none; }
+.gar .edge-blur.top { height: 56px; }
+
+/* ---- type ---- */
+.gar .eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); margin: 0 0 16px; }
+@media (prefers-color-scheme: dark) { :root:where(:not([data-theme="light"])) .gar .eyebrow { color: var(--ink-3); } }
+:root[data-theme="dark"] .gar .eyebrow { color: var(--ink-3); }
+.gar h1, .gar h2, .gar h3 { font-weight: 500; letter-spacing: -0.022em; color: var(--ink); margin: 0; text-wrap: balance; }
+.gar h1 { font-size: clamp(40px, 6.2vw, 78px); line-height: 1.02; }
+.gar h2 { font-size: clamp(28px, 3.6vw, 44px); line-height: 1.08; max-width: 22ch; }
+.gar h2.wide { max-width: 32ch; }
+.gar h3 { font-size: clamp(19px, 1.7vw, 22px); line-height: 1.25; letter-spacing: -0.01em; }
+.gar .mark { background: var(--mark-bg); color: var(--mark-ink); padding: 0 .12em; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+.gar .prose { font-family: var(--font-serif); font-size: clamp(17px, 1.35vw, 19px); line-height: 1.62; color: var(--ink-2); max-width: var(--text); }
+.gar .prose p { margin: 0 0 1.05em; }
+.gar .prose strong { color: var(--ink); font-weight: 600; }
+.gar .prose em { font-style: italic; }
+.gar .prose h3 { font-family: var(--font-sans); margin: 1.8em 0 .55em; }
+.gar .prose ul, .gar .prose ol { margin: 0 0 1.1em; padding-left: 1.2em; }
+.gar .prose li { margin: .3em 0; }
+.gar .prose code, .gar .mono { font-family: var(--font-mono); font-size: .86em; }
+.gar .prose code { background: var(--surface-2); padding: .1em .35em; border-radius: 4px; border: 1px solid var(--rule); }
+.gar .lede { font-family: var(--font-serif); font-size: clamp(19px, 1.6vw, 22px); line-height: 1.5; color: var(--ink-2); max-width: 36em; margin: 24px 0 0; }
+.gar .section-head { display: grid; gap: 14px; margin-bottom: clamp(28px, 4vw, 48px); }
+.gar .section-head .prose { margin-top: 6px; }
+.gar .muted { color: var(--ink-3); }
+.gar .small { font-size: 13px; }
+.gar .num { font-variant-numeric: tabular-nums; }
+
+/* ---- buttons, tags ---- */
+.gar .btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 32px; }
+.gar .btn { display: inline-flex; align-items: center; gap: 10px; padding: 13px 20px; font: 500 15px/1 var(--font-sans);
+  text-decoration: none; border: 1px solid transparent; border-radius: 0; cursor: pointer; transition: transform .15s ease, background .15s ease; }
+.gar .btn:active { transform: translateY(1px); }
+.gar .btn.dark { background: var(--ink); color: var(--bg); }
+.gar .btn.blue { background: var(--accent); color: var(--accent-ink); }
+.gar .btn.ghost { background: transparent; color: var(--ink); border-color: var(--rule-strong); }
+.gar .btn .arr { font-size: 14px; line-height: 1; }
+.gar .tag { display: inline-block; font: 12px/1 var(--font-mono); padding: 5px 8px; border: 1px solid var(--rule-strong); color: var(--ink-2); white-space: nowrap; }
+.gar .tag.blue { border-color: color-mix(in srgb, var(--s1) 55%, transparent); color: var(--s1); background: color-mix(in srgb, var(--s1) 8%, transparent); }
+.gar .tag.orange { border-color: color-mix(in srgb, var(--s2) 55%, transparent); color: var(--s2); background: color-mix(in srgb, var(--s2) 8%, transparent); }
+.gar .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.gar .status { display: inline-flex; align-items: center; gap: 6px; font: 500 13px/1 var(--font-sans); white-space: nowrap; }
+.gar .status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.gar .status.ok { color: var(--ok); } .gar .status.bad { color: var(--bad); } .gar .status.warn { color: var(--warn); } .gar .status.na { color: var(--ink-3); }
+.gar .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: -1px; margin-right: 6px; }
+
+/* ---- hero ---- */
+.gar .hero { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, .75fr); gap: clamp(32px, 5vw, 72px); align-items: start;
+  padding: clamp(48px, 7vw, 96px) var(--gutter) clamp(40px, 6vw, 72px); }
+.gar .hero .byline { margin-top: 28px; display: flex; flex-wrap: wrap; gap: 8px 22px; font: 13px/1.4 var(--font-mono); color: var(--ink-3); letter-spacing: .02em; }
+.gar .hero-media { position: relative; }
+.gar .phone { position: relative; width: min(100%, 360px); margin-left: auto; aspect-ratio: 9 / 16; border-radius: 34px; padding: 10px;
+  background: #0b0b0d; box-shadow: 0 30px 60px -20px rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,255,255,.08); }
+.gar .phone video, .gar .phone img { width: 100%; height: 100%; object-fit: cover; border-radius: 26px; background: #000; }
+.gar .phone .unmute { position: absolute; right: 22px; bottom: 22px; }
+.gar .media-cap { margin-top: 12px; display: flex; justify-content: space-between; gap: 16px; font: 12px/1.4 var(--font-mono);
+  letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+
+.gar .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 28px; padding: 0 var(--gutter) clamp(48px, 7vw, 88px); }
+.gar .stat { border-top: 1px solid var(--rule-strong); padding-top: 22px; }
+.gar .stat .v { font-size: clamp(34px, 4vw, 52px); line-height: 1; letter-spacing: -0.03em; font-weight: 400; font-variant-numeric: tabular-nums; }
+.gar .stat .v small { font-size: .45em; letter-spacing: 0; color: var(--ink-3); margin-left: 4px; }
+.gar .stat .k { margin-top: 12px; color: var(--ink-3); font-size: 14px; max-width: 24ch; }
+
+/* ---- figures ---- */
+.gar figure { margin: 0; }
+.gar .fig { border: 1px solid var(--rule); background: var(--surface); }
+.gar .fig-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--rule); }
+.gar .fig-head .label { font: 12px/1.3 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+.gar .fig-head .tools { display: flex; gap: 6px; flex-wrap: wrap; }
+.gar .fig-body { padding: 18px; position: relative; }
+.gar .fig-body.scroll { overflow-x: auto; }
+.gar figcaption { padding: 14px 18px 18px; font-size: 14px; color: var(--ink-3); border-top: 1px solid var(--rule); max-width: 100%; }
+.gar figcaption strong { color: var(--ink-2); font-weight: 500; }
+.gar .chip { font: 12px/1 var(--font-mono); padding: 7px 10px; border: 1px solid var(--rule); background: transparent; color: var(--ink-2); cursor: pointer; }
+.gar .chip[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.gar .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--ink-2); margin-bottom: 10px; }
+.gar .legend span { display: inline-flex; align-items: center; }
+.gar .chart { width: 100%; height: auto; overflow: visible; font-family: var(--font-sans); }
+.gar .chart text { fill: var(--ink-3); font-size: 12px; }
+.gar .chart .t-ink { fill: var(--ink); } .gar .chart .t-ink2 { fill: var(--ink-2); }
+.gar .chart .t-big { font-size: 14px; font-weight: 500; }
+.gar .chart .axis line, .gar .chart .axis path { stroke: var(--rule-strong); }
+.gar .chart .grid line { stroke: var(--grid); }
+.gar .chart .hit { fill: transparent; cursor: pointer; }
+.gar .chart .mk { transition: opacity .15s ease; }
+.gar .chart.dim .mk:not(.on) { opacity: .25; }
+.gar .tip { position: fixed; z-index: 60; pointer-events: none; max-width: 340px; padding: 10px 12px; background: var(--tip-bg); color: var(--tip-ink);
+  font: 13px/1.45 var(--font-sans); border-radius: 6px; box-shadow: 0 8px 28px rgba(0,0,0,.18); opacity: 0; transform: translateY(4px); transition: opacity .12s ease, transform .12s ease; }
+.gar .tip.show { opacity: 1; transform: none; }
+.gar .tip b { font-weight: 600; } .gar .tip .tm { opacity: .7; font-family: var(--font-mono); font-size: 11.5px; }
+.gar .tip .note { margin-top: 6px; font-family: var(--font-serif); font-size: 14px; line-height: 1.4; opacity: .92; }
+.gar .table-view { display: none; padding: 0 18px 18px; overflow-x: auto; }
+.gar .fig.as-table .table-view { display: block; }
+.gar .fig.as-table .fig-body { display: none; }
+
+/* ---- grids ---- */
+.gar .two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.gar .split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: clamp(28px, 5vw, 64px); align-items: start; }
+.gar .stack { display: grid; gap: 24px; }
+.gar .mt-l { margin-top: clamp(40px, 6vw, 72px); } .gar .mt-m { margin-top: 28px; }
+
+/* ---- tables ---- */
+.gar table.data { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+.gar table.data th { text-align: left; font-weight: 500; color: var(--ink); padding: 10px 12px 10px 0; border-bottom: 1px solid var(--rule-strong); white-space: nowrap; vertical-align: bottom; }
+.gar table.data td { padding: 11px 12px 11px 0; border-bottom: 1px solid var(--rule); color: var(--ink-2); vertical-align: top; }
+.gar table.data td.r, .gar table.data th.r { text-align: right; }
+.gar table.data tr:hover td { background: color-mix(in srgb, var(--surface-2) 70%, transparent); }
+.gar table.data th button { all: unset; cursor: pointer; } .gar table.data th button:hover { color: var(--accent); }
+.gar table.data th[aria-sort="ascending"] button::after { content: " ↑"; } .gar table.data th[aria-sort="descending"] button::after { content: " ↓"; }
+.gar .table-wrap { overflow-x: auto; border-top: 1px solid var(--rule-strong); }
+.gar .table-wrap table.data th { border-top: 0; }
+.gar .filters { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.gar dl.specs { display: grid; grid-template-columns: minmax(140px, 220px) 1fr; margin: 0; }
+.gar dl.specs dt, .gar dl.specs dd { margin: 0; padding: 14px 0; border-bottom: 1px solid var(--rule); }
+.gar dl.specs dt { font: 12px/1.6 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); padding-right: 18px; }
+.gar dl.specs dd { color: var(--ink-2); }
+.gar ol.rubric { list-style: none; margin: 0; padding: 0; counter-reset: s -1; max-width: 880px; }
+.gar ol.rubric li { display: grid; grid-template-columns: 64px 1fr; padding: 14px 0; border-bottom: 1px solid var(--rule); counter-increment: s; }
+.gar ol.rubric li::before { content: counter(s); font: 500 18px/1.3 var(--font-sans); color: var(--ink); }
+.gar ol.rubric li span { color: var(--ink-2); }
+
+/* ---- video ---- */
+.gar .vid { position: relative; background: #000; overflow: hidden; }
+.gar .vid video, .gar .vid img { width: 100%; height: auto; }
+.gar .vid .ctl { position: absolute; left: 10px; bottom: 10px; display: flex; gap: 6px; }
+.gar .vid .ctl button { width: 32px; height: 32px; border-radius: 6px; border: 0; background: rgba(0,0,0,.55); color: #fff; cursor: pointer; display: grid; place-items: center; }
+.gar .vid .ctl button svg { width: 14px; height: 14px; }
+.gar .vid .speed { position: absolute; right: 10px; top: 10px; font: 11px/1 var(--font-mono); color: #fff; background: rgba(0,0,0,.55); padding: 6px 7px; border-radius: 4px; letter-spacing: .05em; }
+
+/* ---- device mock-ups for the portal ---- */
+.gar .browser { border: 1px solid var(--rule-strong); border-radius: 12px; overflow: hidden; background: var(--surface); box-shadow: var(--shadow); }
+.gar .browser .bar { display: flex; align-items: center; gap: 12px; height: 38px; padding: 0 14px; border-bottom: 1px solid var(--rule); background: var(--surface-2); }
+.gar .browser .bar .lights { display: flex; gap: 6px; } .gar .browser .bar .lights i { width: 10px; height: 10px; border-radius: 50%; background: var(--rule-strong); }
+.gar .browser .bar .url { flex: 1; max-width: 460px; margin: 0 auto; height: 24px; border-radius: 6px; background: var(--surface); border: 1px solid var(--rule);
+  display: flex; align-items: center; justify-content: center; font: 12px/1 var(--font-mono); color: var(--ink-3); }
+.gar .laptop { max-width: 1060px; margin: 0 auto; }
+.gar .laptop .lid { border-radius: 16px 16px 0 0; padding: 14px 14px 18px; background: #16171a; box-shadow: inset 0 0 0 1px rgba(255,255,255,.06); }
+.gar .laptop .lid .screen { border-radius: 4px; overflow: hidden; background: #000; }
+.gar .laptop .base { height: 16px; margin: 0 -4%; border-radius: 0 0 14px 14px; background: linear-gradient(#c9cacd, #9fa1a6); position: relative; }
+.gar .laptop .base::after { content: ""; position: absolute; left: 50%; top: 0; width: 18%; height: 6px; transform: translateX(-50%); border-radius: 0 0 8px 8px; background: #8d8f94; }
+
+/* the portal replay (a portal-like UI driven by the run logs) */
+.gar .rp { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); font-size: 13px; color: var(--ink-2); min-height: 520px; }
+.gar .rp .cams { display: grid; grid-template-rows: auto auto; gap: 8px; padding: 12px; border-right: 1px solid var(--rule); background: var(--surface-2); }
+.gar .rp .cams .row { display: grid; grid-template-columns: 1.15fr 1fr; gap: 8px; }
+.gar .rp .cam { position: relative; background: #000; border-radius: 4px; overflow: hidden; }
+.gar .rp .cam img { width: 100%; height: 100%; object-fit: cover; aspect-ratio: 4 / 3; }
+.gar .rp .cam.wide img { aspect-ratio: 16 / 9; } .gar .rp .cam.depth img { aspect-ratio: 640 / 710; object-fit: contain; background: #000; }
+.gar .rp .cam .lab { position: absolute; left: 6px; top: 6px; font: 10px/1 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: #fff; background: rgba(0,0,0,.55); padding: 4px 5px; border-radius: 3px; }
+.gar .rp .side { display: flex; flex-direction: column; min-width: 0; }
+.gar .rp .top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--rule); }
+.gar .rp .top select { font: 13px var(--font-sans); padding: 6px 8px; border: 1px solid var(--rule-strong); background: var(--surface); color: var(--ink); border-radius: 6px; max-width: 100%; }
+.gar .rp .meta { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-bottom: 1px solid var(--rule); }
+.gar .rp .meta div { padding: 10px 14px; border-right: 1px solid var(--rule); } .gar .rp .meta div:last-child { border-right: 0; }
+.gar .rp .meta b { display: block; font: 10px/1.2 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); font-weight: 400; margin-bottom: 4px; }
+.gar .rp .meta span { font-size: 15px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.gar .rp .card { padding: 16px 14px; flex: 1; overflow: auto; }
+.gar .rp .card .act { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; }
+.gar .rp .card .act code { font: 12px/1 var(--font-mono); padding: 5px 7px; border: 1px solid var(--rule-strong); border-radius: 4px; color: var(--ink); background: var(--surface); }
+.gar .rp .card .act .skill { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
+.gar .rp .card .act .skill.no { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, transparent); text-decoration: line-through; }
+.gar .rp .card .note { font-family: var(--font-serif); font-size: 16px; line-height: 1.5; color: var(--ink); margin: 0 0 12px; }
+.gar .rp .card .res { font-family: var(--font-mono); font-size: 12px; padding: 9px 10px; background: var(--surface-2); border: 1px solid var(--rule); color: var(--ink-2); }
+.gar .rp .card .res.no { border-color: color-mix(in srgb, var(--bad) 40%, transparent); }
+.gar .rp .card .timing { margin-top: 12px; font: 12px/1.4 var(--font-mono); color: var(--ink-3); }
+.gar .rp .scrub { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-top: 1px solid var(--rule); }
+.gar .rp .scrub input[type=range] { flex: 1; accent-color: var(--accent); }
+.gar .rp .scrub .pos { font: 12px/1 var(--font-mono); color: var(--ink-3); min-width: 64px; text-align: right; }
+.gar .rp .ticks { position: relative; height: 10px; margin: 0 14px 12px; }
+.gar .rp .ticks i { position: absolute; top: 0; width: 2px; height: 10px; border-radius: 1px; }
+
+/* ---- pipeline diagram ---- */
+.gar .pipe { width: 100%; height: auto; }
+.gar .pipe .box { fill: var(--surface); stroke: var(--rule-strong); }
+.gar .pipe .box.model { fill: var(--accent-soft); stroke: var(--accent); }
+.gar .pipe .box.guard { fill: color-mix(in srgb, var(--bad) 7%, var(--surface)); stroke: color-mix(in srgb, var(--bad) 55%, transparent); }
+.gar .pipe text { fill: var(--ink); font: 13px var(--font-sans); }
+.gar .pipe text.sub { fill: var(--ink-3); font: 11px var(--font-mono); }
+.gar .pipe .arrow { stroke: var(--ink-3); fill: none; stroke-width: 1.4; }
+.gar .pipe .loop { stroke: var(--ink-3); fill: none; stroke-width: 1.2; stroke-dasharray: 4 4; }
+
+/* ---- code block ---- */
+.gar pre.json { margin: 0; padding: 16px 18px; font: 12.5px/1.55 var(--font-mono); color: var(--ink-2); background: var(--surface-2); border: 1px solid var(--rule); overflow: auto; max-height: 420px; }
+.gar pre.json .k { color: var(--s1); } .gar pre.json .s { color: var(--ok); } .gar pre.json .n { color: var(--s2); }
+
+/* ---- footer ---- */
+.gar footer { padding: 48px var(--gutter) 64px; border-top: 1px solid var(--rule); display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 32px; font-size: 14px; color: var(--ink-3); }
+.gar footer h4 { margin: 0 0 12px; font: 12px/1 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); font-weight: 400; }
+.gar footer ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.gar footer a { color: var(--ink-2); text-decoration: none; } .gar footer a:hover { color: var(--ink); }
+
+/* ---- reveal on scroll (kept subtle; off for reduced motion) ---- */
+.gar .rv { opacity: 0; transform: translateY(14px); transition: opacity .7s ease, transform .7s cubic-bezier(.2,.7,.2,1); }
+.gar .rv.in { opacity: 1; transform: none; }
+
+/* ---- responsive ---- */
+@media (max-width: 1020px) {
+  .gar .hero { grid-template-columns: 1fr; } .gar .phone { margin: 0 auto; width: min(100%, 320px); }
+  .gar .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .gar .split, .gar .two { grid-template-columns: 1fr; }
+  .gar .rp { grid-template-columns: 1fr; } .gar .rp .cams { border-right: 0; border-bottom: 1px solid var(--rule); }
+  .gar footer { grid-template-columns: 1fr; }
+}
+@media (max-width: 720px) {
+  .gar .nav ol { display: none; }
+  .gar .nav .tools { margin-left: auto; }
+  .gar .stats { gap: 18px; }
+  .gar dl.specs { grid-template-columns: 1fr; } .gar dl.specs dt { border-bottom: 0; padding-bottom: 2px; }
+  .gar .rp .meta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .gar .rp .meta div:nth-child(2) { border-right: 0; } .gar .rp .meta div:nth-child(-n+2) { border-bottom: 1px solid var(--rule); }
+  .gar .laptop .lid { padding: 8px 8px 10px; border-radius: 10px 10px 0 0; }
+  .gar .edge-blur.bottom { height: 64px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gar .rv { opacity: 1; transform: none; transition: none; }
+  .gar * { scroll-behavior: auto !important; }
+}
+@media print { .gar .nav, .gar .edge-blur, .gar .gar-sky, .gar video { display: none; } .gar .frame { border: 0; } }
