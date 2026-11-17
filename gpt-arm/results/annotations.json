@@ -1157,7 +1157,7 @@
   "failure_mode": "the bottle slipped out on every lift",
   "root_cause_side": "model",
   "kind": "full_cycle",
-  "summary": "The bottle started lying close to the arm's base at (164, -53). Five of the first seven moves were refused as out of reach or outside the driver's box. GPT-5.6 Sol then grasped the lying bottle at 43 mm height six times (fingers stopping at 32 to 35 mm) and lost it on every lift. It said done with the bottle still on the table and the checker said fail; on its last steps the arm's feedback went stale and a fingertip-dip guard stopped a move. Step budget exhausted at 31 minutes; the bottle never entered the basket.",
+  "summary": "The bottle started lying close to the arm's base at (164, -53). Six of its first seven moves failed or were refused, most as out of reach. GPT-5.6 Sol then grasped the lying bottle at 43 mm height six times (fingers stopping at 32 to 35 mm) and lost it on every lift. It said done with the bottle still on the table and the checker said fail; on its last steps the arm's feedback went stale and a fingertip-dip guard stopped a move. Step budget exhausted at 31 minutes; the bottle never entered the basket.",
   "quotes": [],
   "timeline": []
  }

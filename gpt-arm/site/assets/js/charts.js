@@ -83,7 +83,7 @@
     axisX(svg, x, 330 - m.b, [0, 200, 400, 600, 800], (v) => v + "k", "tokens per run (thousands)", w);
     const groups = {};
     runs.forEach((r, i) => {
-      const k = r.model, jitter = (r.run_id.charCodeAt(13) % 3 - 1) * 5;
+      const k = r.model, jitter = 0;               // stages are exact: never nudge a run off its line
       const g = el("g", { class: "mk" }, svg);
       const c = el("circle", { cx: x(r.tokens / 1000), cy: y(+r.stage) + jitter, r: 6, style: `fill:${MODEL[k].c};fill-opacity:.35;stroke:${MODEL[k].c};stroke-width:1.5` }, g);
       (groups[k] = groups[k] || []).push(g);
@@ -104,8 +104,10 @@
       el("path", { d: `M${x1},${y1} L${x2},${y2}`, style: "stroke:var(--ink-3);stroke-width:1.2;fill:none", "marker-end": "url(#arr-o)" }, svg);
       const defs = el("defs", {}, svg); const mk = el("marker", { id: "arr-o", viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: "auto-start-reverse" }, defs);
       el("path", { d: "M0,0 L10,5 L0,10 z", style: "fill:var(--ink-3)" }, mk);
-      el("text", { x: (x1 + x2) / 2 + 10, y: (y1 + y2) / 2 + 2, class: "t-ink2" }, svg, `${fmt(b.mean_tokens / a.mean_tokens, 1)}x fewer tokens per run`);
-      el("text", { x: (x1 + x2) / 2 + 10, y: (y1 + y2) / 2 + 18, class: "t-ink2" }, svg, `mean stage ${fmt(a.mean_stage, 1)} against ${fmt(b.mean_stage, 1)}`);
+      // the label sits below the arrow's middle, clear of the line (the arrow runs down-right from A to B)
+      const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+      el("text", { x: mx - 14, y: my + 30, "text-anchor": "end", class: "t-ink2" }, svg, `${fmt(b.mean_tokens / a.mean_tokens, 1)}x fewer tokens per run`);
+      el("text", { x: mx - 14, y: my + 47, "text-anchor": "end", class: "t-ink2" }, svg, `mean stage ${fmt(a.mean_stage, 1)} against ${fmt(b.mean_stage, 1)}`);
     }
     svg.setAttribute("aria-label", "Scatter of stage reached against tokens per run for the six benchmark runs. GPT-6.1 Sol reached stage 5 in all three runs with a mean of about 397 thousand tokens; GPT-5.6 Sol reached stages 4, 3 and 1 with a mean of about 698 thousand tokens.");
     table(document.querySelector("#fig-outcome .table-view"), [{ t: "Run" }, { t: "Model" }, { t: "Stage", r: 1 }, { t: "Tokens", r: 1 }, { t: "Minutes", r: 1 }, { t: "Outcome" }],
@@ -131,8 +133,12 @@
       el("rect", { x: x(0), y: yy + 4, width: x(5) - x(0), height: 16, rx: 3, style: "fill:var(--surface-2);stroke:var(--rule)" }, svg);
       const g = el("g", { class: "mk" }, svg);
       if (+r.stage > 0) el("rect", { x: x(0), y: yy + 4, width: x(+r.stage) - x(0), height: 16, rx: 3, style: `fill:${MODEL[k].c}` }, g);
-      el("text", { x: x(+r.stage) + (+r.stage > 4.6 ? -8 : 8), y: yy + 16, "text-anchor": +r.stage > 4.6 ? "end" : "start", class: +r.stage > 4.6 ? "" : "t-ink2",
-        style: +r.stage > 4.6 ? "fill:#fff;font-weight:600" : "" }, g, r.success ? "complete" : (r.failure_mode || "").replace(/\(.*\)/, "").slice(0, w < 620 ? 18 : 60));
+      // long bars carry their label inside (white on the model colour), short ones just after the bar
+      const inside = +r.stage >= 3, label = r.success ? "complete" : (r.failure_mode || "").replace(/\(.*\)/, "").trim();
+      const room = inside ? x(+r.stage) - x(0) - 16 : x(5) - x(+r.stage) - 12;
+      const fit = label.length * 6.6 > room ? label.slice(0, Math.max(6, Math.floor(room / 6.6) - 1)) + "…" : label;
+      el("text", { x: x(+r.stage) + (inside ? -8 : 8), y: yy + 16, "text-anchor": inside ? "end" : "start", class: inside ? "" : "t-ink2",
+        style: inside ? "fill:#fff;font-weight:600" : "" }, g, fit);
       const hit = el("rect", { x: x(0), y: yy, width: x(5) - x(0), height: 24, class: "hit" }, svg);
       hover(hit, `<b>${MODEL[k].name}</b> · run ${hhmm(r.run_id)} · stage ${r.stage}<div class="note">${esc(r.summary || "")}</div>`);
     });

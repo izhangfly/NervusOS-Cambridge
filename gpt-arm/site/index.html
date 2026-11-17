@@ -1,0 +1,524 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GPT Arm: two GPT models drive a robot arm</title>
+<meta name="description" content="GPT-6.1 Sol and GPT-5.6 Sol choose every move of an AgileX PiPER arm from two cameras. A report on 19 runs and a six-run benchmark: put a bottle into a basket and take it out again.">
+<meta name="author" content="Ian Zhang">
+<meta property="og:title" content="GPT Arm: two GPT models drive a robot arm">
+<meta property="og:description" content="Every move chosen by the model from three pictures and a JSON state. GPT-6.1 Sol completed 3 of 3 cycles, GPT-5.6 Sol 0 of 3.">
+<meta property="og:image" content="media/clips/race.jpg">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='7' fill='%231a6dff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="assets/css/report.css">
+<script>try{var t=localStorage.getItem("gar-theme");if(t==="dark"||t==="light")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body style="margin:0">
+<div class="gar">
+<a class="skip" href="#summary">Skip to the findings</a>
+<div class="gar-sky" aria-hidden="true"></div>
+
+<nav class="nav" aria-label="Sections">
+  <a class="brand" href="#top" data-sound><span class="dot" aria-hidden="true"></span>GPT Arm</a>
+  <ol>
+    <li><a href="#summary">Findings</a></li>
+    <li><a href="#results">Results</a></li>
+    <li><a href="#time">Time</a></li>
+    <li><a href="#replay">Replay</a></li>
+    <li><a href="#how">How it works</a></li>
+    <li><a href="#history">History</a></li>
+    <li><a href="#failures">Failures</a></li>
+    <li><a href="#buzz">The buzz</a></li>
+    <li><a href="#limits">Limits</a></li>
+    <li><a href="#runs">All runs</a></li>
+  </ol>
+  <div class="tools">
+    <button class="iconbtn" id="sound-btn" type="button" aria-pressed="true" aria-label="Click sounds">
+      <svg class="on" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 6h2.5l3-2.5v9L5 10H2.5z" fill="currentColor"/><path d="M10.5 5.5a3.5 3.5 0 0 1 0 5M12.5 3.5a6.3 6.3 0 0 1 0 9"/></svg>
+      <svg class="off" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 6h2.5l3-2.5v9L5 10H2.5z" fill="currentColor"/><path d="M11 6l3.5 4M14.5 6L11 10"/></svg>
+    </button>
+    <button class="iconbtn" id="theme-btn" type="button" aria-pressed="false" aria-label="Dark theme">
+      <svg class="off" viewBox="0 0 16 16" fill="currentColor"><path d="M13.5 9.6A5.6 5.6 0 0 1 6.4 2.5a5.6 5.6 0 1 0 7.1 7.1z"/></svg>
+      <svg class="on" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="3" fill="currentColor"/><path d="M8 1v1.6M8 13.4V15M1 8h1.6M13.4 8H15M3 3l1.1 1.1M11.9 11.9 13 13M3 13l1.1-1.1M11.9 4.1 13 3"/></svg>
+    </button>
+  </div>
+</nav>
+<div class="edge-blur top" aria-hidden="true"><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div></div>
+<div class="edge-blur bottom" aria-hidden="true"><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div></div>
+
+<main class="frame" id="top">
+
+<!-- ============================================================ hero -->
+<header class="hero">
+  <div>
+    <p class="eyebrow">Research report · 16 November 2026</p>
+    <h1>Two GPT models <span class="mark">drive</span> a robot arm from two cameras.</h1>
+    <p class="lede">GPT-6.1 Sol and GPT-5.6 Sol each chose every move of an AgileX PiPER arm, from three pictures and a JSON state per decision. The task was to put a bottle into a basket and take it out again. In a six-run benchmark, GPT-6.1 Sol completed all three of its cycles and GPT-5.6 Sol none of its three.</p>
+    <div class="byline"><span>Ian Zhang</span><span>19 runs · 416 model decisions · 15–16 Nov 2026</span></div>
+    <div class="btns">
+      <a class="btn dark" href="#summary">Read the findings <span class="arr" aria-hidden="true">↗</span></a>
+      <a class="btn blue" href="#side-by-side">Watch the runs <span class="arr" aria-hidden="true">↗</span></a>
+      <a class="btn ghost" href="#data">Code and data <span class="arr" aria-hidden="true">↗</span></a>
+    </div>
+  </div>
+  <div class="hero-media">
+    <div class="phone">
+      <video id="hero-video" data-src="media/clips/hero-edit.mp4" poster="media/clips/hero-edit.jpg" muted loop playsinline preload="none" aria-label="The arm putting the bottle into the basket and taking it out, with the portal and the run's camera video, time-aligned"></video>
+      <button class="iconbtn unmute" id="unmute" type="button" aria-pressed="false" aria-label="Turn sound on" style="background:rgba(0,0,0,.55);color:#fff;border-color:transparent">
+        <svg viewBox="0 0 16 16" fill="currentColor"><path d="M2.5 6h2.5l3-2.5v9L5 10H2.5z"/><path d="M10.5 5.5a3.5 3.5 0 0 1 0 5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>
+      </button>
+    </div>
+    <div class="media-cap"><span>Full cycle · 16 Nov 13:00</span><span>Arm · portal · cameras</span></div>
+  </div>
+</header>
+<div class="stats">
+  <div class="stat rv"><div class="v num">3<small>/3</small></div><div class="k">cycles GPT-6.1 Sol completed in the benchmark</div></div>
+  <div class="stat rv"><div class="v num">0<small>/3</small></div><div class="k">cycles GPT-5.6 Sol completed (it reached stages 4, 3 and 1)</div></div>
+  <div class="stat rv"><div class="v num">13.1<small>min</small></div><div class="k">median time for a complete cycle by GPT-6.1 Sol</div></div>
+  <div class="stat rv"><div class="v num">85<small>%</small></div><div class="k">of benchmark time the arm stood still while the model thought</div></div>
+</div>
+
+<!-- ============================================================ summary -->
+<section class="band" id="summary">
+  <div class="section-head">
+    <p class="eyebrow">Findings</p>
+    <h2>The model chose every motion. What separated the two was how it held the bottle.</h2>
+  </div>
+  <div class="prose">
+    <p>The arm sits on a white table with a yellow hair-gel bottle and a black fabric basket. One camera looks down from about a metre up, and a second, with a depth sensor, rides on the wrist. For every decision the model gets three pictures and the arm's state as JSON, and answers with one action: move the tool to a point, move it by an offset, set the joints, open or close the gripper, look again, or say it is done. It plans the whole task itself. The software around it builds the pictures, checks every move against the table, a measured wall, the arm's reach and its joint limits, and runs the motion.</p>
+    <p><strong>GPT-6.1 Sol completed 3 of 3 benchmark cycles; GPT-5.6 Sol completed 0 of 3.</strong> On a six-stage rubric, GPT-6.1 Sol reached the last stage every time and GPT-5.6 Sol reached stages 4, 3 and 1. Three runs per model is a small sample: a 3–0 split like this has a two-sided Fisher exact p of 0.10. The benchmark was meant to have five runs per model, and a bug in its start-of-run check ended it after six (details under <a href="#limits">limitations</a>).</p>
+    <p><strong>GPT-6.1 Sol needed fewer decisions, not faster ones.</strong> Its median decision took 30.8 seconds against GPT-5.6 Sol's 18.5, but its runs needed a median of 21 decisions against 60 (the budget) and used 1.8 times fewer tokens: 396,661 per run on average against 698,256.</p>
+    <p><strong>The arm stood still for 85% of the benchmark.</strong> The model was thinking for 8,071 of the 9,484 seconds; the arm moved for less than 13%. Once the moves were safe and the pictures were right, control was the easy part. Model latency sets the pace.</p>
+    <p><strong>GPT-5.6 Sol's failures were all about the grip.</strong> It dropped the bottle while carrying it out of the basket, closed on the basket's fabric instead of the bottle, and in one run lifted six times while the bottle stayed on the table. GPT-6.1 Sol made a similar mistake once, closing on the basket's edge, and noticed, put it back and tried again.</p>
+    <p><strong>Most of the work was on what the model sees.</strong> The first run that worked came after eight that didn't, and after the depth camera's view was rebuilt as a top-down height map that remembers what scrolled out of view. The rest went into safety (a measured wall the wrist camera had scraped), a re-calibration, and a fix in the arm's driver for a loud buzz the motors made while holding still.</p>
+  </div>
+</section>
+
+<!-- ============================================================ figure 1 -->
+<section class="band tint" id="fig-outcome-sec">
+  <div class="section-head">
+    <p class="eyebrow">Figure 1</p>
+    <h2 class="wide">GPT-6.1 Sol completes the cycle every time, with 1.8 times fewer tokens per run</h2>
+  </div>
+  <figure class="fig rv" id="fig-outcome">
+    <div class="fig-head"><span class="label">Stage reached against tokens per run · benchmark</span><div class="tools"><button class="chip" type="button" data-toggle-table aria-pressed="false">Show as table</button></div></div>
+    <div class="legend" style="padding:14px 18px 0"><span><span class="swatch" style="background:var(--s1)"></span>GPT-6.1 Sol</span><span><span class="swatch" style="background:var(--s2)"></span>GPT-5.6 Sol</span></div>
+    <div class="fig-body"></div>
+    <div class="table-view"></div>
+    <figcaption>Small dots are single runs, large dots each model's mean. Stage 5 means the bottle went into the basket, came out and was put down on the table. Tokens are input plus output for every call in the run, including the plan and the checker. Hover a dot for the run.</figcaption>
+  </figure>
+</section>
+
+<!-- ============================================================ side by side -->
+<section class="band" id="side-by-side">
+  <div class="section-head">
+    <p class="eyebrow">Same task, same speed</p>
+    <h2>One finishes in 13 minutes. The other is still going at 24.</h2>
+    <div class="prose"><p>Both overhead views at 24 times real speed, starting together. On the left, GPT-6.1 Sol (run 14:11) takes the bottle from the table to the basket and back out, then holds still. On the right, GPT-5.6 Sol (run 13:46) gets the bottle into the basket and lifts it out, then loses it on the way to the table.</p></div>
+  </div>
+  <figure class="rv">
+    <div class="vid" style="border:1px solid var(--rule)">
+      <video data-src="media/clips/race.mp4" poster="media/clips/race.jpg" muted loop playsinline preload="none" aria-label="Overhead views of the two runs side by side at 24 times speed"></video>
+      <span class="speed">24×</span>
+      <span class="speed" style="right:auto;left:10px">GPT-6.1 Sol</span>
+      <span class="speed" style="left:calc(50% + 10px);right:auto">GPT-5.6 Sol</span>
+    </div>
+    <figcaption>Benchmark runs 20261116-141102 (left) and 20261116-134633 (right), overhead camera only, wall-clock time compressed 24 times.</figcaption>
+  </figure>
+  <div class="two mt-l">
+    <figure class="rv">
+      <div class="vid"><video data-src="media/clips/cycle-6-1.mp4" poster="media/clips/cycle-6-1.jpg" muted loop playsinline preload="none" aria-label="GPT-6.1 Sol's full cycle, moving parts only"></video><span class="speed">moving only · 3×</span></div>
+      <figcaption><strong>GPT-6.1 Sol, the whole cycle.</strong> Only the 106 seconds the arm was moving, out of 13 minutes, at 3 times speed. The cut-out time is the model thinking.</figcaption>
+    </figure>
+    <figure class="rv">
+      <div class="vid"><video data-src="media/clips/cycle-5-6.mp4" poster="media/clips/cycle-5-6.jpg" muted loop playsinline preload="none" aria-label="GPT-5.6 Sol's full cycle from the development runs, moving parts only"></video><span class="speed">moving only · 3×</span></div>
+      <figcaption><strong>GPT-5.6 Sol can do it too.</strong> Its one complete cycle came in the development runs, just before the benchmark (run 13:00, 28 decisions, 12.9 minutes).</figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ============================================================ scoring -->
+<section class="band tint" id="scoring">
+  <div class="split">
+    <div class="section-head">
+      <p class="eyebrow">Scoring</p>
+      <h2>How far each run got</h2>
+      <div class="prose">
+        <p>Each run is scored by the highest stage it reached, so a run that fails still records how far it got. A drop doesn't count as reaching the next stage.</p>
+        <p>I assigned stages from the run logs and the pictures, not from the model's own account. The evidence was the gripper's holding flag, the width at which the fingers stopped, and the overhead pictures before and after every release. The automatic checker's verdict is listed separately. It gave one on five of the six benchmark runs (the sixth ran out of decisions before saying done) and agreed with the stages on all five.</p>
+      </div>
+    </div>
+    <ol class="rubric">
+      <li><span>No purposeful approach to the bottle</span></li>
+      <li><span>Gripper around the bottle on the table, but no secure grasp</span></li>
+      <li><span>Bottle grasped and lifted clear of the table</span></li>
+      <li><span>Bottle released inside the basket, gripper withdrawn</span></li>
+      <li><span>Bottle grasped again inside the basket and lifted clear of the rim</span></li>
+      <li><span>Bottle put down on the table outside the basket and released under control</span></li>
+    </ol>
+  </div>
+</section>
+
+<!-- ============================================================ figure 2 + results -->
+<section class="band" id="results">
+  <div class="section-head">
+    <p class="eyebrow">Figure 2 · Results</p>
+    <h2 class="wide">GPT-6.1 Sol reaches stage 5 three times; GPT-5.6 Sol stops at 4, 3 and 1</h2>
+  </div>
+  <figure class="fig rv" id="fig-stages">
+    <div class="fig-head"><span class="label">Stage reached per benchmark run</span><div class="tools"><button class="chip" type="button" data-toggle-table aria-pressed="false">Show as table</button></div></div>
+    <div class="fig-body"></div>
+    <div class="table-view"></div>
+    <figcaption>One bar per run, in the model's colour. The text is what ended the run. Hover a bar for the account of the run.</figcaption>
+  </figure>
+
+  <div class="mt-l">
+    <h3>Results by model</h3>
+    <div class="table-wrap mt-m">
+      <table class="data">
+        <thead><tr><th>Model</th><th class="r">Complete</th><th class="r">Mean stage</th><th class="r">Decisions<br><span class="muted small">median</span></th><th class="r">Minutes<br><span class="muted small">median / mean</span></th><th class="r">Tokens per run<br><span class="muted small">mean</span></th><th class="r">s per decision<br><span class="muted small">median</span></th><th class="r">Refused or failed<br><span class="muted small">moves</span></th><th class="r">Thinking<br><span class="muted small">share of time</span></th></tr></thead>
+        <tbody>
+          <tr><td style="white-space:nowrap"><span class="swatch" style="background:var(--s1)"></span>GPT-6.1 Sol</td><td class="r">3 / 3</td><td class="r">5.00</td><td class="r">21</td><td class="r">13.1 / 22.4</td><td class="r">396,661</td><td class="r">30.8</td><td class="r">2 of 84</td><td class="r">86.8%</td></tr>
+          <tr><td style="white-space:nowrap"><span class="swatch" style="background:var(--s2)"></span>GPT-5.6 Sol</td><td class="r">0 / 3</td><td class="r">2.67</td><td class="r">60</td><td class="r">31.2 / 30.3</td><td class="r">698,256</td><td class="r">18.5</td><td class="r">12 of 149</td><td class="r">83.9%</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="small muted mt-m">Benchmark bench-20261116-133321, 16 November 13:33–16:20, three runs per model, models alternating, no notes carried between runs. Tokens are input plus output as reported by the API, for every call in the run. 60 decisions is the budget per run, so a median of 60 means most runs used all of it. GPT-6.1 Sol's mean time is pulled up by one 41-minute run, described under <a href="#failures">failures</a>.</p>
+  </div>
+</section>
+
+<!-- ============================================================ time -->
+<section class="band tint" id="time">
+  <div class="section-head">
+    <p class="eyebrow">Figures 3 and 4 · Where the time goes</p>
+    <h2 class="wide">The arm moves for a few seconds after every half-minute of thought</h2>
+    <div class="prose"><p>Each row below is one benchmark run. Grey is the model thinking about its next decision, green is the arm carrying it out, a triangle is a gripper action, a red cross a move the arm refused or that failed, and the shaded spans are the time the gripper was holding something. Hover any decision to read what the model wrote before it.</p></div>
+  </div>
+  <figure class="fig rv" id="fig-timeline">
+    <div class="fig-head"><span class="label">Run timelines · benchmark</span><div class="tools"><button class="chip" type="button" data-tl="bench" aria-pressed="true">Benchmark</button><button class="chip" type="button" data-tl="all" aria-pressed="false">+ GPT-5.6 Sol's complete cycle</button><button class="chip" type="button" data-toggle-table aria-pressed="false">Show as table</button></div></div>
+    <div class="legend" style="padding:14px 18px 0"><span><span class="swatch" style="background:var(--think)"></span>model thinking</span><span><span class="swatch" style="background:var(--s3)"></span>arm moving</span><span><span class="swatch" style="background:var(--hold);border:1px solid var(--rule-strong)"></span>holding</span><span>▼ gripper</span><span style="color:var(--bad)">✕ refused or failed</span></div>
+    <div class="fig-body scroll"></div>
+    <div class="table-view"></div>
+    <figcaption>Time on the x-axis is minutes since the run started. Thinking time is the model call's own duration; moving time is the motion the arm reported for that decision.</figcaption>
+  </figure>
+  <div class="split mt-l">
+    <figure class="fig rv" id="fig-latency">
+      <div class="fig-head"><span class="label">Seconds per decision · benchmark</span><div class="tools"><button class="chip" type="button" data-toggle-table aria-pressed="false">Show as table</button></div></div>
+      <div class="fig-body"></div>
+      <div class="table-view"></div>
+      <figcaption>One dot per decision; the bar marks each model's median.</figcaption>
+    </figure>
+    <div class="prose">
+      <p>The two models spend their time differently. GPT-6.1 Sol thinks longer before each decision (a median of 30.8 seconds against 18.5) and makes far fewer of them. Both use about 13,000 tokens per decision, most of them the three pictures.</p>
+      <p>Over all 416 decisions in all 19 runs, the median model call took 20.7 seconds and one in ten took longer than 61.6. The arm's moves take about 2 to 9 seconds (a median of 5.7). A cycle that needs 21 decisions therefore takes about ten minutes however fast the arm is, and the obvious ways to shorten it are on the model's side: fewer, larger moves per call, or a smaller model for the steps where the answer is obvious.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ replay / portal -->
+<section class="band" id="replay">
+  <div class="section-head">
+    <p class="eyebrow">The portal</p>
+    <h2>Step through a run the way the model saw it</h2>
+    <div class="prose"><p>The runs are driven from a small web portal on the laptop that runs the arm. Below is a replay built from the run logs: pick a run and step through its decisions. Each one shows the three pictures the model received, what it wrote, the action it chose and what the arm reported back. Ticks under the slider mark gripper actions (dark) and refused or failed moves (red). The arrow keys step too.</p></div>
+  </div>
+  <div class="browser rv">
+    <div class="bar"><span class="lights"><i></i><i></i><i></i></span><span class="url">gpt-arm portal · replay</span></div>
+    <div id="replay-app" tabindex="0"></div>
+  </div>
+  <div class="mt-l">
+    <h3>The real portal, next to the camera</h3>
+    <p class="small muted" style="max-width:var(--text)">A screen recording of the portal during run 14:11 (GPT-6.1 Sol), with the overhead camera beside it, both at 16 times speed. Each decision appears in the portal's log as the arm carries it out.</p>
+    <div class="laptop mt-m rv">
+      <div class="lid"><div class="screen vid">
+        <video data-src="media/clips/portal-6-1.mp4" poster="media/clips/portal-6-1.jpg" muted loop playsinline preload="none" aria-label="The portal and the overhead camera during run 14:11 at 16 times speed"></video>
+        <span class="speed">16×</span>
+      </div></div>
+      <div class="base" aria-hidden="true"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ how it works -->
+<section class="band tint" id="how">
+  <div class="section-head">
+    <p class="eyebrow">How it works</p>
+    <h2 class="wide">How a language model drives the arm, and what stops it doing damage</h2>
+  </div>
+  <figure class="fig rv">
+    <div class="fig-head"><span class="label">One decision, end to end</span></div>
+    <div class="fig-body" style="overflow-x:auto">
+      <svg class="pipe" viewBox="0 0 1180 300" role="img" aria-label="Pipeline: two cameras and the arm's joints feed perception, which builds three pictures and a JSON state for the model; its action goes through the safety checks to the driver and the arm; when it says done, a checker compares pictures.">
+        <defs><marker id="pa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--ink-3)"/></marker></defs>
+        <rect class="box" x="10" y="30" width="170" height="64" rx="6"/><text x="24" y="56">Overhead camera</text><text class="sub" x="24" y="76">1600×1200 · about 1 m up</text>
+        <rect class="box" x="10" y="118" width="170" height="64" rx="6"/><text x="24" y="144">Wrist camera</text><text class="sub" x="24" y="164">colour + depth 320×200</text>
+        <rect class="box" x="10" y="206" width="170" height="64" rx="6"/><text x="24" y="232">Arm joints</text><text class="sub" x="24" y="252">CAN feedback</text>
+        <rect class="box" x="236" y="74" width="196" height="152" rx="6"/><text x="252" y="102">Perception and state</text>
+        <text class="sub" x="252" y="126">overhead grid in mm</text><text class="sub" x="252" y="146">top-down depth map ±160 mm</text><text class="sub" x="252" y="166">objects 18 mm above floor</text><text class="sub" x="252" y="186">nearest wall, holding</text><text class="sub" x="252" y="206">3 pictures + JSON</text>
+        <rect class="box model" x="488" y="98" width="176" height="104" rx="6"/><text x="504" y="128">GPT-6.1 Sol or</text><text x="504" y="148">GPT-5.6 Sol</text><text class="sub" x="504" y="172">one action as JSON</text><text class="sub" x="504" y="190">~13k tokens · ~20-30 s</text>
+        <rect class="box guard" x="720" y="74" width="186" height="152" rx="6"/><text x="736" y="102">Safety checks</text>
+        <text class="sub" x="736" y="126">tips ≥ 8 mm, wrist ≤ 560 mm</text><text class="sub" x="736" y="146">reach and joint limits</text><text class="sub" x="736" y="166">wall: spheres 15 mm off</text><text class="sub" x="736" y="186">driver box, guards</text><text class="sub" x="736" y="206">refuse → tell the model</text>
+        <rect class="box" x="962" y="74" width="208" height="64" rx="6"/><text x="978" y="100">Driver</text><text class="sub" x="978" y="120">IK + jerk-limited path · 100 Hz</text>
+        <rect class="box" x="962" y="162" width="208" height="64" rx="6"/><text x="978" y="188">AgileX PiPER</text><text class="sub" x="978" y="208">6 joints + gripper</text>
+        <path class="arrow" d="M180,62 C210,62 210,120 236,120" marker-end="url(#pa)"/><path class="arrow" d="M180,150 L236,150" marker-end="url(#pa)"/><path class="arrow" d="M180,238 C210,238 210,180 236,180" marker-end="url(#pa)"/>
+        <path class="arrow" d="M432,150 L488,150" marker-end="url(#pa)"/><path class="arrow" d="M664,150 L720,150" marker-end="url(#pa)"/>
+        <path class="arrow" d="M906,120 C934,120 934,106 962,106" marker-end="url(#pa)"/><path class="arrow" d="M1066,138 L1066,162" marker-end="url(#pa)"/>
+        <path class="loop" d="M1066,226 C1066,292 120,292 95,270" marker-end="url(#pa)"/><text class="sub" x="540" y="286">the next decision starts from new pictures</text>
+        <path class="loop" d="M576,98 C576,40 620,30 680,30"/><text class="sub" x="688" y="34">on "done": a checker compares overhead pictures before, after each release, and after</text>
+      </svg>
+    </div>
+  </figure>
+
+  <div class="split mt-l">
+    <div class="prose">
+      <h3>What the model sees</h3>
+      <p>The three pictures are the overhead photo with a grid in arm millimetres, the wrist camera's colour image, and a height map built from the wrist depth camera. The map is the one that mattered. The depth points are moved into the arm's frame using the arm's own pose, binned into 2 mm cells over ±160 mm around the tool point, and seen from straight above. Anything standing 18 mm or more above the local floor becomes an object, listed with its centre, height, length, width and long axis.</p>
+      <p>The depth camera sits 71 mm behind the gripper and looks ahead of it, and it can't measure closer than about 15 cm. So as the gripper comes over the bottle, the bottle leaves the camera's view. The map therefore keeps earlier frames, drawn dimmer, until the gripper opens or closes. On the right is the state that went with one decision of run 14:11, holding the bottle 250 mm above the basket just before lowering it.</p>
+      <h3>What it can do</h3>
+      <p>One action per decision: move the tool to a point with a lean, a yaw and a finger direction; move it by an offset; set the six joints; open or close the gripper to a width; take a fresh look; or say done. Two named shortcuts exist, a look from a parked pose and a scripted stand-up for a lying bottle, but the model chooses when to use them. At the start it writes a short plan of stages, each with a condition for being finished.</p>
+      <h3>What the pipeline refuses</h3>
+      <p>The fingertips never go below 8 mm above the table and the wrist never above 560 mm. Every target is checked for reach, since this arm can't turn its wrist more than about 50 to 60 degrees off the direction of its base, so the model sets the finger direction by turning the last joint instead. The wall behind the table was measured with the depth camera as a vertical plane at x = 485 mm (5 mm rms), and the camera, wrist, gripper and fingertips, modelled as spheres, must stay 15 mm off it, checked before every move and while it runs. The driver adds its own workspace box, a guard that holds the arm if a joint lags its command, and one that holds it if the inverse kinematics flips the wrist. A refused move costs a decision, and the model is told why.</p>
+    </div>
+    <div>
+      <p class="eyebrow">State for decision #11 · run 14:11</p>
+<pre class="json" aria-label="Example JSON state given to the model">{
+  <span class="k">"tool_point_mm"</span>: [<span class="n">285</span>, <span class="n">-211</span>, <span class="n">250</span>],
+  <span class="k">"tool_lean_deg"</span>: <span class="n">25</span>, <span class="k">"tool_yaw_deg"</span>: <span class="n">-36</span>,
+  <span class="k">"fingers_close_along_deg"</span>: <span class="n">54</span>,
+  <span class="k">"gripper_mm"</span>: <span class="n">42.8</span>, <span class="k">"holding"</span>: <span class="n">true</span>,
+  <span class="k">"joints_deg"</span>: [<span class="n">-36.4</span>, <span class="n">85.4</span>, <span class="n">-83.1</span>, <span class="n">0.0</span>, <span class="n">67.7</span>, <span class="n">0.0</span>],
+  <span class="k">"nearest_wall"</span>: { <span class="k">"wall"</span>: <span class="s">"backboard"</span>,
+     <span class="k">"closest_part"</span>: <span class="s">"wrist camera"</span>, <span class="k">"clearance_mm"</span>: <span class="n">92</span> },
+  <span class="k">"wrist_depth"</span>: {
+    <span class="k">"surface_under_tool_z_mm"</span>: <span class="n">11</span>,
+    <span class="k">"fingertips_above_it_mm"</span>: <span class="n">225</span>,
+    <span class="k">"objects_below"</span>: [{ <span class="k">"label"</span>: <span class="s">"D1"</span>,
+      <span class="k">"centre_xy_mm"</span>: [<span class="n">326</span>, <span class="n">-246</span>], <span class="k">"top_z_mm"</span>: <span class="n">109</span>,
+      <span class="k">"length_mm"</span>: <span class="n">297</span>, <span class="k">"width_mm"</span>: <span class="n">233</span>,
+      <span class="k">"long_axis_deg"</span>: <span class="n">84</span>, <span class="k">"cut_off_by_view"</span>: <span class="n">true</span> }]
+  },
+  <span class="k">"bottle_start_xy_mm"</span>: [<span class="n">152</span>, <span class="n">4</span>],
+  <span class="k">"steps_used"</span>: <span class="n">8</span>, <span class="k">"steps_left"</span>: <span class="n">52</span>
+}</pre>
+      <p class="small muted mt-m">Trimmed from the run log. D1 is the basket: 109 mm tall at its rim, cut off by the edge of the camera's view. The model answered <code class="mono">move_by (0, 0, -165)</code>, straight down into the basket.</p>
+    </div>
+  </div>
+
+  <div class="two mt-l">
+    <div>
+      <h3>Hardware</h3>
+      <table class="data mt-m"><tbody>
+        <tr><td>Arm</td><td>AgileX PiPER, 6 joints, two-finger gripper opening to 75 mm</td></tr>
+        <tr><td>Host</td><td>Dell laptop, Ubuntu 24.04; the arm on CAN through a USB adapter</td></tr>
+        <tr><td>Overhead camera</td><td>Surface Pro 9 rear camera, 1600 × 1200, about a metre above the table</td></tr>
+        <tr><td>Wrist camera</td><td>Orbbec Dabai DC1: colour 1280 × 720, depth 320 × 200 at 10 fps</td></tr>
+        <tr><td>Scene</td><td>White table with a measured backboard; hair-gel bottle about 125 mm long and 45–50 mm across; black fabric basket about 235 × 220 mm, rim about 110 mm</td></tr>
+      </tbody></table>
+    </div>
+    <div>
+      <h3>Software</h3>
+      <table class="data mt-m"><tbody>
+        <tr><td>Models</td><td>GPT-6.1 Sol and GPT-5.6 Sol through the Codex CLI, reasoning effort medium, answers checked against a JSON schema</td></tr>
+        <tr><td>Driver</td><td>Own IK and a Ruckig jerk-limited trajectory, joint targets streamed at 100 Hz</td></tr>
+        <tr><td>Perception</td><td>OpenCV and NumPy: overhead calibration from the arm itself (solvePnP), depth height map and objects</td></tr>
+        <tr><td>Runner</td><td>Python service with a web portal; every run logged as JSON with its pictures and a video</td></tr>
+        <tr><td>Checker</td><td>The same model, judging success from overhead pictures before, during and after</td></tr>
+      </tbody></table>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ history -->
+<section class="band" id="history">
+  <div class="section-head">
+    <p class="eyebrow">Figures 5 and 6 · What changed from the first run to the last</p>
+    <h2 class="wide">Eight runs failed before the first one worked. The fixes were almost all on the perception side.</h2>
+  </div>
+  <figure class="fig rv" id="fig-history">
+    <div class="fig-head"><span class="label">Every run in order · length in minutes</span><div class="tools"><button class="chip" type="button" data-toggle-table aria-pressed="false">Show as table</button></div></div>
+    <div class="legend" style="padding:14px 18px 0"><span><span class="swatch" style="background:var(--s1)"></span>GPT-6.1 Sol</span><span><span class="swatch" style="background:var(--s2)"></span>GPT-5.6 Sol</span><span><span class="swatch" style="background:var(--ink-3)"></span>scripted</span><span>● complete</span><span>✕ failed</span><span>□ stopped by hand</span><span style="color:var(--accent)">┆ a fix went in</span></div>
+    <div class="fig-body"></div>
+    <div class="table-view"></div>
+    <figcaption>Runs on the evening of 15 November and through 16 November, in order. Not every run had the same instruction; hover for each one's task and what happened.</figcaption>
+  </figure>
+  <div class="split mt-l">
+    <div class="prose">
+      <p>The first evening ended with two problems. A run that was asked to stand a lying bottle up did it, then used up its budget without saying so. And the USB hub in the laptop's dock dropped the camera and the arm's CAN adapter together, twice over the two days.</p>
+      <p>On Monday morning five runs in a row went nowhere, and I stopped each by hand. In the one at 12:04 the gripper never got below 18 cm: 12 moves, all small corrections above the bottle, and the gripper never closed. Reading the logs, the cause was on my side. The wrist picture carried a fixed marker for where the fingers meet, which is only true at fingertip height. The depth view was an oblique picture the model couldn't measure from. And the nearest object in the state was the basket's rim, not the bottle inside it.</p>
+      <p>The top-down height map replaced both the marker and the oblique view at 12:15. The run at 12:18 still hovered. The depth camera looks ahead of the gripper, so the bottle left the map as soon as the gripper was over it, and the yaw the model wanted for a grip across the bottle was out of the arm's reach. Two changes followed: the map started remembering earlier frames, and the model got a finger-direction control that turns the last joint instead of the wrist. The run at 12:29 went down to 45 mm, closed at 42 mm on the bottle and lifted it out of the basket in 5.2 minutes.</p>
+      <p>Figure 6 shows the difference: the tool's height after every move in the run that hovered and in the one that worked.</p>
+    </div>
+    <figure class="fig rv" id="fig-height">
+      <div class="fig-head"><span class="label">Tool height after each move</span><div class="tools"><button class="chip" type="button" data-toggle-table aria-pressed="false">Show as table</button></div></div>
+      <div class="fig-body"></div>
+      <div class="table-view"></div>
+      <figcaption>Run 12:18 (dashed) and run 12:29 (solid), both GPT-5.6 Sol on "take the bottle out of the basket". Hollow points are gripper actions.</figcaption>
+    </figure>
+  </div>
+  <div class="two mt-l">
+    <figure class="rv">
+      <div class="vid"><video data-src="media/clips/hover.mp4" poster="media/clips/hover.jpg" muted loop playsinline preload="none" aria-label="Run 12:18: moves above the bottle, the gripper never closes"></video><span class="speed">moving only · 2×</span></div>
+      <figcaption><strong>12:18, before the last two fixes.</strong> Twelve moves, all above 18 cm, and the gripper never closes.</figcaption>
+    </figure>
+    <figure class="rv">
+      <div class="vid"><video data-src="media/clips/first-success.mp4" poster="media/clips/first-success.jpg" muted loop playsinline preload="none" aria-label="Run 12:29: down, grasp, lift out of the basket"></video><span class="speed">moving only · 2×</span></div>
+      <figcaption><strong>12:29, the first run that worked.</strong> Eleven decisions: over the bottle, straight down, close, lift, carry, set down.</figcaption>
+    </figure>
+  </div>
+  <div class="prose mt-l">
+    <p>Three more things went wrong between the first success and the benchmark. Around 11:30 the wrist camera had scraped along the backboard when the model sent the tool to the far edge of the table, which led to the measured wall. The overhead camera got nudged, so it was re-calibrated from 20 arm poses, of which 11 were usable, to 9.7 pixels rms. And after the arm had been moved by hand with its teach button, the controller stayed latched in teach mode with the light off. The next move swung the base joint back and forth by about 4 degrees every 3 seconds instead of settling, until a Stop cleared it. A run started in that state failed on its first move. The run after that failed too, for a different reason: the runner read the driver's record of that earlier stop as a new one. Only a stop during the current move counts now.</p>
+  </div>
+</section>
+
+<!-- ============================================================ failures -->
+<section class="band tint" id="failures">
+  <div class="section-head">
+    <p class="eyebrow">Failures, in detail</p>
+    <h2>Three ways to lose a bottle</h2>
+  </div>
+  <div class="two">
+    <figure class="rv">
+      <div class="vid"><video data-src="media/clips/fail-drop.mp4" poster="media/clips/fail-drop.jpg" muted loop playsinline preload="none" aria-label="GPT-5.6 Sol loses the bottle while carrying it out of the basket"></video><span class="speed">1.5×</span></div>
+      <figcaption><strong>Dropped on the way out · GPT-5.6 Sol, 13:46 · stage 4.</strong> It put the bottle into the basket by letting go from 170 mm, picked it up again at 110 mm with the fingers stopping at 34 mm, lifted to 270 mm, and lost it while moving to the table. It said done. The checker said the bottle had been dropped and gave it one more try, which ended in a second done and a second fail after 24 minutes.</figcaption>
+    </figure>
+    <figure class="rv">
+      <div class="vid"><video data-src="media/clips/fail-fabric.mp4" poster="media/clips/fail-fabric.jpg" muted loop playsinline preload="none" aria-label="GPT-5.6 Sol re-grasps inside the basket but the fingers stop at 56 mm on the fabric"></video><span class="speed">1.5×</span></div>
+      <figcaption><strong>Closed on the basket · GPT-5.6 Sol, 14:24 · stage 3.</strong> The bottle was in the basket by 3.6 minutes. The re-grasp stopped at 56 mm, wider than the bottle, almost certainly on the fabric, and nothing came up with the lift. Its last 34 decisions were searching and small moves, including a scripted stand-up the pipeline refused because the bottle wasn't lying on the table, until the 60-decision budget ran out.</figcaption>
+    </figure>
+    <figure class="rv">
+      <div class="vid"><video data-src="media/clips/fail-slip.mp4" poster="media/clips/fail-slip.jpg" muted loop playsinline preload="none" aria-label="GPT-5.6 Sol closes on the lying bottle and lifts, the bottle stays behind"></video><span class="speed">1.5×</span></div>
+      <figcaption><strong>Six lifts, no bottle · GPT-5.6 Sol, 15:49 · stage 1.</strong> The run started with the bottle lying close to the arm's base, and six of its first seven moves failed or were refused, most as out of reach. It then closed on the bottle at 43 mm height six times, with the fingers stopping at 32 to 35 mm, and every lift came up empty. On its last decisions the arm's feedback went stale for a moment and a guard stopped a move whose fingertips dipped below the table.</figcaption>
+    </figure>
+    <figure class="rv">
+      <div class="vid"><video data-src="media/clips/recover-6-1.mp4" poster="media/clips/recover-6-1.jpg" muted loop playsinline preload="none" aria-label="GPT-6.1 Sol closes on the basket edge, lifts, puts it back and tries again"></video><span class="speed">8×</span></div>
+      <figcaption><strong>The same mistake, recovered · GPT-6.1 Sol, 15:08 · stage 5.</strong> Its first attempt to take the bottle out closed on something 31 mm wide at the far edge of the basket. It lifted that by 180 mm, lowered it back and let go, then found the bottle and finished, 43 decisions and 41 minutes in. This is the run that pulls GPT-6.1 Sol's mean time up.</figcaption>
+    </figure>
+  </div>
+  <div class="prose mt-l">
+    <p>Every failure here comes down to the grip. The model only knows it is holding something from the width at which the fingers stopped closing, and a width of 31 to 56 mm can be the bottle, the end of it, or a fold of fabric. Nothing in the pipeline checks the grip after a short lift before the long move. That check is the first item under <a href="#next">further work</a>.</p>
+  </div>
+</section>
+
+<!-- ============================================================ buzz -->
+<section class="band" id="buzz">
+  <div class="section-head">
+    <p class="eyebrow">Figure 7 · The buzz</p>
+    <h2 class="wide">A loud buzz with nothing moving was a wrist motor that couldn't settle</h2>
+  </div>
+  <div class="split">
+    <div class="prose">
+      <p>During some holds the arm made a loud, high buzz while nothing visibly moved. To find which holds, I put the laptop's microphone next to the arm and logged the motors' own feedback off the CAN bus through a 13-minute run. That feedback is speed, current and position, about 100 times a second per motor.</p>
+      <p>The arm stands still while the model thinks, so every pause is a clean sample of one pose. Sorted by loudness, the worst hold was 16 dB above the quiet ones, and in it the J5 motor's speed had a standard deviation of 0.39 rad/s, against under 0.03 for a quiet hold. The joint's angle didn't change. The driver had already stopped sending commands, so this was the motor's own position loop failing to settle at that particular target.</p>
+      <p>On the arm, in three poses that buzzed, re-sending the same target didn't help (0.41 went to 0.33). Moving the hunting joint's target by half a degree stopped it in five of six tries. The driver now watches every motor while the arm is idle. If one oscillates for half a second after a one-second settle, it shifts that joint's hold target by 0.3 degrees, then 0.6 if needed, never further. At the fingertips 0.3 degrees on J5 is 1.2 mm.</p>
+      <p>Across the benchmark the driver did this 65 times: 31 on J6, 23 on J5, 10 on J4 and once on J3. Before the fix, 3 of 28 holds were above 0.15 rad/s; after it, none of 231. The runs and poses differ, so this is an observation, not a controlled trial.</p>
+    </div>
+    <figure class="fig rv" id="fig-buzz">
+      <div class="fig-head"><span class="label">Worst motor jitter per hold</span><div class="tools"><button class="chip" type="button" data-toggle-table aria-pressed="false">Show as table</button></div></div>
+      <div class="fig-body"></div>
+      <div class="table-view"></div>
+      <figcaption>One dot per hold (the time between two moves). Red dots are above the driver's 0.08 rad/s trigger. Before: run 13:00, the full cycle on the day. After: the six benchmark runs.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ============================================================ specs -->
+<section class="band tint" id="specs">
+  <div class="section-head"><p class="eyebrow">Technical specifications</p><h2>The setup in one list</h2></div>
+  <dl class="specs">
+    <dt>Embodiment</dt><dd>AgileX PiPER 6-joint arm with a two-finger parallel gripper (0–75 mm) on a white table; a black fabric basket and a hair-gel bottle.</dd>
+    <dt>Control</dt><dd>The model outputs one action per call: tool pose (x, y, z, lean, yaw, finger direction), relative move, joint angles, gripper width, look, or done. The driver turns moves into jerk-limited joint trajectories streamed at 100 Hz, at 20% of the arm's speed.</dd>
+    <dt>Observation</dt><dd>Overhead colour picture (sent at up to 1024 px), wrist colour picture (768 px), top-down depth height map (2 mm cells, ±160 mm), and the state as JSON: joints, tool pose, gripper width, holding, nearest wall, objects, steps used.</dd>
+    <dt>Policy</dt><dd>The model itself, prompted with a fixed description of the arm, cameras, actions and limits; it writes a plan of stages first. No examples of solved runs and, in the benchmark, no notes from earlier runs.</dd>
+    <dt>Models</dt><dd>GPT-6.1 Sol and GPT-5.6 Sol, reasoning effort medium, 180 s timeout per call, 2 retries.</dd>
+    <dt>Harness</dt><dd>Up to 60 decisions per run. When the model says done, the arm parks and a checker call judges success from overhead pictures before the run, after each release and after the run. If it says fail, the model gets one more go with the checker's critique.</dd>
+    <dt>Benchmark</dt><dd>bench-20261116-133321: "Pick up the hair gel bottle from the table and put it into the basket. Then take it back out of the basket and put it down on the table beside the basket. Standing or lying on the table are both fine." Models alternate; three runs each; each run starts where the last one left the bottle.</dd>
+    <dt>Measured</dt><dd>Stage reached (0–5), completion, decisions, minutes, tokens (input plus output), seconds of model time per decision, refused or failed moves, and the checker's verdict.</dd>
+  </dl>
+</section>
+
+<!-- ============================================================ limitations -->
+<section class="band" id="limits">
+  <div class="section-head"><p class="eyebrow">Limitations</p><h2>What these numbers can't tell you</h2></div>
+  <div class="prose">
+    <ul>
+      <li><strong>Three runs per model.</strong> The benchmark was set up for five each. After the sixth run, which ended with the gripper low in the basket, the benchmark's own start-of-run check tried to lift the arm, a guard stopped the lift, and the error ended the benchmark instead of pausing it. That is fixed. The remaining four runs weren't done because by then it was dark, and the cameras see a different scene under lamp light.</li>
+      <li><strong>Starting positions varied.</strong> Each run started wherever the previous one left the bottle, standing or lying. GPT-5.6 Sol's worst run started with the bottle lying close to the arm's base, near the edge of what the arm can reach, which is harder than any start GPT-6.1 Sol got.</li>
+      <li><strong>One task, one scene, one afternoon.</strong> The light changed through the afternoon, and there is one bottle, one basket and one table.</li>
+      <li><strong>The grading isn't blind.</strong> I assigned the stages knowing which model ran, from logs and pictures. The automatic checker is the same model as the one driving, so it isn't independent either, although it agreed with the stages on every benchmark run it judged (five of six).</li>
+      <li><strong>The prompt was developed mostly with GPT-5.6 Sol.</strong> 13 of the 18 direct-mode runs used it, so if the prompt favours either model it is likely GPT-5.6 Sol.</li>
+      <li><strong>Tokens, not money.</strong> No prices are given, and reasoning effort was fixed at medium for both models.</li>
+      <li><strong>Calibration.</strong> On the basket's side, the overhead camera's positions are good to about ±3 cm, because the gripper can't be picked out against the black basket during calibration.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============================================================ conclusion + next -->
+<section class="band tint" id="conclusion">
+  <div class="split">
+    <div>
+      <div class="section-head"><p class="eyebrow">Conclusion</p><h2>A language model can run a pick-and-place loop on a real arm, slowly</h2></div>
+      <div class="prose">
+        <p>With the right pictures and a pipeline that refuses unsafe moves, both models could plan and carry out a two-part manipulation task with every motion their own choice. GPT-6.1 Sol did it in all three benchmark runs, in a median of 21 decisions and 13 minutes. GPT-5.6 Sol could do it, and did once during development, but in the benchmark it lost the bottle three different ways.</p>
+        <p>The difference was in grasps and recovery. GPT-6.1 Sol made fewer, more deliberate decisions and noticed when it had picked up the wrong thing. On the engineering side, the decisive changes were all to what the model sees: a top-down depth map in the arm's own millimetres, a memory of what scrolled out of view, and a control that matches what this arm can physically do.</p>
+      </div>
+    </div>
+    <div id="next">
+      <div class="section-head"><p class="eyebrow">Further work</p><h2>Next</h2></div>
+      <div class="prose">
+        <ol>
+          <li><strong>Check the grip before carrying.</strong> Lift 2 cm, look at the gripper width and the wrist picture, and only then make the long move. Every benchmark failure would have been caught there.</li>
+          <li><strong>A bigger benchmark.</strong> At least ten runs per model with the bottle reset to marked start positions, in daylight, with the stages graded blind from the logs.</li>
+          <li><strong>Fewer calls per cycle.</strong> Let the model give a short sequence of moves per call, or hand the obvious steps (straight down, close, straight up) to a smaller model.</li>
+          <li><strong>Grip from the motors.</strong> The gripper motor's current says how hard it is squeezing; together with the width it could tell a bottle from a fold of fabric.</li>
+          <li><strong>Lessons on and off.</strong> The runner can carry notes from earlier runs; a benchmark with and without them is set up but not yet run.</li>
+          <li><strong>Calibration on the basket side,</strong> with the basket moved aside while the arm visits points there.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ all runs -->
+<section class="band" id="runs">
+  <div class="section-head">
+    <p class="eyebrow">All runs</p>
+    <h2>Every run, with its log and videos</h2>
+    <div class="prose"><p>All 19 runs from 15 and 16 November. Replay opens the run in the portal replay above; cameras and portal open the full recordings; log is the run's own JSON record.</p></div>
+  </div>
+  <div class="filters" role="group" aria-label="Filter runs">
+    <button class="chip" type="button" data-f="all" aria-pressed="true">All</button>
+    <button class="chip" type="button" data-f="bench" aria-pressed="false">Benchmark</button>
+    <button class="chip" type="button" data-f="ok" aria-pressed="false">Complete</button>
+    <button class="chip" type="button" data-f="gpt-6.1-sol" aria-pressed="false">GPT-6.1 Sol</button>
+    <button class="chip" type="button" data-f="gpt-5.6-sol" aria-pressed="false">GPT-5.6 Sol</button>
+  </div>
+  <div class="table-wrap" id="runs-table"><p class="muted small" style="padding:12px 0">Loading the run table…</p></div>
+</section>
+
+<!-- ============================================================ data -->
+<section class="band tint" id="data">
+  <div class="split">
+    <div class="section-head">
+      <p class="eyebrow">Code and data</p>
+      <h2>Everything is in the repository</h2>
+    </div>
+    <div class="prose">
+      <p>The code, the raw logs of all 19 runs and the processed tables are at <a href="https://github.com/izhangfly/piper-gpt-arm">github.com/izhangfly/piper-gpt-arm</a> (MIT licence). <code>results/</code> holds each run's JSON log, <code>runs.csv</code> (one row per run), <code>decisions.csv</code> (one row per model decision), <code>holds.csv</code> and <code>hunts.csv</code> for the buzz, and <code>summary.json</code>. Every figure on this page is drawn from those files. <code>tools/export_results.py</code> rebuilds them from a runs folder.</p>
+      <p>The arm driver, including the hunting watch, is in <code>driver/</code>. The microphone and CAN analysis is <code>tools/buzz.py</code>, and the screen recordings were made with <code>tools/record_runs.py</code>.</p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div><h4>GPT Arm</h4><p style="margin:0;max-width:40ch">A report by Ian Zhang on two days of GPT models driving an AgileX PiPER arm, 15–16 November 2026.</p></div>
+  <div><h4>Sections</h4><ul><li><a href="#summary">Findings</a></li><li><a href="#results">Results</a></li><li><a href="#replay">Portal replay</a></li><li><a href="#how">How it works</a></li><li><a href="#runs">All runs</a></li></ul></div>
+  <div><h4>Credits</h4><ul><li>Arm: AgileX PiPER and piper_sdk</li><li>Trajectories: Ruckig</li><li>Type: Geist, Geist Mono, Newsreader (SIL OFL)</li><li><a href="https://github.com/izhangfly/piper-gpt-arm">Source and data</a></li></ul></div>
+</footer>
+</main>
+</div>
+<script src="assets/js/report.js" defer></script>
+<script src="assets/js/charts.js" defer></script>
+<script src="assets/js/replay.js" defer></script>
+</body>
+</html>
