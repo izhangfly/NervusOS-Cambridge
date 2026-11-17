@@ -109,7 +109,8 @@
     const near = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { load(e.target); near.unobserve(e.target); } }), { rootMargin: "600px 0px" });
     const vis = new IntersectionObserver((es) => es.forEach((e) => {
       const v = e.target;
-      if (e.isIntersecting && e.intersectionRatio > 0.35) { if (!reduced && v.dataset.user !== "pause") v.play().catch(() => {}); }
+      // load first: this observer can fire before the "near" one has set the source
+      if (e.isIntersecting && e.intersectionRatio > 0.35) { load(v); if (!reduced && v.dataset.user !== "pause") v.play().catch(() => {}); }
       else if (!v.paused) v.pause();
     }), { threshold: [0, 0.35, 0.7] });
     vids.forEach((v) => { near.observe(v); vis.observe(v); });

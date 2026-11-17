@@ -1,71 +1,107 @@
-# PiPER GPT Arm
+<div align="center">
 
-A large model drives an AgileX PiPER arm from two cameras. The task: pick up a hair gel bottle, put it in a
-basket, take it out again and stand it upright where it started. That whole round trip is one **cycle**.
-The cycle is the unit of the benchmark that compares models on it. It is checked automatically, by camera
-and by touch, not by asking the model.
+# GPT Arm
 
-It reproduces AgileX's GPT-6 Astra demonstration ([piper-astra-jev](https://github.com/RobotKitAI/piper-astra-jev),
-[blog](https://global.agilex.ai/blogs/robotics/how-to-control-robotic-arm-with-gpt-6-astra-and-jev-llm-model))
-on different hardware, and adds a second way to drive the arm:
+**A language model drives a real robot arm from two cameras, choosing every move itself.**
+
+AgileX PiPER · overhead camera + wrist depth camera · GPT-6.1 Sol and GPT-5.6 Sol · a portal, a benchmark and the full results
+
+[![Licence: Apache-2.0](https://img.shields.io/badge/licence-Apache--2.0-blue.svg)](LICENSE)
+![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776ab.svg)
+![Platform: Ubuntu 24.04](https://img.shields.io/badge/robot%20host-Ubuntu%2024.04-e95420.svg)
+![Arm: AgileX PiPER](https://img.shields.io/badge/arm-AgileX%20PiPER-222222.svg)
+![Runs: 19](https://img.shields.io/badge/runs%20recorded-19-2a78d6.svg)
+
+<img src="docs/img/full-cycle.gif" width="640" alt="GPT-6.1 Sol putting the bottle into the basket and taking it out again (moving parts only, 3x)">
+
+<sub>GPT-6.1 Sol puts the bottle into the basket and takes it out again. Only the seconds the arm moved, at 3x; the model spent the rest thinking.</sub>
+
+</div>
+
+---
+
+## Results at a glance
+
+A six-run benchmark on one instruction: *pick the hair-gel bottle up from the table, put it into the basket,
+take it back out and put it down beside the basket.* Every motion was the model's own choice.
+
+| Model | Complete | Mean stage (0-5) | Decisions per run | Minutes per run | Tokens per run | s per decision |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|
+| **GPT-6.1 Sol** | **3 / 3** | **5.00** | 21 | 13.1 | 396,661 | 30.8 |
+| GPT-5.6 Sol | 0 / 3 | 2.67 | 60 (the budget) | 31.2 | 698,256 | 18.5 |
+
+<sub>Medians except tokens (mean). Three runs per model, so read it as a strong hint, not a ranking: a 3-0 split has a two-sided Fisher exact p of 0.10. Stages: 1 around the bottle, 2 lifted, 3 in the basket, 4 out of the basket, 5 put down on the table.</sub>
+
+<p align="center"><img src="results/charts/stages.png" width="720" alt="Stage reached in each benchmark run"></p>
+
+- **The arm stood still 85% of the time.** The model was thinking for 8,071 of the 9,484 benchmark seconds.
+  The median decision took 20.7 s across all 416 decisions; a move takes 2 to 9 s.
+- **GPT-5.6 Sol lost the bottle three different ways:** dropped it while carrying it out of the basket,
+  closed on the basket's fabric, and lifted six times while the bottle stayed on the table.
+  GPT-6.1 Sol made a similar mistake once and corrected it.
+- **The work that made it succeed was perception.** The first success came after eight failed runs,
+  once the wrist depth camera's view was rebuilt as a top-down height map that remembers what scrolled out of view.
+
+<p align="center"><img src="results/charts/timeline.png" width="860" alt="Run timelines: model thinking and arm moving"></p>
+
+All 19 runs, their logs, the per-decision table and the charts are in [`results/`](results/). The
+interactive report (figures, a portal replay of every run, the videos) is the page in [`site/`](site/):
+`python -m http.server -d site` and open `http://localhost:8000` (build its videos first with
+`site/build_media.py`).
+
+## How a decision works
+
+```mermaid
+flowchart LR
+  A[Overhead camera<br/>1600x1200] --> P
+  B[Wrist camera<br/>colour + depth] --> P
+  J[Arm joints<br/>CAN feedback] --> P
+  P[Perception and state<br/>grid in mm · top-down depth map<br/>objects · nearest wall] -->|3 pictures + JSON| M
+  M[GPT-6.1 Sol / GPT-5.6 Sol<br/>one action as JSON] --> S
+  S{Safety checks<br/>floor · ceiling · reach<br/>walls · joint limits} -->|ok| D[Driver<br/>IK + Ruckig · 100 Hz]
+  S -->|refused, with the reason| M
+  D --> R[AgileX PiPER]
+  R -.->|next decision| P
+  M -->|says done| C[Checker<br/>overhead before / after each release / after]
+```
+
+For every decision the model receives:
+
+1. the **overhead picture** with a millimetre grid in the arm's frame;
+2. the **wrist picture** (what things are);
+3. a **top-down height map** from the wrist depth camera: points moved into the arm's frame, 2 mm cells over
+   ±160 mm around the tool point, every object 18 mm above the local floor listed with its size and long
+   axis. Earlier frames stay, drawn dimmer, until the gripper opens or closes, because the depth camera sits
+   behind the gripper and loses what is right under it;
+4. the **state** as JSON: joints, tool point, lean, yaw, the direction the fingers close along, gripper width,
+   holding, the nearest wall and its clearance, steps left.
+
+It answers with one action: `move_tool` (x, y, z, lean, yaw, finger direction), `move_by`, `move_joints`,
+`gripper`, a fresh `look`, or `done`. It writes a short plan first. A refused move costs a decision and the
+model is told why.
+
+## Two modes
 
 | Mode | What the model decides | What the code does |
 |---|---|---|
-| **direct** (default) | the motion itself: a tool point (x, y, z mm, lean, yaw), six joint angles, or a gripper width, one at a time | checks it (joint ranges, fingertips above the table on the whole path, reach), moves slowly, reports what happened |
+| **direct** (default) | the motion itself: a tool point (x, y, z mm, lean, yaw, finger direction), six joint angles, or a gripper width, one at a time | checks it (joint ranges, fingertips above the table on the whole path, reach, walls), moves it, reports what happened |
 | **skills** (AgileX style) | which named skill comes next (`move_above(bottle)`, `lower`, `close_gripper`, `lift`, `stand_up`, ...) | carries the skill out; a governor refuses a skill whose preconditions do not hold and says why |
 
-In both modes the model sees the overhead and wrist pictures and the arm's state at every step. It also
-sees what its earlier steps did, refusals included, so it can retry after a missed grasp or a fallen bottle.
-Nothing is carried from one run to the next.
-
-```
- Surface Pro 9 (overhead camera)          Dell laptop (robot host, Ubuntu 24.04)
- ┌────────────────────────────┐   SSH    ┌─────────────────────────────────────────────────────────┐
- │ overhead_cam.py            │  tunnel  │ GPT Arm service 127.0.0.1:8800  ◄── portal (desktop app) │
- │ rear camera via libcamera  ├─────────►│  runner: one cycle = fresh world, model loop, verdict    │
- │ 127.0.0.1:8798 /frame.jpg  │          │  perception · calibration · skills / direct executor     │
- └────────────────────────────┘          │      │                         │                         │
-                                         │ PiPER driver 127.0.0.1:8770    Codex CLI ──► AgentRouter │
-                                         │ (CAN, IK, Ruckig, guards)      (GPT-6.1 Sol, GPT-5.6 Sol)│
-                                         │ wrist camera: Orbbec Dabai DC1 (USB)                     │
-                                         └─────────────────────────────────────────────────────────┘
-```
-
-## What is in here
-
-| Path | What |
-|---|---|
-| `gptarm/arm.py` | The arm as this project uses it: a tool point between the finger pads, a lean about the finger line where a vertical tool cannot reach, blocking moves, joint-space moves streamed at 25 Hz, the gripper, the floor and ceiling checks |
-| `gptarm/calib.py` | Overhead camera calibration with no target: the arm opens and closes its gripper at known points, the camera finds the fingers, a pinhole camera is fitted (about 6 px, 5 mm on the table) |
-| `gptarm/depth.py` | The wrist camera's depth (Dabai DC1 through OpenNI2): where the depth camera sits on the gripper (fitted from views of a standing bottle's cap), and what is under the gripper in the arm's millimetres |
-| `gptarm/judge.py` | Free instructions: a model compares the table before and after and says success, fail or impossible, with a critique the driving model gets one more go with |
-| `gptarm/lessons.py` | Learning from experience: a short list of lessons the model edits after each run (ADD / AGREE / DISAGREE / EDIT with scores, as in ExpeL) and reads before the next |
-| `gptarm/recorder.py` | A video of every run: both cameras side by side, captioned with the step, H.264 MP4 |
-| `gptarm/perception.py` | The bottle (by its black cap and pale body: standing or lying, and which way it lies) and the basket, in the arm's millimetres |
-| `gptarm/direct.py` | Direct mode: what the model is told, the answer's JSON schema, the checks and the executor, the millimetre grid drawn on the overhead picture |
-| `gptarm/task.py` | Skills mode: the skills, the governor, the state flags, the editable arm context; also the bookkeeping both modes share (where the bottle is, did it enter the basket) |
-| `gptarm/runner.py` | One run (a cycle, recorded step by step with pictures) and a benchmark (models interleaved, pauses when the scene needs a hand) |
-| `gptarm/llm.py` | The model client: `codex exec` against AgentRouter, one ephemeral session per decision, images and a strict JSON schema; a scripted stand-in |
-| `gptarm/server.py` | The service behind the portal (`API.md`) |
-| `gptarm/web/` | The portal: cameras, specs, the live run log, a box for your own instruction, benchmark, past runs, the context editor |
-| `gptarm/sim.py` | A pretend arm, table and cameras with the same interfaces, for tests and for trying the portal |
-| `overhead/` | The overhead camera server for a Surface Pro 9's rear camera, its systemd unit, and `overhead-proxy` (finds the Surface on Wi-Fi through Syncthing) |
-| `desktop/` | The portal as a desktop app (GTK + WebKit) and the service's systemd user unit |
-| `tools/` | `drive.py` (one cycle from the command line), `make_report.py` (the benchmark report), `look.py`, `peek.py`, `calib_probe.py`, `mock_server.py` |
-| `docs/` | `BACKGROUND.md` (the sources and what they mean for the benchmark), `REPORT-TEMPLATE.md`, portal screenshots |
-| `driver/` | The PiPER driver this runs on (stand-alone repository only; in NervusOS-Cambridge it is `hardware/piper`) |
+Skills mode reproduces AgileX's GPT-6 Astra demonstration
+([piper-astra-jev](https://github.com/RobotKitAI/piper-astra-jev),
+[blog](https://global.agilex.ai/blogs/robotics/how-to-control-robotic-arm-with-gpt-6-astra-and-jev-llm-model))
+on different hardware. Direct mode is the experiment: nothing between the model and the motion but checks.
 
 ## Hardware
 
-- AgileX PiPER with its two-finger gripper on a USB-CAN adapter (`can0`), at the middle of the long side of
-  a white table about 100 x 60 cm
-- Wrist camera: the Orbbec Dabai DC1 on the gripper: colour through UVC, depth through OpenNI2 with Orbbec's
-  driver (`install.sh` fetches it from Orbbec's ROS 2 package; it needs Orbbec's udev rule)
-- Overhead camera: any camera about a metre above the table that can serve JPEGs. Here it is a Surface Pro 9
-  running Ubuntu, whose rear camera needs libcamera (`overhead/overhead_cam.py`)
-- Robot host: Ubuntu 24.04, no GPU needed (the model runs remotely; perception is plain OpenCV)
+| | |
+|---|---|
+| Arm | AgileX PiPER (6 joints, two-finger gripper 0-75 mm) on a USB-CAN adapter (`can0`), at the middle of the long side of a white table about 100 x 60 cm |
+| Wrist camera | Orbbec Dabai DC1 on the gripper: colour through UVC, depth (320 x 200, 10 fps) through OpenNI2 with Orbbec's driver (`install.sh` fetches it from Orbbec's ROS 2 package; it needs Orbbec's udev rule) |
+| Overhead camera | any camera about a metre above the table that can serve JPEGs; here a Surface Pro 9 running Ubuntu, whose rear camera needs libcamera (`overhead/overhead_cam.py`) |
+| Robot host | Ubuntu 24.04, no GPU (the model runs remotely; perception is plain OpenCV and NumPy) |
 
-## Install
+## Quick start
 
 On the robot host, with the PiPER driver running (`driver/README.md`; it listens on 127.0.0.1:8770):
 
@@ -74,7 +110,10 @@ git clone https://github.com/izhangfly/piper-gpt-arm ~/gpt-arm && cd ~/gpt-arm
 ./install.sh --python /path/to/python   # a Python with numpy and opencv-python; the driver's venv works
 ```
 
-On the overhead camera machine (a Surface Pro 9 here), as root:
+<details>
+<summary><b>Overhead camera (Surface Pro 9 or any JPEG camera)</b></summary>
+
+On the camera machine, as root:
 
 ```sh
 install -Dm755 overhead/overhead_cam.py /opt/gptarm/overhead_cam.py
@@ -87,8 +126,12 @@ and on the robot host, a tunnel to it (it only listens on loopback): put the cam
 finds it as it moves between networks), add a `Host overhead` entry to `~/.ssh/config` with
 `ProxyCommand ~/.local/bin/overhead-proxy %p`, and run
 `ssh -N -L 127.0.0.1:8798:127.0.0.1:8798 overhead` as a user service.
+</details>
 
-The model: install the Codex CLI (`npm install -g @openai/codex`). Put your AgentRouter key in
+<details>
+<summary><b>The model</b></summary>
+
+Install the Codex CLI (`npm install -g @openai/codex`). Put your AgentRouter key in
 `~/.config/nervus/openai.key` (mode 600), and this in `~/.config/nervus/codex/config.toml`:
 
 ```toml
@@ -102,67 +145,78 @@ wire_api = "responses"
 
 AgentRouter only serves its supported clients, which is why the calls go through Codex rather than plain
 HTTP. Check the route: `python -m gptarm.llm gpt-5.6-sol`.
+</details>
 
-## Use
+Then:
 
-1. **Calibrate** once, and again whenever the overhead camera is moved (and **Calibrate depth** once, with the
-   bottle standing on the table, for the wrist depth camera): the portal's Calibrate button, or
-   `python -m gptarm.calib`. The arm visits about 40 points, high ones first. A point near something
-   dark on the table is skipped, so nothing needs clearing. It takes about 10 minutes.
-2. Open **GPT Arm** on the desktop. Choose a model and a mode, type an instruction (or keep the default
-   task), press Run. The log shows every step: the pictures the model saw, its note, the motion, and what
-   happened. STOP holds the arm where it is; E-STOP is the driver's emergency stop.
-3. **Benchmark**: choose models, mode, runs per model, and whether runs may learn from each other (off by
-   default, so the runs are comparable). Runs alternate between models. Each starts only when the overhead camera
-   sees the bottle standing on the table; after a failed run the benchmark pauses and asks you to stand it up
-   again, then Resume. (`auto_tidy` in `~/.config/gptarm/config.json` makes it try a scripted, model-free reset
-   first.) A successful run ends with the bottle back where it started, so the next one needs nothing.
-4. **Report**: `python tools/make_report.py` writes `REPORT.md` and figures from `~/gptarm-runs`. It gives
-   success rates with Wilson intervals, time and tokens per cycle, recoveries, failure kinds, and skills
-   against direct.
+1. **Calibrate** once, and again whenever the overhead camera moves: the portal's Calibrate button or
+   `python -m gptarm.calib` (the arm visits about 40 points; about 10 minutes). `--repose` re-fits only the
+   camera's position after a nudge, keeping the lens model. **Calibrate depth** once with the bottle standing
+   on the table. **Measure the walls** behind the table with `python -m gptarm.depth wall`.
+2. Open **GPT Arm** on the desktop, choose a model and a mode, type an instruction (or keep the default
+   task), press Run. STOP holds the arm; E-STOP is the driver's emergency stop.
+3. **Benchmark**: choose models, runs per model and whether runs may learn from each other (off by default).
+   Runs alternate between models and the benchmark pauses when the scene needs a hand.
+4. **Results**: `python tools/export_results.py ~/gptarm-runs --out results` and `python tools/make_charts.py`.
 
-Without the arm: `python -m gptarm.server --sim` serves the portal on the simulator, where a "Scripted"
-model drives the skills mode with no tokens.
+Without the arm: `python -m gptarm.server --sim` serves the portal on a simulator.
 
-## Any instruction
-
-Type anything in the portal: "wave hello", "point at the basket", "push the basket 10 cm to the left",
-"what is on the table?". In direct mode the model first writes a short plan with a checkable condition per
-stage, then moves the arm one motion at a time. It sees both pictures every step: the overhead one with a
-millimetre grid, the wrist one with a compass and a mark between the fingertips. It also gets the joint
-angles and the gripper reading, and the wrist depth camera's measurements: the height of whatever is under
-the fingertips, and the position and top height of the nearest object below the gripper. When it says done,
-the arm parks and a checker compares the table before and after. If the checker disagrees, its critique
-goes back to the model for one more go. Every run is recorded as a video you can download, and with
-"Learn from earlier runs" on, the model writes lessons afterwards that the next runs read.
-
-## How a run is judged
-
-At the end (the model says done, or the step budget runs out) the arm parks out of the camera's view and
-the overhead camera finds the bottle. If it is on the table, the gripper closes at cap height where the
-bottle should stand: a standing bottle stops the fingers, a fallen one is too low to touch. A run succeeds
-when the bottle entered the basket at some point, is back on the table within 40 mm of where it started,
-and stands. Any other instruction is judged by the checker (`judge.py`): success, or a failure in its own words.
-A failure of the bottle cycle is recorded with its reason: `never_entered`, `left_in_basket`, `tipped_over`,
-`not_returned`, `step_limit`, `still_holding`, `bottle_lost`, `model_unavailable` or `arm_fault`.
+<p align="center"><img src="docs/img/portal.jpg" width="760" alt="The portal next to the overhead camera during a run"></p>
 
 ## Safety
 
-The driver and the service listen on loopback only: they move the arm and have no login. Moves are slow:
-20 % of the arm's speed, and 25 deg/s for joint moves. A move is refused before it starts if a joint
-would leave its range, a fingertip would go below the floor anywhere along the path (20 mm in skills mode,
-8 mm in direct mode; the table is 0), the wrist would rise into the overhead camera, or the point is out
-of reach. During a move, the driver stops the arm if it lags its plan or the IK would flip. STOP and
-E-STOP are always available. Keep a hand near the physical e-stop anyway: a model can choose a bad
-motion, and perception can be wrong.
+The driver and the service listen on loopback only: they move the arm and have no login. Moves run at 20%
+of the arm's speed. A move is refused before it starts if a joint would leave its range, a fingertip would
+go below the floor anywhere along the path (20 mm in skills mode, 8 mm in direct mode; the table is 0), the
+wrist would rise into the overhead camera (560 mm), the point is out of reach, or any part of the arm would
+come within 15 mm of a measured wall. The camera, wrist, gripper and fingertips are modelled as spheres for
+that, and checked again while the move runs. During a move the driver stops the arm if a joint lags its plan
+or the IK would flip, and while the arm holds still it nudges a motor that starts hunting (`driver/README.md`).
+Keep a hand near the physical e-stop anyway: a model can choose a bad motion, and perception can be wrong.
+
+## Repository layout
+
+```
+gptarm/            the service: arm, perception, depth, calibration, direct and skills modes, runner, checker, portal
+  arm.py           tool point, lean, finger direction, walls, floor and ceiling checks, blocking moves
+  depth.py         wrist depth: mount, top-down height map, objects, memory, wall measurement
+  direct.py        what the model is told, the answer's JSON schema, the checks and the executor
+  runner.py        one run (recorded step by step) and a benchmark; the checker's pictures after each release
+  judge.py         the checker: success / fail / impossible with a critique
+  calib.py         overhead calibration with the arm as the target; --repose after a nudge
+  perception.py    the bottle and the basket from the overhead camera
+  task.py          skills mode and the bookkeeping both modes share
+  lessons.py       notes the model writes after a run and reads before the next (off in benchmarks)
+  llm.py           the model client (Codex CLI, one session per decision, strict JSON)
+  server.py, web/  the portal and its API (API.md)
+  sim.py           a pretend arm, table and cameras for tests and for trying the portal
+results/           all runs: raw logs, runs.csv, decisions.csv, the buzz analysis, charts (results/README.md)
+site/              the report page: index.html, assets, data, build_media.py, deploy.sh
+tools/             export_results.py, make_charts.py, buzz.py, record_runs.py, screencast.py, make_report.py,
+                   drive.py, look.py, peek.py, calib_probe.py, depth_check.py, mock_server.py
+overhead/          the overhead camera server for a Surface Pro 9 and overhead-proxy
+desktop/           the portal as a desktop app (GTK + WebKit) and the service's systemd user unit
+driver/            the PiPER driver this runs on (in NervusOS-Cambridge it is hardware/piper)
+tests/             unit tests (simulated arm and cameras; no hardware needed)
+docs/              BACKGROUND.md, REPORT-TEMPLATE.md, portal screenshots, README images
+```
+
+## Tools for looking at runs
+
+| Tool | What it does |
+|---|---|
+| `tools/export_results.py` | turns a runs folder into `results/` (raw logs, CSVs, summary) and the report page's data |
+| `tools/make_charts.py` | static charts of the results (SVG and PNG) |
+| `tools/record_runs.py` | screen-records the portal for every run and converts it to MP4 (GNOME on Wayland) |
+| `tools/screencast.py` | one screen recording through GNOME Shell's own recorder, over SSH |
+| `tools/buzz.py` | finds motor hunting: microphone recording plus the motors' CAN feedback, ranked per hold |
+| `tools/make_report.py` | the benchmark report as Markdown with Wilson intervals |
 
 ## Tests
 
 ```sh
-python tests/test_calib.py && python tests/test_task.py && python tests/test_direct.py \
-  && python tests/test_runner.py && python tests/test_depth.py && python tests/test_make_report.py
-python tools/mock_server.py --port 8811 & python -m unittest tests/test_portal_contract.py
-GPTARM_URL=http://127.0.0.1:8812 GPTARM_CONTRACT_MUTATE=1 python -m unittest tests/test_portal_contract.py  # against `server --sim --port 8812`
+python -m unittest discover -s tests          # 80 tests, no hardware
+python -m unittest discover -s driver -p "test_*.py"
 ```
 
 ## Credits
@@ -181,8 +235,20 @@ the fingers stop part way, strict JSON answers, the lean about the finger line) 
 [RobotKitAI/piper-astra-jev](https://github.com/RobotKitAI/piper-astra-jev) (Apache-2.0). The PiPER
 driver builds on [AgileX piper_sdk](https://github.com/agilexrobotics/piper_sdk) and
 [Ruckig](https://github.com/pantor/ruckig). Models are reached through the
-[Codex CLI](https://github.com/openai/codex) and AgentRouter.
+[Codex CLI](https://github.com/openai/codex) and AgentRouter. The report page uses the Geist, Geist Mono and
+Newsreader typefaces (SIL Open Font License).
+
+## Citation
+
+```bibtex
+@misc{zhang2026gptarm,
+  author = {Ian Zhang},
+  title  = {GPT Arm: language models driving an AgileX PiPER arm from two cameras},
+  year   = {2026},
+  url    = {https://github.com/izhangfly/piper-gpt-arm}
+}
+```
 
 ## Licence
 
-Apache-2.0 (see `LICENSE`).
+Apache-2.0 (see [`LICENSE`](LICENSE)).
