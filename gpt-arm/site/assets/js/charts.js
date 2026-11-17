@@ -301,15 +301,15 @@
   function drawBuzz(Hd) {
     const host = document.querySelector("#fig-buzz .fig-body"); if (!host || !Hd) return;
     const holds = Hd.holds.map((h) => ({ ...h, worst: Math.max(...h.motor_speed_std.map((v) => v || 0)), j: h.motor_speed_std.indexOf(Math.max(...h.motor_speed_std.map((v) => v || 0))) + 1 }));
-    const H = 220, { svg, w } = svgFor(host, H), m = { l: 150, r: 22 };
+    const H = 220, { svg, w } = svgFor(host, H), m = { l: w < 560 ? 132 : 196, r: 22 };
     const x = logs(0.002, 1, m.l, w - m.r);
     [0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1].forEach((v) => el("line", { x1: x(v), x2: x(v), y1: 14, y2: H - 44, style: "stroke:var(--grid)" }, svg));
     axisX(svg, x, H - 44, [0.002, 0.01, 0.05, 0.1, 0.5, 1], (v) => String(v), "worst motor's speed jitter while holding still (rad/s, std over the hold; log scale)", w);
     [[0.08, "driver nudges above this"], [0.03, "quiet holds"]].forEach(([v, t], i) => {
       el("line", { x1: x(v), x2: x(v), y1: 10, y2: H - 44, style: `stroke:${i ? "var(--ink-3)" : "var(--accent)"};stroke-dasharray:4 3` }, svg);
-      el("text", { x: x(v) + 5, y: 22 + i * 14, style: "font-size:11px" }, svg, t);
+      el("text", { x: i ? x(v) - 5 : x(v) + 5, y: 22, "text-anchor": i ? "end" : "start", style: "font-size:11px" }, svg, t);
     });
-    [[false, "Before the fix", "run 130056"], [true, "After the fix", "6 benchmark runs"]].forEach(([fixed, lab, sub], i) => {
+    [[false, "Before the fix", "run 13:00"], [true, "After the fix", "6 benchmark runs"]].forEach(([fixed, lab, sub], i) => {
       const yc = 64 + i * 66, pts = holds.filter((h) => h.fixed === fixed);
       el("text", { x: m.l - 12, y: yc, "text-anchor": "end", class: "t-ink2" }, svg, lab);
       el("text", { x: m.l - 12, y: yc + 15, "text-anchor": "end" }, svg, `${sub} · ${pts.length} holds`);

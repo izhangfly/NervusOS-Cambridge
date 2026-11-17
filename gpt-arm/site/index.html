@@ -83,13 +83,13 @@
 <section class="band" id="summary">
   <div class="section-head">
     <p class="eyebrow">Findings</p>
-    <h2>The model chose every motion. What separated the two was how it held the bottle.</h2>
+    <h2>The model chose every motion. The two models differed most in how they held the bottle.</h2>
   </div>
   <div class="prose">
     <p>The arm sits on a white table with a yellow hair-gel bottle and a black fabric basket. One camera looks down from about a metre up, and a second, with a depth sensor, rides on the wrist. For every decision the model gets three pictures and the arm's state as JSON, and answers with one action: move the tool to a point, move it by an offset, set the joints, open or close the gripper, look again, or say it is done. It plans the whole task itself. The software around it builds the pictures, checks every move against the table, a measured wall, the arm's reach and its joint limits, and runs the motion.</p>
     <p><strong>GPT-6.1 Sol completed 3 of 3 benchmark cycles; GPT-5.6 Sol completed 0 of 3.</strong> On a six-stage rubric, GPT-6.1 Sol reached the last stage every time and GPT-5.6 Sol reached stages 4, 3 and 1. Three runs per model is a small sample: a 3–0 split like this has a two-sided Fisher exact p of 0.10. The benchmark was meant to have five runs per model, and a bug in its start-of-run check ended it after six (details under <a href="#limits">limitations</a>).</p>
-    <p><strong>GPT-6.1 Sol needed fewer decisions, not faster ones.</strong> Its median decision took 30.8 seconds against GPT-5.6 Sol's 18.5, but its runs needed a median of 21 decisions against 60 (the budget) and used 1.8 times fewer tokens: 396,661 per run on average against 698,256.</p>
-    <p><strong>The arm stood still for 85% of the benchmark.</strong> The model was thinking for 8,071 of the 9,484 seconds; the arm moved for less than 13%. Once the moves were safe and the pictures were right, control was the easy part. Model latency sets the pace.</p>
+    <p><strong>GPT-6.1 Sol was slower per decision and needed far fewer of them.</strong> Its median decision took 30.8 seconds against GPT-5.6 Sol's 18.5, but its runs needed a median of 21 decisions against 60 (the budget) and used 1.8 times fewer tokens: 396,661 per run on average against 698,256.</p>
+    <p><strong>The arm stood still for 85% of the benchmark.</strong> The model was thinking for 8,071 of the 9,484 seconds; the arm moved for less than 13%. Once the moves were safe and the pictures were right, control was the easy part, and the model's latency set the pace.</p>
     <p><strong>GPT-5.6 Sol's failures were all about the grip.</strong> It dropped the bottle while carrying it out of the basket, closed on the basket's fabric instead of the bottle, and in one run lifted six times while the bottle stayed on the table. GPT-6.1 Sol made a similar mistake once, closing on the basket's edge, and noticed, put it back and tried again.</p>
     <p><strong>Most of the work was on what the model sees.</strong> The first run that worked came after eight that didn't, and after the depth camera's view was rebuilt as a top-down height map that remembers what scrolled out of view. The rest went into safety (a measured wall the wrist camera had scraped), a re-calibration, and a fix in the arm's driver for a loud buzz the motors made while holding still.</p>
   </div>
@@ -411,7 +411,7 @@
       <p>During some holds the arm made a loud, high buzz while nothing visibly moved. To find which holds, I put the laptop's microphone next to the arm and logged the motors' own feedback off the CAN bus through a 13-minute run. That feedback is speed, current and position, about 100 times a second per motor.</p>
       <p>The arm stands still while the model thinks, so every pause is a clean sample of one pose. Sorted by loudness, the worst hold was 16 dB above the quiet ones, and in it the J5 motor's speed had a standard deviation of 0.39 rad/s, against under 0.03 for a quiet hold. The joint's angle didn't change. The driver had already stopped sending commands, so this was the motor's own position loop failing to settle at that particular target.</p>
       <p>On the arm, in three poses that buzzed, re-sending the same target didn't help (0.41 went to 0.33). Moving the hunting joint's target by half a degree stopped it in five of six tries. The driver now watches every motor while the arm is idle. If one oscillates for half a second after a one-second settle, it shifts that joint's hold target by 0.3 degrees, then 0.6 if needed, never further. At the fingertips 0.3 degrees on J5 is 1.2 mm.</p>
-      <p>Across the benchmark the driver did this 65 times: 31 on J6, 23 on J5, 10 on J4 and once on J3. Before the fix, 3 of 28 holds were above 0.15 rad/s; after it, none of 231. The runs and poses differ, so this is an observation, not a controlled trial.</p>
+      <p>Across the benchmark the driver did this 65 times: 31 on J6, 23 on J5, 10 on J4 and once on J3. Before the fix, 3 of 28 holds were above 0.15 rad/s; after it, none of 231. The runs and poses differ between the two sets; a controlled trial would repeat the same poses with the watch on and off.</p>
     </div>
     <figure class="fig rv" id="fig-buzz">
       <div class="fig-head"><span class="label">Worst motor jitter per hold</span><div class="tools"><button class="chip" type="button" data-toggle-table aria-pressed="false">Show as table</button></div></div>
@@ -447,7 +447,7 @@
       <li><strong>One task, one scene, one afternoon.</strong> The light changed through the afternoon, and there is one bottle, one basket and one table.</li>
       <li><strong>The grading isn't blind.</strong> I assigned the stages knowing which model ran, from logs and pictures. The automatic checker is the same model as the one driving, so it isn't independent either, although it agreed with the stages on every benchmark run it judged (five of six).</li>
       <li><strong>The prompt was developed mostly with GPT-5.6 Sol.</strong> 13 of the 18 direct-mode runs used it, so if the prompt favours either model it is likely GPT-5.6 Sol.</li>
-      <li><strong>Tokens, not money.</strong> No prices are given, and reasoning effort was fixed at medium for both models.</li>
+      <li><strong>Tokens only.</strong> No prices are given, and reasoning effort was fixed at medium for both models.</li>
       <li><strong>Calibration.</strong> On the basket's side, the overhead camera's positions are good to about ±3 cm, because the gripper can't be picked out against the black basket during calibration.</li>
     </ul>
   </div>

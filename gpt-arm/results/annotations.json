@@ -1,7 +1,7 @@
 {
  "20261115-213705-scripted": {
   "stage": null,
-  "failure_mode": "grasp slipped on lift, then step budget (8) exhausted",
+  "failure_mode": "the bottle slipped on the lift; the 8-step budget ran out",
   "root_cause_side": "pipeline",
   "summary": "This run was driven by a fixed script (model \"scripted\", zero tokens), not a GPT model, on the into-basket, out and stand-upright task with a budget of 8 steps. The script moved above the standing bottle, lowered to 75 mm and closed the gripper, which reported holding something 43 mm wide. On the lift the bottle slipped out of the fingers and fell over on the table. The script opened the gripper, looked, re-found the bottle about 78 mm from its start spot, and moved above and lowered onto it again. That used the last step, so the run ended after 102 s with \"step_limit\": the bottle was lying on the table and had never entered the basket. Counting note: the run uses skill names move_above, lower and lift rather than move_tool/move_by/move_joints, so \"moves\" counts those five; no step had ok=false, although the lift reported the slip.",
   "bottle_end_state": "On the white table near the top-left corner, outside the basket, lying on its side (010-overhead.jpg; 010-wrist.jpg shows it lying with the cap towards the gripper). The detector put it at (371, 201) mm, and the checker measured 77.8 mm from the start spot (295, 183), with upright=false. It began the run standing.",
@@ -66,7 +66,7 @@
  },
  "20261116-104408-gpt-6.1-sol": {
   "stage": null,
-  "failure_mode": "no grasp, then nudge loop; operator stop",
+  "failure_mode": "no grasp; nudged the basket around",
   "root_cause_side": "model",
   "summary": "GPT-6.1 Sol was asked to take the bottle out of the basket and stand it upright on the table. It moved above the bottle, lost about two minutes to three move failures while the arm sent no feedback, then re-looked and approached again. It crept down in small steps and closed the gripper three times (35 mm and 25 mm at z=141, 35 mm at z=117) with the fingers still above the bottle, so holding never became true. At z=96 it stopped trying to grasp and made five consecutive 10-12 mm +y nudges that pushed the basket along without changing the wrist view. The operator stopped the run at 1169 s (1104 s of that was model thinking, 52 s arm motion) with the bottle still lying in the basket.",
   "bottle_end_state": "Still lying diagonally inside the basket, never grasped. In the last overhead picture (025-overhead.jpg) the arm hides the bottle and the detector's \"bottle (in basket)\" circle sits on the wrong spot at the basket's lower-right corner; the last wrist picture (025-wrist.jpg) and the final video frame show the bottle lying on the basket fabric under the open gripper. The basket itself had been pushed a few centimetres toward +y from where it started.",
@@ -151,7 +151,7 @@
  },
  "20261116-120425-gpt-5.6-sol": {
   "stage": null,
-  "failure_mode": "hover/oscillation without grasp; operator stop",
+  "failure_mode": "hovered above 18 cm, never grasped",
   "root_cause_side": "model",
   "summary": "The bottle started lying in the basket. GPT-5.6-sol first moved high over it at (198,-217,300). It then followed a false detector position (270,-46): the first move failed as out of reach, and the second went over empty fabric. The model came back over the bottle twice, at step 6 and step 13, and both times the wrist camera showed the bottle between the open fingers. Each time it then moved 80-90 mm toward the back of the basket, apparently reading the depth-image fingertip ring and the wrist-depth \"nearest object\" (which was the basket, not the bottle) as an offset to correct. It never went below z=181 mm or closed the gripper, and the operator stopped the run at 456 s. The bottle was still lying untouched in the basket.",
   "bottle_end_state": "Still in the basket, lying on its side near its starting spot (about (198,-217)), untouched. The last clear views are 013-overhead and 014-wrist. In the final overhead (015) the arm hides the bottle, and the final wrist picture shows only a yellow sliver at its bottom edge. The detector's last \"table (48,-274)\" reading is a false positive: its circle sits on empty table edge.",
@@ -226,7 +226,7 @@
  },
  "20261116-111806-gpt-5.6-sol": {
   "stage": null,
-  "failure_mode": "hover_dither_no_grasp_operator_stop",
+  "failure_mode": "hovered without grasping",
   "root_cause_side": "model",
   "summary": "The task was to take a bottle lying in the basket out and stand it upright on the table. The model looked once, planned five sub-goals and moved above the bottle. It then made one wasted detour (step 4) to a wrong overhead-detector position, caused by the arm hiding the bottle, before re-localising from the overhead image. From step 10 (about 226 s) it hovered open-gripped about 42 mm above the lying bottle. For about 340 s it made 7-22 mm sideways nudges that mostly followed the wrist-depth offset, and it re-rotated the wrist three times. Each rotation was silently undone by the next move_by, which reset the yaw. It got as low as z=74 once (step 20), then rose again to recentre, never issued a gripper command, and the operator stopped it at 602 s with the bottle still lying untouched in the basket.",
   "bottle_end_state": "Still lying on its side inside the black basket, never touched (023-overhead, 023-wrist, video frame at about 600 s). The open gripper was hovering above it at (409, 59, 115).",
@@ -311,7 +311,7 @@
  },
  "20261116-112819-gpt-5.6-sol": {
   "stage": null,
-  "failure_mode": "stopped after two empty grasps closed above the bottle",
+  "failure_mode": "two grasps closed above the bottle",
   "root_cause_side": "model",
   "summary": "The bottle started lying in the far top-left corner of the basket. GPT-5.6-sol moved the arm out to it at the edge of reach and lined up the gripper using the wrist-camera crosshair, while depth was mostly blank and the overhead detector showed a false bottle mark. It closed the gripper twice, at z=166 and then z=151, and both times the fingers met nothing because they were well above and beyond the bottle. It went down only 15 mm between the two tries. After a look/relocalise move, the operator moved the basket and bottle closer to the arm. The model re-approached at 250 mm height and made one lateral correction. The operator stopped the run at about 507 s while the model was in a roughly 91 s LLM call, with the bottle never grasped and still lying in the basket.",
   "bottle_end_state": "The bottle was lying on its side inside the basket and had never been touched. The operator moved the basket and bottle mid-run toward the arm and to the right, and the detector then placed the bottle at about (220,-140). The last overhead image (016-overhead.jpg) and the final video frame at about 506 s both show it lying in the basket, with the open gripper hovering about 250 mm up at (220,-170,249). There is no after/checker image.",
@@ -391,7 +391,7 @@
  },
  "20261115-215743-gpt-5.6-sol": {
   "stage": null,
-  "failure_mode": "step_budget_exhausted_after_goal_met",
+  "failure_mode": "stood the bottle up, then used the rest of its budget",
   "root_cause_side": "model",
   "summary": "The model had to stand up a bottle lying on the table. It aligned the gripper at yaw 55 and missed its first close because it was too high (z=65). It then grasped the bottle at z=29 and lifted it. A lean of 90 was refused, so it tilted to lean 65, lowered to z=70 and let go, but the bottle did not stay up and ended up lying about 160 mm away, turned end-for-end. The model first searched the empty original spot, then re-localised from the detector and re-grasped near the cap end. It spent three steps on reverse-tilt moves that were out of reach, and finally reused the original placement pose. That release, at step 26, left the bottle standing (final wrist image; checks.upright true). It was the 25th and last budgeted step, so the run ended on step_limit with success false and no 'done'.",
   "bottle_end_state": "Standing upright on the table, released by the gripper at step 26, at about (294, 263) mm. That is 72.2 mm from its start spot (outcome.checks.returned_mm) and not in the basket. The final wrist picture (027-wrist) looks straight down on the black cap ringed by yellow, and outcome.checks.upright is true. The detector field in the verdict state says upright: false (seen_s_ago 23.2), which disagrees with the picture and the check.",
@@ -561,7 +561,7 @@
  },
  "20261115-222706-gpt-5.6-sol": {
   "stage": null,
-  "failure_mode": "arm driver lost (probable operator intervention) after four missed re-grasps in the basket",
+  "failure_mode": "four missed re-grasps, then the dock's USB hub dropped the arm",
   "root_cause_side": "operator",
   "summary": "GPT-5.6-sol correctly judged that the bottle was upright even though the detector said it was not. It centered over the bottle (one small move_by failed 13 mm short), descended, and grasped it cleanly at step 8, then lifted it, carried it to the basket, lowered it and released it inside at about 305 s. It never got the bottle back: four re-grasps (steps 14, 17, 22, 27) closed on nothing. Two of those came from following false detector positions on the dark basket fabric (its stand_up attempt was refused because the gripper was closed), and the last one closed about 30 mm too high over the bottle, which was by then lying in the basket. At about 563-572 s a person crouched at the laptop under the arm base. The next open command left the fingers at 0 mm, and at 573 s the arm driver refused connections, so the run ended as arm_fault with the bottle lying in the basket.",
   "bottle_end_state": "Inside the basket, lying on its side and not held. 023/024-overhead show it lying in the basket near (361,-79), and 025-028-wrist show it lying in the black fabric under the gripper. In the final 028-overhead the arm mostly hides it; the detector labels it \"bottle (in basket)\". It never returned to the start spot (280,271).",
@@ -646,7 +646,7 @@
  },
  "20261116-121848-gpt-5.6-sol": {
   "stage": null,
-  "failure_mode": "target confusion / oscillation, never descended",
+  "failure_mode": "hovered above 18 cm with the new depth map",
   "root_cause_side": "model",
   "summary": "The task was to take the lying hair gel bottle out of the basket and put it on the table. After one look, GPT-5.6-sol placed the open gripper directly above the bottle at step 4. Then, instead of lowering, it moved away to a small depth blob of basket fabric in the basket's far corner. It went on to target the basket's far rim as if it were the bottle, and five moves were refused as out of reach. It went back above the real bottle twice more (steps 9 and 12-13) and left again each time. Part of the cause was perception: the overhead detector mislocated the bottle whenever the arm hid it, and the wrist-depth segmentation merged the bottle with the basket. The operator stopped the run at 630.8 s with no grasp attempted and the bottle still lying in the basket.",
   "bottle_end_state": "Still inside the basket, lying diagonally near its start position. The detector puts it at about (201,-226) mm (015-overhead). It was never touched. The arm ended parked at (317,-92,190) with the gripper open, above the basket's far-left corner.",
@@ -731,7 +731,7 @@
  },
  "20261116-125352-gpt-5.6-sol": {
   "stage": 0,
-  "failure_mode": "controller latched in teach mode",
+  "failure_mode": "controller still latched in teach mode",
   "root_cause_side": "hardware",
   "summary": "The arm had been moved by hand with the teach button and the controller was still latched in teach mode. On the first move J3 fell 6 degrees behind its command and the driver's tracking guard stopped the arm. A Stop cleared the latch.",
   "bottle_end_state": "No overhead or after JPEG exists for this run. In the last video frame the bottle is untouched where it started, on the white table to the left of the basket in the overhead view. It appears to be lying on its side (a horizontal yellow cylinder with a dark cap end), but at this resolution that is not certain.",
@@ -757,7 +757,7 @@
  },
  "20261116-125757-gpt-5.6-sol": {
   "stage": 1,
-  "failure_mode": "stopped by a stale safety-stop record (pipeline bug)",
+  "failure_mode": "an old safety-stop record ended it (bug, fixed)",
   "root_cause_side": "pipeline",
   "summary": "GPT-5.6 Sol moved above the bottle at (267, 234, 200) on its first decision. The runner then read the driver's last safety-stop record, a J3 lag from 12:53 when the controller was still latched in teach mode, took it for a new stop and ended the run. The bug was fixed the same hour: only a stop during the current move counts now.",
   "bottle_end_state": "Standing upright on the white table at its start spot (about (267, 234) mm, left of the basket), untouched. No after picture exists. This comes from the last video frame (00:29): the wrist camera looks down on the cap of the standing bottle, and the overhead shows it under the hovering gripper.",
@@ -807,7 +807,7 @@
  },
  "20261116-124052-gpt-6.1-sol": {
   "stage": null,
-  "failure_mode": "operator_stop_mid_wave",
+  "failure_mode": "stopped mid-wave",
   "root_cause_side": "operator",
   "summary": "GPT-6.1-sol was asked to wave hello. It planned to raise the gripper, sweep it left and right twice, and then return to a safe pose. It raised the gripper 40 mm. Its next move, a 60 mm Cartesian sweep sideways, was refused because the target was out of reach with the current yaw. The model recovered by turning only the base joint 20 deg, the run's single half-wave. While it was generating the next decision, the operator handled the arm and moved it by hand towards the bottle. Decision 6 (\"reverse the sweep\") appeared in the video caption at about 139 s, and the operator stopped the run at 140.5 s, with LLM time taking 122 of those 140 s.",
   "bottle_end_state": "Untouched on the table, to the left of the basket and lying on its side. The last overhead picture (006, about 111.5 s) and the video's last frame (about 140 s) show it in the same spot. The detector never recognised it as the bottle: step 1 says \"the bottle was not found\", and later it was listed only as object O2 (\"green\") at about (171, 82) mm.",

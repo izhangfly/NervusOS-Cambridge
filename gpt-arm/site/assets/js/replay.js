@@ -32,7 +32,7 @@
           <div><b>Decision</b><span id="rp-k">–</span></div>
           <div><b>Elapsed</b><span id="rp-t">–</span></div>
           <div><b>Thinking</b><span id="rp-th">–</span></div>
-          <div><b>Tool z</b><span id="rp-z">–</span></div>
+          <div><b>Tool z after</b><span id="rp-z">–</span></div>
         </div>
         <div class="card" aria-live="polite">
           <div class="act" id="rp-act"></div>
