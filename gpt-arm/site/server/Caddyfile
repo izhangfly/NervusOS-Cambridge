@@ -1,0 +1,22 @@
+# GPT Arm report: a static site served by its own Caddy process (not the host's main Caddy).
+# Admin API off, so it never touches the main instance's admin port; plain HTTP on 8930.
+{
+	admin off
+	auto_https off
+	persist_config off
+}
+
+:8930 {
+	root * /srv/gptarm-report
+	encode zstd gzip
+	file_server
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		X-Frame-Options SAMEORIGIN
+	}
+	@long path /media/* /assets/fonts/*
+	header @long Cache-Control "public, max-age=604800"
+	@short path /index.html /data/* /assets/css/* /assets/js/*
+	header @short Cache-Control "public, max-age=300"
+}
