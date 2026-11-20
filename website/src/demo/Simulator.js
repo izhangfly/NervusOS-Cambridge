@@ -41,12 +41,16 @@ export class Simulator{
  event(s){const p=this.p;if(s.event==='grasp'){attach(p,s.item,toolPosition(p));this.activeItem=s.item;p.items.get(s.item).onBelt=false}
  if(s.event==='grip-check'){const f=p.touch.map(a=>a<0?0:p.data.sensordata[a]);this.grip=f;const a=this.action,opening=Math.abs(p.data.qpos[p.profile.gripper]);this.onUpdate({grip:f,opening});
   if(Math.min(...f)<(s.soft?.12:.3)||opening<.0012){a.retries=(a.retries||0)+1;const n=f.map(v=>v.toFixed(1)).join(' / ');this.onUpdate({step:s.slip?{en:`Slipped (touch ${n} N) · grasp again`,zh:`布料滑脱（触觉 ${n} N）· 重新抓取`}:{en:`No grip (touch ${n} N) · look again`,zh:`未夹住（触觉 ${n} N）· 重新观察`}});a.replan=a.retries<=2?'retry':'skip'}}
- if(s.event==='release'){detach(p,s.item);this.activeItem=null;p.items.get(s.item).placed=this.action.job.category}
+ if(s.event==='release'){detach(p,s.item);this.activeItem=null;const it=p.items.get(s.item);it.placed=this.action.job.category;
+  // the garment now lies on the drum floor or the pile: the opening fingers draw out of it instead of hooking it
+  garmentState(p,it,'free')}
  if(s.event==='lid-grip'){p.model.eq_data.fill(0,p.lidEq*p.mj.mjNEQDATA+3,p.lidEq*p.mj.mjNEQDATA+6);p.data.eq_active[p.lidEq]=1;this.lidHeld=true}
  if(s.event==='lid-release'){this.lidHeld=false;if(p.data.qpos[p.lidAdr]<1.0)throw Error('The gripper did not open the washer lid')}
  }
  finishJob(){const a=this.action,job=a.job,p=this.p;if(job.type==='transfer'){
-  const item=p.items.get(job.id),pos=objectPosition(p,item),distance=job.category==='washer'?(inWasher(p,item)?0:1):job.carrier?(()=>{const cp=objectPosition(p,job.carrier);return Math.hypot(pos[0]-cp[0],pos[1]-cp[1])<.02&&Math.abs(pos[2]-cp[2])<.02?0:1})():Math.hypot(pos[0]-job.dest[0],pos[1]-job.dest[1]);if(!Number.isFinite(distance)||distance>.115)this.counts.missed=(this.counts.missed||0)+1;else this.counts[job.category]=(this.counts[job.category]||0)+1;a.retries=0;garmentState(p,item,'free');
+  const item=p.items.get(job.id),pos=objectPosition(p,item),distance=job.category==='washer'?(inWasher(p,item)?0:1):job.carrier?(()=>{const cp=objectPosition(p,job.carrier);return Math.hypot(pos[0]-cp[0],pos[1]-cp[1])<.02&&Math.abs(pos[2]-cp[2])<.02?0:1})():Math.hypot(pos[0]-job.dest[0],pos[1]-job.dest[1]);if(!Number.isFinite(distance)||distance>.115){this.counts.missed=(this.counts.missed||0)+1;
+   // laundry: the wrist camera sees the garment didn't land where it should, so the app queues one more pick (at most three)
+   if(job.pick&&(a.extra||0)<3){a.extra=(a.extra||0)+1;a.jobs.splice(a.jobIndex+1,0,{...job,id:undefined,tries:0});a.total++}}else this.counts[job.category]=(this.counts[job.category]||0)+1;a.retries=0;garmentState(p,item,'free');
  }a.jobIndex++;this.onUpdate({counts:{...this.counts},progress:a.jobIndex/a.total});this.nextJob()}
  advance(dt){const p=this.p;if(!p||!this.ready||this.stopped||this.paused)return;const simdt=dt*this.speed,substeps=Math.max(1,Math.round(simdt/.004));
  for(let n=0;n<substeps;n++){

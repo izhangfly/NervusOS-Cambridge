@@ -21,7 +21,8 @@ export function planJobs(p,action){
  return jobs;
 }
 const near=(pos,c,r)=>Math.hypot(pos[0]-c[0],pos[1]-c[1])<r;
-export const inWasher=(p,item)=>{const c=objectPosition(p,item);return near(c,WASHER,.1)&&c[2]<.2};
+// in the drum: centre inside the 84 mm drum radius and below the rim (a garment lying on the deck is not in)
+export const inWasher=(p,item)=>{const c=objectPosition(p,item);return near(c,WASHER,.075)&&c[2]<.11};
 // how high a garment lies in its pile: the mean height of its vertices (a single corner can poke up from below)
 function topVertex(p,item){return objectPosition(p,item)[2]}
 // the garment on top of the chosen pile, or null when that pile is empty
@@ -123,8 +124,9 @@ function softTransfer(p,job){
  // fingertips press down to the fabric's mid-plane (its collision skin is 4 mm thick), so the pads touch it
  const grasp=plush?[c[0],c[1],Math.max(.006,c[2]-pad)]:[pin[0],pin[1],Math.max(low+.0005,Math.min(pin[2]-.006,low+.004))];
  const high=Math.max(.27,grasp[2]+.15),over=[grasp[0],grasp[1],high];
- // lower the hanging garment well into the drum before letting go, so it falls in instead of bridging the rim
- const drop=job.category==='washer'?.165:job.dest[2]+.13,dest=[job.dest[0],job.dest[1],drop],hover=[dest[0],dest[1],high];
+ // lower the hanging garment until it rests on the drum floor (or the basket floor / the clothes already there)
+ // before letting go: it can't catch on the rim, and the open fingers slide out of a garment that is already supported
+ const drop=job.category==='washer'?(plush?.165:.115):job.dest[2]+(plush?.13:.075),dest=[job.dest[0],job.dest[1],drop],hover=[dest[0],dest[1],high];
  // on cloth the fingers stop 2 mm short of closed: squeezing a thin sheet all the way shut pushes it out of the pinch
  const openTo=plush?Math.min(p.profile.open,.027+.01):p.profile.open,closeTo=plush?0:.002,s=(t,en,zh,x={})=>step(t,en,zh,{yaw,openTo,closeTo,...x});
  return[
