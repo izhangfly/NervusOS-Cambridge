@@ -95,8 +95,8 @@ function softTransfer(p,job){
  const pin=[f[a+top*3],f[a+top*3+1],f[a+top*3+2]],plush=item.kind==='plush',c=objectPosition(p,item);
  const tries=(job.tries=(job.tries||0)+1),yaw=Math.atan2(pin[1],pin[0])+Math.PI/2+(tries%2?0:Math.PI/2);
  const pad=p.profile.id==='piper'?.015:0;
- // fingertips press ~3 mm into the fabric top, so closing drags a fold up between the pads
- const grasp=plush?[c[0],c[1],Math.max(.006,c[2]-pad)]:[pin[0],pin[1],Math.max(low+.004,Math.min(pin[2]-.004,low+.009))];
+ // fingertips press down to the fabric's mid-plane (its collision skin is 4 mm thick), so the pads touch it
+ const grasp=plush?[c[0],c[1],Math.max(.006,c[2]-pad)]:[pin[0],pin[1],Math.max(low+.0005,Math.min(pin[2]-.006,low+.004))];
  const high=Math.max(.27,grasp[2]+.15),over=[grasp[0],grasp[1],high];
  const drop=job.category==='washer'?.205:job.dest[2]+.13,dest=[job.dest[0],job.dest[1],drop],hover=[dest[0],dest[1],high];
  const s=(t,en,zh,x={})=>step(t,en,zh,{yaw,...x});
