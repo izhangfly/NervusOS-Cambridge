@@ -11,8 +11,12 @@ export function planJobs(p,action){
  }else if(p.scene.id==='kitting'){
   // Classify from observed demo features rather than storing a route in each app.
   for(const item of items){const category=classifyToy(item);jobs.push({type:'transfer',id:item.id,category,dest:BASKETS[category],label:text({blocks:'Block',cars:'Toy car',plush:'Soft animal'}[category],{blocks:'积木',cars:'玩具汽车',plush:'柔软玩偶'}[category])})}
- }else if(p.scene.id==='quality')for(const item of items){const category=classifyFinish(item);jobs.push({type:'index',id:item.id,dest:p.scene.conveyor.station},{type:'transfer',id:item.id,category,dest:[category==='pass'?.26:.47,.19,.036],label:text(category==='pass'?'Pass housing':'Rework housing',category==='pass'?'合格壳体':'返工壳体')})}
- else if(p.scene.id==='assembly')for(const item of items.filter(x=>x.kind==='bearing')){const carrier='carrier_'+item.id.split('_')[1];jobs.push({type:'index',id:carrier,dest:p.scene.conveyor.station},{type:'transfer',id:item.id,category:'assembled',dest:[.35,.18,.079],carrier,label:text('Seat bearing','放入轴承')},{type:'outfeed',id:carrier,bearing:item.id,dest:[-.24,.18,.055]})}
+ }else if(p.scene.id==='quality'){const st=p.scene.conveyor.station;for(const item of items.filter(x=>x.onBelt).sort((a,b)=>a.position[0]-b.position[0])){const category=classifyFinish(item);jobs.push({type:'index',id:item.id,dest:st},{type:'transfer',id:item.id,category,dest:[category==='pass'?.26:.47,.19,.036],label:text(category==='pass'?'Pass housing':'Rework housing',category==='pass'?'合格壳体':'返工壳体')})}}
+ else if(p.scene.id==='assembly'){
+  // the belt brings each carrier to the station; the seated module rides on as the next one arrives
+  const st=p.scene.conveyor.station;for(const carrier of items.filter(x=>x.carrier).sort((a,b)=>a.position[0]-b.position[0])){const n=carrier.id.split('_')[1];jobs.push({type:'index',id:carrier.id,dest:st},{type:'transfer',id:'bearing_'+n,category:'assembled',dest:[st[0],st[1],.079],carrier:carrier.id,label:text('Seat bearing','放入轴承')})}
+  jobs.push({type:'outfeed',distance:.95});
+ }
  else{jobs.push({type:'legacy',action})}
  return jobs;
 }
