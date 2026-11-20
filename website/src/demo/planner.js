@@ -97,8 +97,10 @@ function rigidTransfer(p,job){
   s([g.grasp[0],g.grasp[1],g.grasp[2]+.05],'Turn the fingers across two flat faces','转动夹爪对准两个平行面',{duration:.6}),
   s(g.grasp,'Lower the open fingers around the part','张开夹爪下降到零件两侧',{duration:.7}),
   s(g.grasp,'Squeeze · limited gripper force','夹紧 · 限力',{grip:true,duration:.5}),
-  s(g.grasp,'Touch sensors · check the grip','触觉传感器 · 确认夹持',{grip:true,event:'grip-check',item:job.id,duration:.25}),
-  s([g.grasp[0],g.grasp[1],high],'Lift · the part is held by friction','抬起 · 靠摩擦力夹持',{grip:true,duration:.95}),
+  // touch in both pads, and the fingers stopped at the part's width (not on an edge, a corner or a neighbour)
+  s(g.grasp,'Touch sensors · check the grip','触觉传感器 · 确认夹持',{grip:true,event:'grip-check',item:job.id,expect:g.width/2,duration:.25}),
+  s([g.grasp[0],g.grasp[1],g.grasp[2]+.04],'Lift · touch sensors watch for slip','抬起 · 触觉监测滑脱',{grip:true,event:'grip-check',item:job.id,slip:true,duration:.4}),
+  s([g.grasp[0],g.grasp[1],high],'Lift · the part is held by friction','抬起 · 靠摩擦力夹持',{grip:true,duration:.65}),
   s(hover,`Transfer to ${job.category}`,`转运到${job.category}`,{grip:true,duration:1.0}),
   s(dest,'Lower over the receiving place','下降到放置位置',{grip:true,duration:.8}),
   s(dest,'Open the fingers · release','张开夹爪 · 放下',{event:'release',item:job.id,duration:.45}),

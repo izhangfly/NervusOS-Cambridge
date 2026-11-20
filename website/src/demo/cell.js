@@ -50,7 +50,7 @@ export class Cell{
   if(!same)out.push({cap:'Manipulator.MoveToPose',target:s.target.map(v=>round(v*1000,0)),yaw:s.yaw===undefined?null:round((s.yaw*180/Math.PI+540)%360-180,0),q:s.to.slice(0,dof).map(v=>round(v,2))});
   if(out.length)this.emit({trace:out})}
  event(s){const p=this.p;if(s.event==='grasp'){attach(p,s.item,toolPosition(p));this.activeItem=s.item;p.items.get(s.item).onBelt=false}
-  if(s.event==='grip-check'){const f=p.touch.map(a=>a<0?0:p.data.sensordata[a]);const a=this.action,opening=Math.abs(p.data.qpos[p.profile.gripper]),ok=!(Math.min(...f)<(s.soft?.12:.3)||opening<.0012);
+  if(s.event==='grip-check'){const f=p.touch.map(a=>a<0?0:p.data.sensordata[a]);const a=this.action,opening=Math.abs(p.data.qpos[p.profile.gripper]),ok=!(Math.min(...f)<(s.soft?.12:.3)||opening<.0012||(s.expect!==undefined&&Math.abs(opening-s.expect)>.007));
    this.emit({grip:f,opening,trace:[{cap:'Touch.Read',touch:f.map(v=>round(v,1)),ok,slip:!!s.slip}]});
    if(!ok){a.retries=(a.retries||0)+1;const n=f.map(v=>v.toFixed(1)).join(' / ');this.emit({step:s.slip?{en:`Slipped (touch ${n} N) · grasp again`,zh:`布料滑脱（触觉 ${n} N）· 重新抓取`}:{en:`No grip (touch ${n} N) · look again`,zh:`未夹住（触觉 ${n} N）· 重新观察`}});a.replan=a.retries<=2?'retry':'skip'}}
   if(s.event==='release'){detach(p,s.item);this.activeItem=null;const it=p.items.get(s.item);it.placed=this.action.job.category;
