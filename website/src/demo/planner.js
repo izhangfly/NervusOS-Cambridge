@@ -1,4 +1,4 @@
-import{objectPosition,pinchPosition}from'./model.js';import{BASKETS,BASKET,WASHER,DESK,classifyToy,classifyFinish}from'./scene.js';
+import{objectPosition,pinchPosition,setAwake}from'./model.js';import{BASKETS,BASKET,WASHER,DESK,classifyToy,classifyFinish}from'./scene.js';
 const text=(en,zh)=>({en,zh}),step=(target,en,zh,extra={})=>({target,label:text(en,zh),duration:.65,...extra});
 export function planJobs(p,action){
  const items=[...p.items.values()],jobs=[];
@@ -30,7 +30,7 @@ export function pickTop(p,pick){
  let best=null,bz=-1;for(const it of cands){const z=topVertex(p,it);if(z>bz){bz=z;best=it}}return best;
 }
 export function jobSteps(p,job){
- if(job.pick){const it=pickTop(p,job.pick);if(!it)return[];job.id=it.id;(p.trace||(p.trace=[])).push({pick:job.pick,id:it.id,category:job.category})}
+ if(job.pick){const it=pickTop(p,job.pick);if(!it)return[];job.id=it.id;setAwake(p,it,true);(p.trace||(p.trace=[])).push({pick:job.pick,id:it.id,category:job.category})}
  if(job.type==='lid'){
   const hinge=[.34,.29,.132],r=.14,arc=a=>[hinge[0],hinge[1]-r*Math.cos(a)+.016*Math.sin(a),hinge[2]+r*Math.sin(a)+.016*Math.cos(a)+.012];
   // The fingers close across the handle bar (along the world y axis, across its 10 mm diameter) with the
