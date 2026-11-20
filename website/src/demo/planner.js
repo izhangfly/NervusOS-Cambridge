@@ -35,7 +35,7 @@ export function jobSteps(p,job){
   const hinge=[.34,.29,.132],r=.14,arc=a=>[hinge[0],hinge[1]-r*Math.cos(a)+.016*Math.sin(a),hinge[2]+r*Math.sin(a)+.016*Math.cos(a)+.012];
   // The fingers close across the handle bar (along the world y axis, across its 10 mm diameter) with the
   // fingertips just above the lid, then follow the hinge arc: the lid turns because the hand holds it.
-  const pad=p.profile.id==='piper'?.015:0,yaw=Math.PI/2,handle=a=>{const h=arc(a);return[h[0],h[1],h[2]-.012-Math.min(pad,.007)*Math.cos(a)]};
+  const pad=p.profile.id==='piper'?.015:0,yaw=Math.PI/2,handle=a=>{const h=arc(a);return[h[0],h[1],h[2]-.012-Math.min(pad,.004)*Math.cos(a)]};
   const s=(t,en,zh,x={})=>step(t,en,zh,{yaw,...x});
   return[s([.34,.15,.27],'Wrist camera · locate lid handle','腕部摄像头 · 定位机盖把手',{vision:'lid'}),s(handle(0).map((v,i)=>i===2?v+.05:v),'Turn the fingers across the handle','转动夹爪对准把手'),s(handle(0),'Lower around the handle bar','下降到把手两侧',{duration:.6}),s(handle(0),'Squeeze the handle','夹紧把手',{grip:true,duration:.5}),s(handle(0),'Touch sensors · check the grip','触觉传感器 · 确认夹持',{grip:true,event:'grip-check',duration:.25}),...[.35,.75,1.15,1.52].map(a=>s(handle(a),'Lift the hinged lid','提起铰链机盖',{grip:true,duration:.8})),s(handle(1.52),'Release the open lid','松开已打开的机盖',{event:'lid-release',duration:.5}),step([.28,0,.30],'Move clear of the lid','离开机盖',{duration:.7})];
  }
