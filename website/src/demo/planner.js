@@ -113,16 +113,19 @@ function softTransfer(p,job){
  const item=p.items.get(job.id),a=item.vertexAdr*3,f=p.data.flexvert_xpos,open=p.profile.open,V=i=>[f[a+i*3],f[a+i*3+1],f[a+i*3+2]];
  let low=1e9;const order=[];for(let i=0;i<item.vertexNum;i++){low=Math.min(low,f[a+i*3+2]);order.push(i)}order.sort((i,j)=>f[a+j*3+2]-f[a+i*3+2]);
  const plush=item.kind==='plush',c=objectPosition(p,item),tries=(job.tries=(job.tries||0)+1);
- // Pinch point: the highest fold where both open fingers clear the basket wall (and anything else taller
- // than the fabric) by 15 mm; a fold beside the wall is skipped for a slightly lower one in open space.
- // The fingers close across the radial direction, or along it on a retry.
+ // Pinch point: the highest point of the garment where both open fingers clear the basket walls (and anything
+ // else taller than the cloth) by 20 mm, at one of four finger angles. A fold draped over a wall is skipped for
+ // a lower point inside, so a finger never lands on the far side of the wall. A retry prefers a new angle.
  let pin=V(order[0]),yaw=Math.atan2(pin[1],pin[0])+Math.PI/2,bestKey=-1;
- for(const i of order){const v=V(i);if(v[2]<V(order[0])[2]-.015)break;
-  for(const k of[0,1]){const t=Math.atan2(v[1],v[0])+Math.PI/2+k*Math.PI/2,cl=fingerClearance(p,item,[v[0],v[1],low+.006],t,open,low+.002);
-   const key=(cl>=.015?1+v[2]:cl)+(k===(tries%2?0:1)?.002:0);if(key>bestKey){bestKey=key;pin=v;yaw=t}}}
+ for(const i of order){const v=V(i);
+  for(let k=0;k<4;k++){const t=Math.atan2(v[1],v[0])+Math.PI/2+k*Math.PI/4,cl=fingerClearance(p,item,[v[0],v[1],low+.006],t,open,low+.002);
+   const key=(cl>=.02?1+v[2]:cl)+(k===((tries-1)*2)%4?.002:0);if(key>bestKey){bestKey=key;pin=v;yaw=t}}}
+ // what the cloth rests on around the pinch: its lowest point within 35 mm
+ let local=pin[2];for(let i=0;i<item.vertexNum;i++){const v=V(i);if(Math.hypot(v[0]-pin[0],v[1]-pin[1])<.035)local=Math.min(local,v[2])}
  const pad=p.profile.id==='piper'?.015:0;
- // fingertips press down to the fabric's mid-plane (its collision skin is 4 mm thick), so the pads touch it
- const grasp=plush?[c[0],c[1],Math.max(.006,c[2]-pad)]:[pin[0],pin[1],Math.max(low+.0005,Math.min(pin[2]-.006,low+.004))];
+ // fingertips 2 mm below the cloth's mid-plane where it rests (just above the table, basket floor or the garment
+ // beneath, which the hand passes through while that one sleeps), so the pads close across the sheet and gather it
+ const grasp=plush?[c[0],c[1],Math.max(.006,c[2]-pad)]:[pin[0],pin[1],Math.max(.002,local-.002)];
  const high=Math.max(.27,grasp[2]+.15),over=[grasp[0],grasp[1],high];
  // lower the hanging garment until it rests on the drum floor (or the basket floor / the clothes already there)
  // before letting go: it can't catch on the rim, and the open fingers slide out of a garment that is already supported
@@ -136,7 +139,7 @@ function softTransfer(p,job){
   s(grasp,plush?'Squeeze the soft body':'Close slowly · gather a fold of fabric',plush?'夹住柔软身体':'慢慢合拢 · 收拢布料褶皱',{grip:true,ramp:!plush,duration:plush?.55:1.1}),
   s(grasp,plush?'Touch sensors · check the grip':'Grip pads on · touch sensors check the fabric',plush?'触觉传感器 · 确认夹持':'抓取垫启动 · 触觉确认布料',{grip:true,adhere:!plush,event:'grip-check',item:job.id,soft:true,duration:.3}),
   s([grasp[0],grasp[1],grasp[2]+.05],'Lift slowly · touch sensors watch for slip','缓慢抬起 · 触觉监测滑脱',{grip:true,adhere:!plush,event:'grip-check',item:job.id,soft:true,slip:true,duration:.6}),
-  s(over,'The fabric hangs from the pinch','布料从夹点垂下',{grip:true,adhere:!plush,duration:.8}),
+  s(over,'Clear of the pile · touch check again','离开衣堆 · 再次触觉确认',{grip:true,adhere:!plush,event:'grip-check',item:job.id,soft:true,slip:true,duration:.8}),
   s(hover,`Transfer to ${job.category}`,`转运到${job.category}`,{grip:true,adhere:!plush,duration:1.1}),
   s(dest,'Lower the draping fabric','放低垂落的布料',{grip:true,adhere:!plush,duration:.85}),
   s(dest,'Open the fingers · release','张开夹爪 · 松开',{event:'release',item:job.id,duration:.45}),
