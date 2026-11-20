@@ -28,7 +28,7 @@ export function makeScene(app,seed=Math.floor(Math.random()*0xffffffff)){
  const scene={id:app.id,seed,static:[],props:[],items:[],labels:[],conveyor:null};
  if(app.id==='laundry'){
   scene.static.push(...basket('laundry',BASKET,BASKET_SIZE,'#e9ecec'));
-  const[x,y,z]=WASHER;scene.static.push(box('washer-floor',[.18,.18,.01],[x,y,.005],'#a7b7c3'));
+  const[x,y,z]=WASHER;scene.static.push(box('washer-floor',[.18,.18,.03],[x,y,-.005],'#a7b7c3'));   // 30 mm thick (top at 10 mm) so a falling garment can't tunnel through
   for(let i=0;i<16;i++){const a=i/16*Math.PI*2;scene.static.push(box('drum-'+i,[.012,.043,.116],[x+.084*Math.cos(a),y+.084*Math.sin(a),.061],'#cbd3d8',{rotation:[0,0,a]}))}
   scene.props.push({kind:'washer',position:[x,y,0]},{kind:'laundry-basket',position:[...BASKET],size:BASKET_SIZE,color:'#e9ecec'});
   scene.labels.push({text:label('Top-loading washer','波轮洗衣机'),position:[x,y+.12,.23]},{text:label('Laundry basket','衣篮'),position:[BASKET[0],BASKET[1]-.13,.10]},{text:label('Table pile','桌面衣物'),position:[DESK[0]+.02,DESK[1]-.11,.08]});
