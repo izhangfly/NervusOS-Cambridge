@@ -98,6 +98,6 @@
     <position name="joint5" joint="joint5" class="piper" kp="180" kv="24" />
     <position name="joint6" joint="joint6" class="piper" kp="180" kv="24" />
     <position name="gripper" joint="joint7" class="finger" kp="900" kv="30" />
-  </actuator>
+  <adhesion name="adhere_l" body="link7" ctrlrange="0 1" gain="3" /><adhesion name="adhere_r" body="link8" ctrlrange="0 1" gain="3" /></actuator>
 
   <sensor><touch name="touch_l" site="pad_l" /><touch name="touch_r" site="pad_r" /></sensor></mujoco>

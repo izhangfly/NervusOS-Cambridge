@@ -146,5 +146,5 @@
     <position name="joint6" joint="joint6" kp="550" kv="65" forcerange="-100 100" inheritrange="1" />
     <position name="joint7" joint="joint7" kp="550" kv="65" forcerange="-100 100" inheritrange="1" />
     <position name="gripper" joint="finger_joint1" kp="900" kv="25" forcerange="-20 20" ctrlrange="0 .04" />
-  </actuator>
+  <adhesion name="adhere_l" body="left_finger" ctrlrange="0 1" gain="3" /><adhesion name="adhere_r" body="right_finger" ctrlrange="0 1" gain="3" /></actuator>
 <contact><exclude body1="left_finger" body2="right_finger" /></contact><sensor><touch name="touch_l" site="pad_l" /><touch name="touch_r" site="pad_r" /></sensor></mujoco>
