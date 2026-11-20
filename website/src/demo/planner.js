@@ -33,9 +33,13 @@ export function jobSteps(p,job){
  if(job.pick){const it=pickTop(p,job.pick);if(!it)return[];job.id=it.id;(p.trace||(p.trace=[])).push({pick:job.pick,id:it.id,category:job.category})}
  if(job.type==='lid'){
   const hinge=[.34,.29,.132],r=.14,arc=a=>[hinge[0],hinge[1]-r*Math.cos(a)+.016*Math.sin(a),hinge[2]+r*Math.sin(a)+.016*Math.cos(a)+.012];
-  return[step([.34,.15,.27],'Wrist camera · locate lid handle','腕部摄像头 · 定位机盖把手',{vision:'lid'}),step(arc(0),'Approach the lid handle','靠近机盖把手'),step(arc(0),'Grip the handle','夹住把手',{grip:true,event:'lid-grip',duration:.5}),...[.35,.75,1.15,1.52].map(a=>step(arc(a),'Lift the hinged lid','提起铰链机盖',{grip:true,duration:.8})),step(arc(1.52),'Release the open lid','松开已打开的机盖',{event:'lid-release',duration:.5}),step([.28,0,.30],'Move clear of the lid','离开机盖',{duration:.7})];
+  // The fingers close across the handle bar (along the world y axis, across its 10 mm diameter) with the
+  // fingertips just above the lid, then follow the hinge arc: the lid turns because the hand holds it.
+  const pad=p.profile.id==='piper'?.015:0,yaw=Math.PI/2,handle=a=>{const h=arc(a);return[h[0],h[1],h[2]-.012-Math.min(pad,.007)*Math.cos(a)]};
+  const s=(t,en,zh,x={})=>step(t,en,zh,{yaw,...x});
+  return[s([.34,.15,.27],'Wrist camera · locate lid handle','腕部摄像头 · 定位机盖把手',{vision:'lid'}),s(handle(0).map((v,i)=>i===2?v+.05:v),'Turn the fingers across the handle','转动夹爪对准把手'),s(handle(0),'Lower around the handle bar','下降到把手两侧',{duration:.6}),s(handle(0),'Squeeze the handle','夹紧把手',{grip:true,duration:.5}),s(handle(0),'Touch sensors · check the grip','触觉传感器 · 确认夹持',{grip:true,event:'grip-check',duration:.25}),...[.35,.75,1.15,1.52].map(a=>s(handle(a),'Lift the hinged lid','提起铰链机盖',{grip:true,duration:.8})),s(handle(1.52),'Release the open lid','松开已打开的机盖',{event:'lid-release',duration:.5}),step([.28,0,.30],'Move clear of the lid','离开机盖',{duration:.7})];
  }
- if(job.type==='transfer'&&!p.items.get(job.id).soft)return rigidTransfer(p,job);
+ if(job.type==='transfer')return p.items.get(job.id).soft?softTransfer(p,job):rigidTransfer(p,job);
  if(job.type==='transfer'){
   const item=p.items.get(job.id),pin=pinchPosition(p,item),from=[pin[0],pin[1],Math.max(.046,pin[2]+.012)],high=Math.max(.27,from[2]+.12);
   const basketBottom=job.dest[2],drop=item.soft?.205:job.category==='assembled'?.105:basketBottom+.077;
@@ -77,6 +81,34 @@ function rigidTransfer(p,job){
   s(hover,`Transfer to ${job.category}`,`转运到${job.category}`,{grip:true,duration:1.0}),
   s(dest,'Lower over the receiving place','下降到放置位置',{grip:true,duration:.8}),
   s(dest,'Open the fingers · release','张开夹爪 · 放下',{event:'release',item:job.id,duration:.45}),
+  s(hover,'Retreat · check placement','抬起 · 检查放置',{duration:.9}),
+ ];
+}
+
+// ---------------------------------------------------------------- physical grasp of a soft item
+// Garments: straddle the highest fold of the chosen garment, fingertips just under its top but never
+// below the surface it lies on, squeeze, and lift only if both pads feel the fabric. A retry comes in at
+// right angles. Plush animals: grasp around the body like a ball.
+function softTransfer(p,job){
+ const item=p.items.get(job.id),a=item.vertexAdr*3,f=p.data.flexvert_xpos;let top=0,low=1e9;
+ for(let i=0;i<item.vertexNum;i++){const z=f[a+i*3+2];if(z>f[a+top*3+2])top=i;low=Math.min(low,z)}
+ const pin=[f[a+top*3],f[a+top*3+1],f[a+top*3+2]],plush=item.kind==='plush',c=objectPosition(p,item);
+ const tries=(job.tries=(job.tries||0)+1),yaw=Math.atan2(pin[1],pin[0])+Math.PI/2+(tries%2?0:Math.PI/2);
+ const pad=p.profile.id==='piper'?.015:0;
+ const grasp=plush?[c[0],c[1],Math.max(.006,c[2]-pad)]:[pin[0],pin[1],Math.max(low+.002,pin[2]-.014)];
+ const high=Math.max(.27,grasp[2]+.15),over=[grasp[0],grasp[1],high];
+ const drop=job.category==='washer'?.205:job.dest[2]+.13,dest=[job.dest[0],job.dest[1],drop],hover=[dest[0],dest[1],high];
+ const s=(t,en,zh,x={})=>step(t,en,zh,{yaw,...x});
+ return[
+  s(over,`Wrist scan · ${job.label.en}`,`腕部扫描 · ${job.label.zh}`,{vision:job.category,item:job.id,duration:.7}),
+  s([grasp[0],grasp[1],grasp[2]+.05],plush?'Turn the fingers around the toy':'Find the highest fold',plush?'夹爪对准玩偶':'找到最高的褶皱',{duration:.6}),
+  s(grasp,plush?'Lower around the toy':'Lower the fingertips beside the fold',plush?'下降到玩偶两侧':'指尖下降到褶皱两侧',{duration:.7}),
+  s(grasp,plush?'Squeeze the soft body':'Pinch the fabric',plush?'夹住柔软身体':'夹住布料',{grip:true,duration:.55}),
+  s(grasp,'Touch sensors · check the grip','触觉传感器 · 确认夹持',{grip:true,event:'grip-check',item:job.id,soft:true,duration:.25}),
+  s(over,'Lift slowly · the fabric hangs from the pinch','缓慢抬起 · 布料从夹点垂下',{grip:true,duration:1.2}),
+  s(hover,`Transfer to ${job.category}`,`转运到${job.category}`,{grip:true,duration:1.1}),
+  s(dest,'Lower the draping fabric','放低垂落的布料',{grip:true,duration:.85}),
+  s(dest,'Open the fingers · release','张开夹爪 · 松开',{event:'release',item:job.id,duration:.45}),
   s(hover,'Retreat · check placement','抬起 · 检查放置',{duration:.9}),
  ];
 }
