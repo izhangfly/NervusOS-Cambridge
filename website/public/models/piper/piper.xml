@@ -83,6 +83,7 @@
 
   <contact>
     <exclude body1="base_link" body2="link1" />
+    <exclude body1="link7" body2="link8" />
   </contact>
 
   <equality>

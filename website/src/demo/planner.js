@@ -95,7 +95,8 @@ function softTransfer(p,job){
  const pin=[f[a+top*3],f[a+top*3+1],f[a+top*3+2]],plush=item.kind==='plush',c=objectPosition(p,item);
  const tries=(job.tries=(job.tries||0)+1),yaw=Math.atan2(pin[1],pin[0])+Math.PI/2+(tries%2?0:Math.PI/2);
  const pad=p.profile.id==='piper'?.015:0;
- const grasp=plush?[c[0],c[1],Math.max(.006,c[2]-pad)]:[pin[0],pin[1],Math.max(low+.002,pin[2]-.014)];
+ // fingertips press ~3 mm into the fabric top, so closing drags a fold up between the pads
+ const grasp=plush?[c[0],c[1],Math.max(.006,c[2]-pad)]:[pin[0],pin[1],Math.max(low+.004,Math.min(pin[2]-.004,low+.009))];
  const high=Math.max(.27,grasp[2]+.15),over=[grasp[0],grasp[1],high];
  const drop=job.category==='washer'?.205:job.dest[2]+.13,dest=[job.dest[0],job.dest[1],drop],hover=[dest[0],dest[1],high];
  const s=(t,en,zh,x={})=>step(t,en,zh,{yaw,...x});
@@ -103,7 +104,7 @@ function softTransfer(p,job){
   s(over,`Wrist scan · ${job.label.en}`,`腕部扫描 · ${job.label.zh}`,{vision:job.category,item:job.id,duration:.7}),
   s([grasp[0],grasp[1],grasp[2]+.05],plush?'Turn the fingers around the toy':'Find the highest fold',plush?'夹爪对准玩偶':'找到最高的褶皱',{duration:.6}),
   s(grasp,plush?'Lower around the toy':'Lower the fingertips beside the fold',plush?'下降到玩偶两侧':'指尖下降到褶皱两侧',{duration:.7}),
-  s(grasp,plush?'Squeeze the soft body':'Pinch the fabric',plush?'夹住柔软身体':'夹住布料',{grip:true,duration:.55}),
+  s(grasp,plush?'Squeeze the soft body':'Close slowly · gather a fold of fabric',plush?'夹住柔软身体':'慢慢合拢 · 收拢布料褶皱',{grip:true,duration:plush?.55:1.1}),
   s(grasp,'Touch sensors · check the grip','触觉传感器 · 确认夹持',{grip:true,event:'grip-check',item:job.id,soft:true,duration:.25}),
   s(over,'Lift slowly · the fabric hangs from the pinch','缓慢抬起 · 布料从夹点垂下',{grip:true,duration:1.2}),
   s(hover,`Transfer to ${job.category}`,`转运到${job.category}`,{grip:true,duration:1.1}),

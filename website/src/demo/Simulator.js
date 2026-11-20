@@ -39,8 +39,8 @@ export class Simulator{
  setJoint(i,angle){if(this.p&&!this.action&&!this.stopped)this.p.data.ctrl[i]=angle}
  setGripper(closed){if(this.p&&!this.action&&!this.stopped)this.p.data.ctrl[this.p.profile.gripper]=closed?0:this.p.profile.open}
  event(s){const p=this.p;if(s.event==='grasp'){attach(p,s.item,toolPosition(p));this.activeItem=s.item;p.items.get(s.item).onBelt=false}
- if(s.event==='grip-check'){const f=p.touch.map(a=>a<0?0:p.data.sensordata[a]);this.grip=f;const a=this.action;this.onUpdate({grip:f});
-  if(Math.min(...f)<(s.soft?.12:.3)){a.retries=(a.retries||0)+1;this.onUpdate({step:{en:`No grip (touch ${f.map(v=>v.toFixed(1)).join(' / ')} N) · look again`,zh:`未夹住（触觉 ${f.map(v=>v.toFixed(1)).join(' / ')} N）· 重新观察`}});a.replan=a.retries<=2?'retry':'skip'}}
+ if(s.event==='grip-check'){const f=p.touch.map(a=>a<0?0:p.data.sensordata[a]);this.grip=f;const a=this.action,opening=Math.abs(p.data.qpos[p.profile.gripper]);this.onUpdate({grip:f,opening});
+  if(Math.min(...f)<(s.soft?.12:.3)||opening<.0012){a.retries=(a.retries||0)+1;this.onUpdate({step:{en:`No grip (touch ${f.map(v=>v.toFixed(1)).join(' / ')} N) · look again`,zh:`未夹住（触觉 ${f.map(v=>v.toFixed(1)).join(' / ')} N）· 重新观察`}});a.replan=a.retries<=2?'retry':'skip'}}
  if(s.event==='release'){detach(p,s.item);this.activeItem=null;p.items.get(s.item).placed=this.action.job.category}
  if(s.event==='lid-grip'){p.model.eq_data.fill(0,p.lidEq*p.mj.mjNEQDATA+3,p.lidEq*p.mj.mjNEQDATA+6);p.data.eq_active[p.lidEq]=1;this.lidHeld=true}
  if(s.event==='lid-release'){this.lidHeld=false;if(p.data.qpos[p.lidAdr]<1.0)throw Error('The gripper did not open the washer lid')}
