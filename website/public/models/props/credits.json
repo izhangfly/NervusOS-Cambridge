@@ -1,21 +1,5 @@
 [
   {
-    "file": "top-loader.glb",
-    "title": "Washer & Dryer",
-    "author": "Ashley Alicea",
-    "source": "https://poly.pizza/m/fuQfwKQtq-7",
-    "license": "CC BY 3.0",
-    "changes": "Top-loader isolated, scaled, top opened; new lid, handle, drum and control detailing added in code."
-  },
-  {
-    "file": "basket.glb",
-    "title": "Basket",
-    "author": "Poly by Google",
-    "source": "https://poly.pizza/m/a0umk-CRRwo",
-    "license": "CC BY 3.0",
-    "changes": "Carrying handle removed and basket proportioned for laundry; rim and perforated side detailing added."
-  },
-  {
     "file": "conveyor.glb",
     "title": "Conveyor",
     "author": "Josh",

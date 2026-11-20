@@ -57,12 +57,12 @@ export function resultText(p,counts){switch(p.scene.id){case'laundry':return tex
 const quatAxes=(w,x,y,z)=>[[1-2*(y*y+z*z),2*(x*y+w*z),2*(x*z-w*y)],[2*(x*y-w*z),1-2*(x*x+z*z),2*(y*z+w*x)],[2*(x*z+w*y),2*(y*z-w*x),1-2*(x*x+y*y)]];
 // How much room the two open fingers have at a candidate angle: the distance from the finger blocks to
 // the nearest other part or fixed obstacle taller than the grasp (basket walls, washer). Higher is better.
-export function fingerClearance(p,item,c,yaw,open){
+export function fingerClearance(p,item,c,yaw,open,minTop=c[2]-.005){
  const ux=Math.cos(yaw),uy=Math.sin(yaw),reach=open+.026,half=.03;let clear=.2;
  for(const o of p.items.values()){if(o===item||o.soft)continue;const q=objectPosition(p,o),dx=q[0]-c[0],dy=q[1]-c[1],along=Math.abs(dx*ux+dy*uy),off=Math.abs(-dx*uy+dy*ux);const rad=Math.max(o.size[0],o.size[1])/2;if(along<reach+rad)clear=Math.min(clear,Math.max(0,off-half-rad))}
  // each open finger is a ~25 x 52 mm block: test its corners and edge midpoints against obstacles taller than the grasp
  const pts=[];for(const sgn of[1,-1])for(const a of[-.0125,0,.0125])for(const b of[-.026,0,.026]){const d=open+.0125+a;pts.push([c[0]+sgn*d*ux-b*uy,c[1]+sgn*d*uy+b*ux])}
- for(const b of p.scene.static||[]){if(b.shape!=='box')continue;const top=b.position[2]+b.size[2]/2;if(top<c[2]-.005)continue;
+ for(const b of p.scene.static||[]){if(b.shape!=='box')continue;const top=b.position[2]+b.size[2]/2;if(top<minTop)continue;
   for(const[fx,fy]of pts){const gx=Math.abs(fx-b.position[0])-b.size[0]/2,gy=Math.abs(fy-b.position[1])-b.size[1]/2;clear=Math.min(clear,Math.max(0,Math.hypot(Math.max(gx,0),Math.max(gy,0))-.002))}}
  return clear;
 }
@@ -109,10 +109,16 @@ function rigidTransfer(p,job){
 // below the surface it lies on, squeeze, and lift only if both pads feel the fabric. A retry comes in at
 // right angles. Plush animals: grasp around the body like a ball.
 function softTransfer(p,job){
- const item=p.items.get(job.id),a=item.vertexAdr*3,f=p.data.flexvert_xpos;let top=0,low=1e9;
- for(let i=0;i<item.vertexNum;i++){const z=f[a+i*3+2];if(z>f[a+top*3+2])top=i;low=Math.min(low,z)}
- const pin=[f[a+top*3],f[a+top*3+1],f[a+top*3+2]],plush=item.kind==='plush',c=objectPosition(p,item);
- const tries=(job.tries=(job.tries||0)+1),yaw=Math.atan2(pin[1],pin[0])+Math.PI/2+(tries%2?0:Math.PI/2);
+ const item=p.items.get(job.id),a=item.vertexAdr*3,f=p.data.flexvert_xpos,open=p.profile.open,V=i=>[f[a+i*3],f[a+i*3+1],f[a+i*3+2]];
+ let low=1e9;const order=[];for(let i=0;i<item.vertexNum;i++){low=Math.min(low,f[a+i*3+2]);order.push(i)}order.sort((i,j)=>f[a+j*3+2]-f[a+i*3+2]);
+ const plush=item.kind==='plush',c=objectPosition(p,item),tries=(job.tries=(job.tries||0)+1);
+ // Pinch point: the highest fold where both open fingers clear the basket wall (and anything else taller
+ // than the fabric) by 15 mm; a fold beside the wall is skipped for a slightly lower one in open space.
+ // The fingers close across the radial direction, or along it on a retry.
+ let pin=V(order[0]),yaw=Math.atan2(pin[1],pin[0])+Math.PI/2,bestKey=-1;
+ for(const i of order){const v=V(i);if(v[2]<V(order[0])[2]-.015)break;
+  for(const k of[0,1]){const t=Math.atan2(v[1],v[0])+Math.PI/2+k*Math.PI/2,cl=fingerClearance(p,item,[v[0],v[1],low+.006],t,open,low+.002);
+   const key=(cl>=.015?1+v[2]:cl)+(k===(tries%2?0:1)?.002:0);if(key>bestKey){bestKey=key;pin=v;yaw=t}}}
  const pad=p.profile.id==='piper'?.015:0;
  // fingertips press down to the fabric's mid-plane (its collision skin is 4 mm thick), so the pads touch it
  const grasp=plush?[c[0],c[1],Math.max(.006,c[2]-pad)]:[pin[0],pin[1],Math.max(low+.0005,Math.min(pin[2]-.006,low+.004))];

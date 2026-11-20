@@ -3,7 +3,9 @@ const label=(en,zh)=>({en,zh});
 export const COLORS=['#e96b57','#d8ae41','#4b87bb','#64a47d','#a57cb7','#eb9455','#62aeb1'];
 export const BLOCKS=['cube','brick','sphere','cylinder','triangle','arch','star'];
 export const BASKETS={blocks:[.18,.19,.025],cars:[.33,.19,.025],plush:[.48,.19,.025]};
-export const WASHER=[.34,.20,.132],BASKET=[.27,-.20,.018],DESK=[.43,-.19,.012];
+// laundry: a low, wide basket to the arm's right and the table pile out in front of it, ~10 cm apart, so the
+// open fingers and the wrist never meet the basket wall while working on the pile (and vice versa)
+export const WASHER=[.34,.20,.132],BASKET=[.17,-.27,.018],DESK=[.45,-.07,.012],BASKET_SIZE=[.24,.20,.065];
 const box=(id,size,position,color,extra={})=>({id,shape:'box',size,position,color,...extra});
 function basket(id,pos,size=[.135,.13,.075],color='#bed0be'){
  const[x,y,z]=pos,[w,d,h]=size;
@@ -25,11 +27,11 @@ export function makeScene(app,seed=Math.floor(Math.random()*0xffffffff)){
  let state=seed>>>0;const rand=()=>{state=(1664525*state+1013904223)>>>0;return state/4294967296};
  const scene={id:app.id,seed,static:[],props:[],items:[],labels:[],conveyor:null};
  if(app.id==='laundry'){
-  scene.static.push(...basket('laundry',BASKET,[.215,.18,.095],'#d8d0c2'));
+  scene.static.push(...basket('laundry',BASKET,BASKET_SIZE,'#e9ecec'));
   const[x,y,z]=WASHER;scene.static.push(box('washer-floor',[.18,.18,.01],[x,y,.005],'#a7b7c3'));
   for(let i=0;i<16;i++){const a=i/16*Math.PI*2;scene.static.push(box('drum-'+i,[.012,.043,.116],[x+.084*Math.cos(a),y+.084*Math.sin(a),.061],'#cbd3d8',{rotation:[0,0,a]}))}
-  scene.props.push({kind:'washer',position:[x,y,0]},{kind:'laundry-basket',position:[...BASKET]});
-  scene.labels.push({text:label('Top-loading washer','波轮洗衣机'),position:[x,y+.12,.23]},{text:label('Laundry basket','衣篮'),position:[.26,-.33,.12]},{text:label('Table pile','桌面衣物'),position:[.45,-.29,.09]});
+  scene.props.push({kind:'washer',position:[x,y,0]},{kind:'laundry-basket',position:[...BASKET],size:BASKET_SIZE,color:'#e9ecec'});
+  scene.labels.push({text:label('Top-loading washer','波轮洗衣机'),position:[x,y+.12,.23]},{text:label('Laundry basket','衣篮'),position:[BASKET[0],BASKET[1]-.13,.10]},{text:label('Table pile','桌面衣物'),position:[DESK[0]+.02,DESK[1]-.11,.08]});
   const kinds=['trousers','jacket','tshirt','trousers','jacket','tshirt'],textures={tshirt:'cotton',jacket:'knit',trousers:'denim'},colors=['#476484','#ba7456','#e6c462','#4e7593','#80a891','#cd725d'];
   kinds.forEach((kind,i)=>{const area=i<3?'basket':'desk',center=i<3?BASKET:DESK,pos=[center[0]+(i%3-1)*.005,center[1]+(i%3-1)*.007,.041+(i%3)*.018];scene.items.push({id:'garment_'+i,kind,area,position:pos,color:colors[i],fabric:textures[kind],soft:true,mesh:garment(kind,pos),mass:.026,bend:kind==='trousers'?2500:kind==='jacket'?700:1200})});
  }else if(app.id==='kitting'){

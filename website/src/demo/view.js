@@ -17,11 +17,11 @@ export function toyMesh(item){const group=new THREE.Group(),c=item.color,s=item.
 }
 export function plushDetail(item){const g=new THREE.Group(),c=item.color;const head=sphere(g,.018,[0,0,.033],c);head.material.bumpMap=fabricTexture('fleece');head.material.bumpScale=.002;for(const x of[-.014,.014])sphere(g,.008,[x,0,.047],c);for(const x of[-.008,.008])sphere(g,.002,[x,-.015,.037],'#282a2b');sphere(g,.003,[0,-.019,.030],'#f2e1c6');for(const x of[-.025,.025])sphere(g,.010,[x,0,-.004],c);return g}
 let assets;
-export async function loadProps(){if(!assets){const loader=new GLTFLoader();assets=Promise.all(['top-loader','basket','conveyor'].map(async n=>[n,(await loader.loadAsync('/models/props/'+n+'.glb')).scene])).then(Object.fromEntries)}return assets}
+export async function loadProps(){if(!assets){const loader=new GLTFLoader();assets=Promise.all(['conveyor'].map(async n=>[n,(await loader.loadAsync('/models/props/'+n+'.glb')).scene])).then(Object.fromEntries)}return assets}
 function cloned(g){const c=g.clone(true);c.traverse(o=>{if(o.isMesh){o.geometry=o.geometry.clone();o.material=o.material.clone();o.castShadow=true;o.receiveShadow=true}});return c}
 export function propsView(scene,parent,assets){const belts=[];for(const prop of scene.props){const group=new THREE.Group();parent.add(group);group.position.set(...prop.position);
  if(prop.kind==='washer')group.add(washerModel());
- if(prop.kind==='laundry-basket'){const mesh=cloned(assets.basket);mesh.position.z=-.018;group.add(mesh);const rim=new THREE.Mesh(new THREE.TorusGeometry(.096,.004,8,64),new THREE.MeshStandardMaterial({color:'#efe4d4',roughness:.7}));rim.scale.set(1.16,.98,1);rim.position.z=.108;group.add(rim);for(let i=0;i<24;i++){const a=i/24*Math.PI*2;primitive(group,{shape:'box',size:[.006,.005,.065],position:[.104*Math.cos(a),.091*Math.sin(a),.061],color:'#e8dac5',rotation:[0,0,a]})}}
+ if(prop.kind==='laundry-basket')group.add(laundryBasket(prop.size,prop.color));
  if(prop.kind==='conveyor'){group.scale.x=1.45;const model=cloned(assets.conveyor);
   // the downloaded model's belt surface is one static grey-blue mesh: hide it and draw a belt that moves
   model.traverse(o=>{if(o.isMesh&&(Array.isArray(o.material)?o.material:[o.material]).some(m=>m.name==='mat17'))o.visible=false});group.add(model);
@@ -43,6 +43,30 @@ function perforated(){const c=document.createElement('canvas');c.width=256;c.hei
  for(let j=0;j<8;j++)for(let i=0;i<24;i++){x.fillStyle='#5d666c';x.beginPath();x.arc(i*10.7+(j%2)*5.3+4,j*16+8,2.3,0,7);x.fill()}
  for(let k=0;k<256;k+=2){x.fillStyle=`rgba(255,255,255,${.05+Math.random()*.05})`;x.fillRect(k,0,1,128)}
  const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(3,1);t.colorSpace=THREE.SRGBColorSpace;return t}
+// A plastic laundry basket built to the size of its collision boxes (a floor and four 6 mm walls), so garments
+// rest and catch exactly where they appear to: slotted sides, rounded corners, a rolled rim.
+function rrPoint(s,hx,hy,r){   // point and outward normal at arc length s along a rounded rectangle
+ const q=Math.PI*r/2,segs=[[2*hy,[1,0],[hx+r,-hy],[0,1]],[q,[hx,hy],0],[2*hx,[0,1],[hx,hy+r],[-1,0]],[q,[-hx,hy],Math.PI/2],[2*hy,[-1,0],[-hx-r,hy],[0,-1]],[q,[-hx,-hy],Math.PI],[2*hx,[0,-1],[-hx,-hy-r],[1,0]],[q,[hx,-hy],1.5*Math.PI]];
+ for(let k=0;k<8;k++){const[len,a,b,c]=segs[k];if(s<=len||k===7){if(c)return[b[0]+c[0]*s,b[1]+c[1]*s,a[0],a[1]];const t=b+Math.min(s,len)/r;return[a[0]+r*Math.cos(t),a[1]+r*Math.sin(t),Math.cos(t),Math.sin(t)]}s-=len}
+}
+function basketSlots(){const c=document.createElement('canvas');c.width=64;c.height=128;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,64,128);x.fillStyle='#000';
+ for(const[y0,y1]of[[22,60],[68,106]]){x.beginPath();x.roundRect(23,y0,18,y1-y0,8);x.fill()}const t=new THREE.CanvasTexture(c);t.wrapS=THREE.RepeatWrapping;return t}
+function laundryBasket([w,d,h],color='#e9ecec'){
+ const g=new THREE.Group(),t=.003,r=.02,hx=w/2-r,hy=d/2-r,L=4*hx+4*hy+2*Math.PI*r,N=160,slots=Math.round(L/.022);
+ const mat=new THREE.MeshStandardMaterial({color,roughness:.5,metalness:0,side:THREE.DoubleSide,alphaMap:basketSlots(),alphaTest:.5});mat.alphaMap.repeat.set(1,1);
+ const wall=(o)=>{const pos=[],uv=[],idx=[];for(let i=0;i<=N;i++){const[x,y,nx,ny]=rrPoint(i/N*L,hx,hy,r);for(const z of[-.0045,h]){pos.push(x+nx*o,y+ny*o,z);uv.push(i/N*slots,(z+.0045)/(h+.0045))}}
+  for(let i=0;i<N;i++){const a=2*i,b=a+2;idx.push(...(o>0?[a,b,b+1,a,b+1,a+1]:[a,b+1,b,a,a+1,b+1]))}
+  const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));geo.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));geo.setIndex(idx);geo.computeVertexNormals();
+  const m=new THREE.Mesh(geo,mat);m.castShadow=true;m.receiveShadow=true;g.add(m)};
+ wall(t);wall(-t);
+ const ring=[];for(let i=0;i<N;i++){const[x,y]=rrPoint(i/N*L,hx,hy,r);ring.push(new THREE.Vector3(x,y,h))}
+ const rim=new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(ring,true),N,.0045,8,true),new THREE.MeshStandardMaterial({color,roughness:.45}));rim.castShadow=true;g.add(rim);
+ const sh=new THREE.Shape(),R=r+t,X=hx,Y=hy;sh.absarc(X,-Y,R,-Math.PI/2,0);sh.absarc(X,Y,R,0,Math.PI/2);sh.absarc(-X,Y,R,Math.PI/2,Math.PI);sh.absarc(-X,-Y,R,Math.PI,1.5*Math.PI);
+ const floor=new THREE.Mesh(new THREE.ExtrudeGeometry(sh,{depth:.009,bevelEnabled:false,curveSegments:12}),new THREE.MeshStandardMaterial({color:'#d9dede',roughness:.6}));floor.position.z=-.0045;floor.receiveShadow=true;g.add(floor);
+ // hand holds in the two short ends
+ for(const sx of[-1,1]){const hold=new THREE.Mesh(new THREE.CapsuleGeometry(.007,.04,4,12),new THREE.MeshStandardMaterial({color:'#5d6a70',roughness:.8}));hold.rotation.x=Math.PI/2;hold.rotation.z=Math.PI/2;hold.position.set(sx*(w/2+t+.0002),0,h-.016);hold.scale.set(1,1,.08);g.add(hold)}
+ return g;
+}
 export function washerModel(){
  const g=new THREE.Group(),W=.23,D=.24,H=.122,cy=-.004;   // cabinet centred a little forward of the drum
  const add=(geo,mat,x,y,z)=>{const m=new THREE.Mesh(geo,mat);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;g.add(m);return m};
