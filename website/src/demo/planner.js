@@ -18,7 +18,8 @@ export function planJobs(p,action){
 }
 const near=(pos,c,r)=>Math.hypot(pos[0]-c[0],pos[1]-c[1])<r;
 export const inWasher=(p,item)=>{const c=objectPosition(p,item);return near(c,WASHER,.1)&&c[2]<.2};
-function topVertex(p,item){const a=item.vertexAdr*3,f=p.data.flexvert_xpos;let z=-1;for(let i=0;i<item.vertexNum;i++)z=Math.max(z,f[a+i*3+2]);return z}
+// how high a garment lies in its pile: the mean height of its vertices (a single corner can poke up from below)
+function topVertex(p,item){return objectPosition(p,item)[2]}
 // the garment on top of the chosen pile, or null when that pile is empty
 export function pickTop(p,pick){
  const cands=[...p.items.values()].filter(it=>it.soft&&!inWasher(p,it)&&(pick==='any'||(pick==='desk'?near(objectPosition(p,it),DESK,.13):near(objectPosition(p,it),BASKET,.14))));
