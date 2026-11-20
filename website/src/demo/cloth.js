@@ -37,7 +37,7 @@ const SHAPES = {
 };
 
 // Coarse simulation mesh: grid points inside (or within half a cell of) the outline.
-export function garmentMesh(kind, position, size = .13, N = 8) {
+export function garmentMesh(kind, position, size = .13, N = (globalThis.__clothCfg && globalThis.__clothCfg.N) || 8) {
   const shape = SHAPES[kind] || SHAPES.tshirt, H = size * 1.12;
   const near = (u, v) => { const h = .5 / N; for (const [a, b] of [[0, 0], [h, 0], [-h, 0], [0, h], [0, -h], [h, h], [-h, h], [h, -h], [-h, -h]]) if (shape(u + a, v + b)) return true; return false; };
   const points = [], uv = [], indices = [], index = new Int32Array((N + 1) * (N + 1)).fill(-1);
