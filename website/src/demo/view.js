@@ -1,4 +1,4 @@
-import * as THREE from'three';import{GLTFLoader}from'three/examples/jsm/loaders/GLTFLoader.js';
+import * as THREE from'three';import{RoundedBoxGeometry}from'three/examples/jsm/geometries/RoundedBoxGeometry.js';import{GLTFLoader}from'three/examples/jsm/loaders/GLTFLoader.js';
 export function primitive(parent,p){let g;if(p.shape==='cylinder'){g=new THREE.CylinderGeometry(p.size[0],p.size[0],p.size[1],32);g.rotateX(Math.PI/2)}else if(p.shape==='sphere')g=new THREE.SphereGeometry(p.size[0],20,14);else g=new THREE.BoxGeometry(...p.size);const m=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color:p.color,roughness:.7,metalness:.10}));m.position.set(...p.position);if(p.rotation)m.rotation.set(...p.rotation);m.castShadow=true;m.receiveShadow=true;parent.add(m);return m}
 export function fabricTexture(kind){const c=document.createElement('canvas');c.width=c.height=128;const ctx=c.getContext('2d');ctx.fillStyle='#aeaeae';ctx.fillRect(0,0,128,128);for(let y=0;y<128;y+=kind==='knit'?9:3)for(let x=0;x<128;x+=kind==='knit'?8:3){ctx.strokeStyle=(x+y)%2?'#8c8c8c':'#d0d0d0';ctx.lineWidth=kind==='fleece'?1.5:.6;ctx.beginPath();if(kind==='knit'){ctx.moveTo(x,y);ctx.lineTo(x+4,y+5);ctx.lineTo(x+8,y)}else{ctx.moveTo(x,y);ctx.lineTo(x+3,y+3)}ctx.stroke()}const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(3,3);return t}
 export function softMesh(item){const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(item.mesh.points.flat(),3));g.setAttribute('uv',new THREE.Float32BufferAttribute(item.mesh.uv,2));g.setIndex(item.mesh.indices);g.computeVertexNormals();const m=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color:item.color,side:THREE.DoubleSide,roughness:item.fabric==='denim'?.9:.98,bumpMap:fabricTexture(item.fabric),bumpScale:item.kind==='plush'?.003:.001,metalness:0}));m.castShadow=true;m.receiveShadow=true;return m}
@@ -20,7 +20,7 @@ let assets;
 export async function loadProps(){if(!assets){const loader=new GLTFLoader();assets=Promise.all(['top-loader','basket','conveyor'].map(async n=>[n,(await loader.loadAsync('/models/props/'+n+'.glb')).scene])).then(Object.fromEntries)}return assets}
 function cloned(g){const c=g.clone(true);c.traverse(o=>{if(o.isMesh){o.geometry=o.geometry.clone();o.material=o.material.clone();o.castShadow=true;o.receiveShadow=true}});return c}
 export function propsView(scene,parent,assets){const belts=[];for(const prop of scene.props){const group=new THREE.Group();parent.add(group);group.position.set(...prop.position);
- if(prop.kind==='washer'){group.add(cloned(assets['top-loader']));const drum=latheRing(group,.085,.020,'#a6b7c2');drum.position.z=.117;for(let i=0;i<24;i++){const a=i/24*Math.PI*2;sphere(group,.0019,[.079*Math.cos(a),.079*Math.sin(a),.105],'#596970')};primitive(group,{shape:'box',size:[.16,.029,.024],position:[0,.11,.139],color:'#e4e8e8'});primitive(group,{shape:'box',size:[.047,.022,.012],position:[.027,.094,.144],color:'#163b48'});sphere(group,.008,[-.042,.090,.147],'#7b8f96')}
+ if(prop.kind==='washer')group.add(washerModel());
  if(prop.kind==='laundry-basket'){const mesh=cloned(assets.basket);mesh.position.z=-.018;group.add(mesh);const rim=new THREE.Mesh(new THREE.TorusGeometry(.096,.004,8,64),new THREE.MeshStandardMaterial({color:'#efe4d4',roughness:.7}));rim.scale.set(1.16,.98,1);rim.position.z=.108;group.add(rim);for(let i=0;i<24;i++){const a=i/24*Math.PI*2;primitive(group,{shape:'box',size:[.006,.005,.065],position:[.104*Math.cos(a),.091*Math.sin(a),.061],color:'#e8dac5',rotation:[0,0,a]})}}
  if(prop.kind==='conveyor'){group.scale.x=1.45;const model=cloned(assets.conveyor);
   // the downloaded model's belt surface is one static grey-blue mesh: hide it and draw a belt that moves
@@ -34,3 +34,44 @@ function beltTexture(){const c=document.createElement('canvas');c.width=256;c.he
  for(let k=0;k<400;k++){x.fillStyle=`rgba(255,255,255,${Math.random()*.05})`;x.fillRect(Math.random()*256,Math.random()*64,2,1)}
  const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(8,1);t.colorSpace=THREE.SRGBColorSpace;t.anisotropy=4;return t}
 export function disposeGroup(g){g?.traverse(o=>{o.geometry?.dispose();if(o.material){for(const m of Array.isArray(o.material)?o.material:[o.material]){m.map?.dispose();m.bumpMap?.dispose();m.dispose()}}})}
+
+// ---------------------------------------------------------------- top-loading washer
+// Procedural, built to the physics: drum radius 84 mm (walls up to 119 mm), deck at 132 mm, lid hinged at
+// y +90 mm from the drum centre, handle bar 140 mm in front of the hinge. Units are metres.
+const enamel=()=>new THREE.MeshPhysicalMaterial({color:'#f4f5f2',roughness:.32,metalness:0,clearcoat:.6,clearcoatRoughness:.25});
+function perforated(){const c=document.createElement('canvas');c.width=256;c.height=128;const x=c.getContext('2d');x.fillStyle='#c9ced2';x.fillRect(0,0,256,128);
+ for(let j=0;j<8;j++)for(let i=0;i<24;i++){x.fillStyle='#5d666c';x.beginPath();x.arc(i*10.7+(j%2)*5.3+4,j*16+8,2.3,0,7);x.fill()}
+ for(let k=0;k<256;k+=2){x.fillStyle=`rgba(255,255,255,${.05+Math.random()*.05})`;x.fillRect(k,0,1,128)}
+ const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(3,1);t.colorSpace=THREE.SRGBColorSpace;return t}
+export function washerModel(){
+ const g=new THREE.Group(),W=.23,D=.24,H=.122,cy=-.004;   // cabinet centred a little forward of the drum
+ const add=(geo,mat,x,y,z)=>{const m=new THREE.Mesh(geo,mat);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;g.add(m);return m};
+ add(new RoundedBoxGeometry(W,D,H,4,.012),enamel(),0,cy,H/2);                                             // cabinet
+ add(new THREE.BoxGeometry(W-.01,D-.01,.008),new THREE.MeshStandardMaterial({color:'#2f3438',roughness:.7}),0,cy,.004);   // plinth
+ // top deck with the round opening
+ const deck=new THREE.Shape();const hw=W/2-.004,hd=D/2-.004;deck.moveTo(-hw,-hd+cy);deck.lineTo(hw,-hd+cy);deck.lineTo(hw,hd+cy);deck.lineTo(-hw,hd+cy);deck.lineTo(-hw,-hd+cy);
+ const hole=new THREE.Path();hole.absarc(0,0,.088,0,Math.PI*2,true);deck.holes.push(hole);
+ add(new THREE.ExtrudeGeometry(deck,{depth:.004,bevelEnabled:true,bevelThickness:.0015,bevelSize:.002,bevelSegments:2,curveSegments:48}),enamel(),0,0,H);
+ // stainless drum, open at the top, perforated; impeller plate at the bottom
+ const steel=new THREE.MeshStandardMaterial({map:perforated(),color:'#e8edf0',metalness:.85,roughness:.32,side:THREE.DoubleSide});
+ add(new THREE.CylinderGeometry(.084,.084,.112,48,1,true),steel,0,0,.064).rotation.x=Math.PI/2;
+ add(new THREE.TorusGeometry(.086,.003,8,64),new THREE.MeshStandardMaterial({color:'#d6dbde',metalness:.9,roughness:.25}),0,0,H+.004);
+ const imp=add(new THREE.CylinderGeometry(.05,.062,.01,40),new THREE.MeshStandardMaterial({color:'#b9c1c6',metalness:.6,roughness:.4}),0,0,.013);imp.rotation.x=Math.PI/2;
+ for(let i=0;i<6;i++){const r=add(new THREE.BoxGeometry(.04,.006,.008),new THREE.MeshStandardMaterial({color:'#aab3b8',metalness:.6,roughness:.4}),0,0,.021);r.rotation.z=i*Math.PI/3;r.position.set(.022*Math.cos(i*Math.PI/3),.022*Math.sin(i*Math.PI/3),.021)}
+ // control console behind the lid hinge: display, buttons, dial
+ add(new RoundedBoxGeometry(W,.028,.05,4,.008),enamel(),0,.104,H+.02);
+ add(new THREE.BoxGeometry(.06,.002,.018),new THREE.MeshStandardMaterial({color:'#0e2a33',emissive:'#1d6b7d',emissiveIntensity:.6,roughness:.3}),.03,.0895,H+.024);
+ const dial=add(new THREE.CylinderGeometry(.011,.012,.008,32),new THREE.MeshStandardMaterial({color:'#c3cbd0',metalness:.7,roughness:.3}),-.06,.09,H+.024);dial.rotation.x=Math.PI/2;
+ for(const x of[-.025,-.012])add(new THREE.CylinderGeometry(.004,.004,.003,16),new THREE.MeshStandardMaterial({color:'#7e8b93',roughness:.5}),x,.0895,H+.024).rotation.x=Math.PI/2;
+ return g;
+}
+// the lid, in its hinge frame (hinge on the x axis, lid extends toward -y); handle bar where the physics has it
+export function washerLid(){
+ const g=new THREE.Group();
+ const frame=new THREE.Mesh(new RoundedBoxGeometry(.20,.154,.010,3,.004),enamel());frame.position.set(0,-.077,.002);frame.castShadow=true;g.add(frame);
+ const glass=new THREE.Mesh(new RoundedBoxGeometry(.15,.104,.004,3,.0015),new THREE.MeshPhysicalMaterial({color:'#2c4652',roughness:.08,metalness:0,transmission:.25,transparent:true,opacity:.82,clearcoat:1}));glass.position.set(0,-.077,.007);g.add(glass);
+ const dark=new THREE.MeshStandardMaterial({color:'#3a4a54',roughness:.45,metalness:.2});
+ for(const x of[-.026,.026]){const post=new THREE.Mesh(new THREE.CylinderGeometry(.0045,.0045,.016,16),dark);post.rotation.x=Math.PI/2;post.position.set(x,-.140,.012);g.add(post)}
+ const bar=new THREE.Mesh(new THREE.CapsuleGeometry(.005,.052,6,16),dark);bar.rotation.z=Math.PI/2;bar.position.set(0,-.140,.016);bar.castShadow=true;g.add(bar);
+ return g;
+}
