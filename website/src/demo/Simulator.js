@@ -39,19 +39,20 @@ export class Simulator{
  setJoint(i,angle){if(this.p&&!this.action&&!this.stopped)this.p.data.ctrl[i]=angle}
  setGripper(closed){if(this.p&&!this.action&&!this.stopped)this.p.data.ctrl[this.p.profile.gripper]=closed?0:this.p.profile.open}
  event(s){const p=this.p;if(s.event==='grasp'){attach(p,s.item,toolPosition(p));this.activeItem=s.item;p.items.get(s.item).onBelt=false}
+ if(s.event==='grip-check'){const f=p.touch.map(a=>a<0?0:p.data.sensordata[a]);this.grip=f;const a=this.action;this.onUpdate({grip:f});
+  if(Math.min(...f)<.3){a.retries=(a.retries||0)+1;this.onUpdate({step:{en:`No grip (touch ${f.map(v=>v.toFixed(1)).join(' / ')} N) · look again`,zh:`未夹住（触觉 ${f.map(v=>v.toFixed(1)).join(' / ')} N）· 重新观察`}});a.replan=a.retries<=2?'retry':'skip'}}
  if(s.event==='release'){detach(p,s.item);this.activeItem=null;p.items.get(s.item).placed=this.action.job.category}
  if(s.event==='lid-grip'){p.model.eq_data.fill(0,p.lidEq*p.mj.mjNEQDATA+3,p.lidEq*p.mj.mjNEQDATA+6);p.data.eq_active[p.lidEq]=1;this.lidHeld=true}
  if(s.event==='lid-release'){p.data.eq_active[p.lidEq]=0;this.lidHeld=false;if(p.data.qpos[p.lidAdr]<1.0)throw Error('The gripper did not open the washer lid')}
  }
  finishJob(){const a=this.action,job=a.job,p=this.p;if(job.type==='transfer'){
-  const item=p.items.get(job.id),pos=objectPosition(p,item),distance=Math.hypot(pos[0]-job.dest[0],pos[1]-job.dest[1]);if(!Number.isFinite(distance)||distance>.115)throw Error(`Placement did not reach the ${job.category} basket`);
-  this.counts[job.category]=(this.counts[job.category]||0)+1;if(job.carrier){item.joined=job.carrier;item.joinOffset=pos.map((n,i)=>n-objectPosition(p,job.carrier)[i])}
+  const item=p.items.get(job.id),pos=objectPosition(p,item),distance=Math.hypot(pos[0]-job.dest[0],pos[1]-job.dest[1]);if(!Number.isFinite(distance)||distance>.115)this.counts.missed=(this.counts.missed||0)+1;else this.counts[job.category]=(this.counts[job.category]||0)+1;a.retries=0;if(job.carrier){item.joined=job.carrier;item.joinOffset=pos.map((n,i)=>n-objectPosition(p,job.carrier)[i])}
  }a.jobIndex++;this.onUpdate({counts:{...this.counts},progress:a.jobIndex/a.total});this.nextJob()}
  advance(dt){const p=this.p;if(!p||!this.ready||this.stopped||this.paused)return;const simdt=dt*this.speed,substeps=Math.max(1,Math.round(simdt/.004));
  for(let n=0;n<substeps;n++){
   const a=this.action;if(a){a.elapsed+=.004;const job=a.job;if(job.type==='index'||job.type==='outfeed'){let x=Math.min(1,a.elapsed/a.duration);x=x*x*(3-2*x);p.belt.offset=a.start+(a.target-a.start)*x;
   }else{const index=a.steps.findIndex(s=>a.elapsed<=s.end),s=a.steps[index<0?a.steps.length-1:index];let x=Math.max(0,Math.min(1,(a.elapsed-s.start)/s.duration));x=x*x*(3-2*x);for(let i=0;i<p.profile.dof;i++)p.data.ctrl[i]=s.from[i]+(s.to[i]-s.from[i])*x;p.data.ctrl[p.profile.gripper]=s.grip?0:p.profile.open;
-   if(a.elapsed>s.start+s.duration*.82&&!a.events.has(s.start)){a.events.add(s.start);if(s.vision)this.onUpdate({vision:s.vision,item:s.item||null});if(s.event)this.event(s)}
+   if(a.elapsed>s.start+s.duration*.82&&!a.events.has(s.start)){a.events.add(s.start);if(s.vision)this.onUpdate({vision:s.vision,item:s.item||null});if(s.event)this.event(s);if(a.replan){const r=a.replan;a.replan=null;if(r==='skip'){this.counts.missed=(this.counts.missed||0)+1;a.retries=0;a.jobIndex++}this.nextJob();break}}
    this.currentStep=s.label;
   }}
   if(this.activeItem||this.lidHeld){const pos=toolPosition(p);p.data.mocap_pos.set([pos[0],pos[1],pos[2]-.012],p.mocap*3)}

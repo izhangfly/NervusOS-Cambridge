@@ -35,6 +35,7 @@ export function jobSteps(p,job){
   const hinge=[.34,.29,.132],r=.14,arc=a=>[hinge[0],hinge[1]-r*Math.cos(a)+.016*Math.sin(a),hinge[2]+r*Math.sin(a)+.016*Math.cos(a)+.012];
   return[step([.34,.15,.27],'Wrist camera · locate lid handle','腕部摄像头 · 定位机盖把手',{vision:'lid'}),step(arc(0),'Approach the lid handle','靠近机盖把手'),step(arc(0),'Grip the handle','夹住把手',{grip:true,event:'lid-grip',duration:.5}),...[.35,.75,1.15,1.52].map(a=>step(arc(a),'Lift the hinged lid','提起铰链机盖',{grip:true,duration:.8})),step(arc(1.52),'Release the open lid','松开已打开的机盖',{event:'lid-release',duration:.5}),step([.28,0,.30],'Move clear of the lid','离开机盖',{duration:.7})];
  }
+ if(job.type==='transfer'&&!p.items.get(job.id).soft)return rigidTransfer(p,job);
  if(job.type==='transfer'){
   const item=p.items.get(job.id),pin=pinchPosition(p,item),from=[pin[0],pin[1],Math.max(.046,pin[2]+.012)],high=Math.max(.27,from[2]+.12);
   const basketBottom=job.dest[2],drop=item.soft?.205:job.category==='assembled'?.105:basketBottom+.077;
@@ -45,3 +46,37 @@ export function jobSteps(p,job){
  return[];
 }
 export function resultText(p,counts){switch(p.scene.id){case'laundry':return text(`${counts.washer||0} garments loaded. The lid was opened by the gripper.`,`${counts.washer||0} 件衣物已放入洗衣机，机盖由夹爪打开。`);case'kitting':return text(`All 13 toys sorted: ${counts.blocks||0} blocks, ${counts.cars||0} cars and ${counts.plush||0} soft animals.`,`十三件玩具已归类：${counts.blocks||0} 件积木、${counts.cars||0} 辆汽车、${counts.plush||0} 只柔软玩偶。`);case'quality':return text(`Batch inspected: ${counts.pass||0} pass, ${counts.rework||0} rework.`,`批次检查完成：${counts.pass||0} 件合格、${counts.rework||0} 件返工。`);case'assembly':return text(`${counts.assembled||0} wheel modules assembled and conveyed out.`,`${counts.assembled||0} 个轮组已装配并沿产线送出。`);default:return text('Route complete.','路线完成。')}}
+
+// ---------------------------------------------------------------- physical grasp of a rigid part
+// No weld joint: the fingers turn across two parallel faces, close with the gripper's limited force,
+// and friction at the pads carries the part. Touch sensors in both pads confirm the grip.
+const quatAxes=(w,x,y,z)=>[[1-2*(y*y+z*z),2*(x*y+w*z),2*(x*z-w*y)],[2*(x*y-w*z),1-2*(x*x+z*z),2*(y*z+w*x)],[2*(x*z+w*y),2*(y*z-w*x),1-2*(x*x+y*y)]];
+export function graspPlan(p,item){
+ const q=Array.from(p.data.qpos).slice(item.qadr,item.qadr+7),c=q.slice(0,3),[ax,ay]=quatAxes(q[3],q[4],q[5],q[6]),gap=2*p.profile.open-.008;
+ let yaw,width,height;
+ if(item.proxy==='box'){
+  const [sx,sy,sz]=item.size,opts=[[ax,sx],[ay,sy]].filter(([,w])=>w<=gap).sort((a,b)=>a[1]-b[1]);
+  const [axis,w]=opts[0]||[ax,Math.min(sx,sy)];yaw=Math.atan2(axis[1],axis[0]);width=w;height=sz;
+ }else{const r=item.proxy==='sphere'?item.size[0]*.56:item.size[0];width=2*r;height=item.proxy==='sphere'?2*r:item.size[2];yaw=Math.atan2(c[1],c[0])+Math.PI/2}
+ // pad centre at the part's middle; the PiPER's pads sit 15 mm behind its fingertips (the tool point)
+ const padOffset=p.profile.id==='piper'?.015:0,z=Math.max(.006,c[2]-padOffset);
+ return{center:c,grasp:[c[0],c[1],z],yaw,width,height,padOffset};
+}
+function rigidTransfer(p,job){
+ const item=p.items.get(job.id),g=graspPlan(p,item),high=Math.max(.27,g.grasp[2]+.14),yaw=g.yaw;
+ const release=job.category==='assembled'?job.dest[2]+.012-g.padOffset+g.height/2:job.dest[2]+.07;
+ const dest=[job.dest[0],job.dest[1],release],hover=[dest[0],dest[1],high],over=[g.grasp[0],g.grasp[1],high];
+ const s=(t,en,zh,x={})=>step(t,en,zh,{yaw,...x});
+ return[
+  s(over,`Wrist scan · ${job.label.en}`,`腕部扫描 · ${job.label.zh}`,{vision:job.category,item:job.id,duration:.7}),
+  s([g.grasp[0],g.grasp[1],g.grasp[2]+.05],'Turn the fingers across two flat faces','转动夹爪对准两个平行面',{duration:.6}),
+  s(g.grasp,'Lower the open fingers around the part','张开夹爪下降到零件两侧',{duration:.7}),
+  s(g.grasp,'Squeeze · limited gripper force','夹紧 · 限力',{grip:true,duration:.5}),
+  s(g.grasp,'Touch sensors · check the grip','触觉传感器 · 确认夹持',{grip:true,event:'grip-check',item:job.id,duration:.25}),
+  s([g.grasp[0],g.grasp[1],high],'Lift · the part is held by friction','抬起 · 靠摩擦力夹持',{grip:true,duration:.95}),
+  s(hover,`Transfer to ${job.category}`,`转运到${job.category}`,{grip:true,duration:1.0}),
+  s(dest,'Lower over the receiving place','下降到放置位置',{grip:true,duration:.8}),
+  s(dest,'Open the fingers · release','张开夹爪 · 放下',{event:'release',item:job.id,duration:.45}),
+  s(hover,'Retreat · check placement','抬起 · 检查放置',{duration:.9}),
+ ];
+}
