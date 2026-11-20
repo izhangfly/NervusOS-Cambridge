@@ -109,10 +109,23 @@ export class GarmentSurface {
       if (q >= 0 && s >= 0 && r >= 0) tris.push(q, s, r);
     }
     this.stencil = stencil; this.full = new Float64Array(G * G * 3);
+    // Real cloth has thickness: draw a front face, a back face (offset along the normal) and the rim
+    // between them along the outline, instead of a single see-through sheet.
+    const V = verts.length / 3; this.V = V; this.tris = tris; this.base = new Float32Array(V * 3); this.bn = new Float32Array(V * 3);
+    this.thick = { tshirt: .002, jacket: .0035, trousers: .0028 }[grid.kind] || .0025;
+    const count = new Map(); for (let t = 0; t < tris.length; t += 3) for (let e = 0; e < 3; e++) { const a = tris[t + e], b = tris[t + (e + 1) % 3], k = a < b ? a + ',' + b : b + ',' + a; count.set(k, (count.get(k) || 0) + 1); }
+    const rim = []; for (let t = 0; t < tris.length; t += 3) for (let e = 0; e < 3; e++) { const a = tris[t + e], b = tris[t + (e + 1) % 3]; if (count.get(a < b ? a + ',' + b : b + ',' + a) === 1) rim.push(a, b); }
+    this.rim = rim;
+    const nRim = rim.length / 2, total = 2 * V + 4 * nRim, idx = [];
+    for (let t = 0; t < tris.length; t += 3) { idx.push(tris[t], tris[t + 1], tris[t + 2]); idx.push(V + tris[t], V + tris[t + 2], V + tris[t + 1]); }
+    for (let r = 0; r < nRim; r++) { const o = 2 * V + 4 * r; idx.push(o, o + 2, o + 1, o + 1, o + 2, o + 3); }
+    const uvAll = new Float32Array(total * 2); uvAll.set(uvs, 0); uvAll.set(uvs, V * 2);
+    for (let r = 0; r < nRim; r++) { const a = rim[2 * r], b = rim[2 * r + 1], o = (2 * V + 4 * r) * 2; uvAll.set([uvs[a * 2], uvs[a * 2 + 1], uvs[b * 2], uvs[b * 2 + 1], uvs[a * 2], uvs[a * 2 + 1], uvs[b * 2], uvs[b * 2 + 1]], o); }
     const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
-    g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-    g.setIndex(tris);
+    g.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(total * 3), 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(new Float32Array(total * 3), 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uvAll, 2));
+    g.setIndex(idx);
     const tex = garmentTextures(grid.kind, item.color);
     const mat = new THREE.MeshStandardMaterial({
       map: tex.map, bumpMap: tex.bump, bumpScale: grid.kind === 'trousers' ? .0016 : grid.kind === 'jacket' ? .0022 : .0009,
@@ -133,13 +146,34 @@ export class GarmentSurface {
       if (r.near === undefined) for (let c = 0; c < 3; c++) full[o + c] = 2 * full[r.a * 3 + c] - full[r.b * 3 + c];
       else for (let c = 0; c < 3; c++) full[o + c] = rest[o + c] + (full[r.near * 3 + c] - rest[r.near * 3 + c]);
     }
-    const pos = this.mesh.geometry.attributes.position.array, st = this.stencil;
+    const P = this.base, N = this.bn, st = this.stencil, V = this.V, T = this.tris, h = this.thick / 2;
     for (let n = 0, m = 0; n < st.length; n += 2, m += 3) {
       const ids = st[n], ws = st[n + 1]; let x = 0, y = 0, z = 0;
       for (let q = 0; q < 16; q++) { const o = ids[q] * 3, w = ws[q]; x += w * full[o]; y += w * full[o + 1]; z += w * full[o + 2]; }
-      pos[m] = x; pos[m + 1] = y; pos[m + 2] = z;
+      P[m] = x; P[m + 1] = y; P[m + 2] = z;
     }
-    const geo = this.mesh.geometry; geo.attributes.position.needsUpdate = true; geo.computeVertexNormals(); geo.computeBoundingSphere();
+    N.fill(0);
+    for (let t = 0; t < T.length; t += 3) {
+      const a = T[t] * 3, b = T[t + 1] * 3, c = T[t + 2] * 3;
+      const ux = P[b] - P[a], uy = P[b + 1] - P[a + 1], uz = P[b + 2] - P[a + 2], vx = P[c] - P[a], vy = P[c + 1] - P[a + 1], vz = P[c + 2] - P[a + 2];
+      const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+      for (const k of [a, b, c]) { N[k] += nx; N[k + 1] += ny; N[k + 2] += nz; }
+    }
+    for (let k = 0; k < V * 3; k += 3) { const l = Math.hypot(N[k], N[k + 1], N[k + 2]) || 1; N[k] /= l; N[k + 1] /= l; N[k + 2] /= l; }
+    const geo = this.mesh.geometry, pos = geo.attributes.position.array, nor = geo.attributes.normal.array;
+    for (let k = 0; k < V * 3; k += 3) for (let c = 0; c < 3; c++) {
+      pos[k + c] = P[k + c] + N[k + c] * h; nor[k + c] = N[k + c];
+      pos[V * 3 + k + c] = P[k + c] - N[k + c] * h; nor[V * 3 + k + c] = -N[k + c];
+    }
+    const rim = this.rim;
+    for (let r = 0; r < rim.length / 2; r++) {
+      const a = rim[2 * r] * 3, b = rim[2 * r + 1] * 3, o = (2 * V + 4 * r) * 3;
+      const ex = P[b] - P[a], ey = P[b + 1] - P[a + 1], ez = P[b + 2] - P[a + 2], nx = N[a] + N[b], ny = N[a + 1] + N[b + 1], nz = N[a + 2] + N[b + 2];
+      let ox = ey * nz - ez * ny, oy = ez * nx - ex * nz, oz = ex * ny - ey * nx; const l = Math.hypot(ox, oy, oz) || 1; ox /= l; oy /= l; oz /= l;
+      const put = (slot, src, sgn) => { for (let c = 0; c < 3; c++) pos[o + slot * 3 + c] = P[src + c] + N[src + c] * h * sgn; nor[o + slot * 3] = ox; nor[o + slot * 3 + 1] = oy; nor[o + slot * 3 + 2] = oz; };
+      put(0, a, 1); put(1, b, 1); put(2, a, -1); put(3, b, -1);
+    }
+    geo.attributes.position.needsUpdate = true; geo.attributes.normal.needsUpdate = true; geo.computeBoundingSphere();
   }
   dispose() { this.mesh.geometry.dispose(); const m = this.mesh.material; m.map?.dispose(); m.bumpMap?.dispose(); m.dispose(); }
 }
