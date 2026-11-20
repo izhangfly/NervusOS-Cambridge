@@ -45,8 +45,8 @@ export function makeScene(app,seed=Math.floor(Math.random()*0xffffffff)){
   scene.props.push({kind:'conveyor',position:[cx,y,0]});scene.static.push(box('belt-bed',[1.30,.17,.012],[cx,y,.029],'#424b4e'));
   if(quality){scene.static.push(...basket('pass',[.26,.19,.018],[.18,.16,.055],'#75a98a'),...basket('rework',[.47,.19,.018],[.18,.16,.055],'#c68d63'));scene.labels.push({text:label('PASS','合格'),position:[.26,.25,.14]},{text:label('REWORK','返工'),position:[.47,.25,.14]},{text:label('Inspection station','检查工位'),position:[.32,y-.11,.15]});
    for(let i=0;i<6;i++)scene.items.push(rigid('housing_'+i,'housing',[.32+pitch*(i+1),y,.0575],rand()>.33?'#8baba5':'#cf836a',[.031,.024,.025],{finish:rand()>.38?'pass':'rework',onBelt:true}));
-  }else{scene.static.push(...basket('feed',[.31,-.20,.017],[.27,.18,.028],'#bdc9d6'));scene.labels.push({text:label('Bearing feeder','轴承供料盘'),position:[.31,-.29,.12]},{text:label('Assembly station','装配工位'),position:[.32,y+.11,.16]});
-   for(let i=0;i<6;i++){scene.items.push(rigid('bearing_'+i,'bearing',[.22+(i%3)*.075,-.235+Math.floor(i/3)*.078,.043],'#b7c4d4',[.019,.019,.017]));scene.items.push(rigid('carrier_'+i,'carrier',[.32+pitch*(i+1),y,.055],'#657a8c',[.075,.065,.020],{onBelt:true,carrier:true}))}
+  }else{scene.static.push(...basket('feed',[.31,-.20,.017],[.31,.21,.010],'#bdc9d6'));scene.labels.push({text:label('Bearing feeder','轴承供料盘'),position:[.31,-.29,.12]},{text:label('Assembly station','装配工位'),position:[.32,y+.11,.16]});
+   for(let i=0;i<6;i++){scene.items.push(rigid('bearing_'+i,'bearing',[.225+(i%3)*.085,-.2425+Math.floor(i/3)*.085,.032],'#b7c4d4',[.019,.019,.017]));scene.items.push(rigid('carrier_'+i,'carrier',[.32+pitch*(i+1),y,.055],'#657a8c',[.075,.065,.020],{onBelt:true,carrier:true}))}
   }
  }else{scene.static=[...app.environment];scene.items=[rigid('workpiece','cube',app.object.position,app.object.color,app.object.size)];scene.labels=[]}
  return scene;

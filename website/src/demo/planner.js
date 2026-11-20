@@ -60,8 +60,10 @@ const quatAxes=(w,x,y,z)=>[[1-2*(y*y+z*z),2*(x*y+w*z),2*(x*z-w*y)],[2*(x*y-w*z),
 export function fingerClearance(p,item,c,yaw,open){
  const ux=Math.cos(yaw),uy=Math.sin(yaw),reach=open+.026,half=.03;let clear=.2;
  for(const o of p.items.values()){if(o===item||o.soft)continue;const q=objectPosition(p,o),dx=q[0]-c[0],dy=q[1]-c[1],along=Math.abs(dx*ux+dy*uy),off=Math.abs(-dx*uy+dy*ux);const rad=Math.max(o.size[0],o.size[1])/2;if(along<reach+rad)clear=Math.min(clear,Math.max(0,off-half-rad))}
+ // each open finger is a ~25 x 52 mm block: test its corners and edge midpoints against obstacles taller than the grasp
+ const pts=[];for(const sgn of[1,-1])for(const a of[-.0125,0,.0125])for(const b of[-.026,0,.026]){const d=open+.0125+a;pts.push([c[0]+sgn*d*ux-b*uy,c[1]+sgn*d*uy+b*ux])}
  for(const b of p.scene.static||[]){if(b.shape!=='box')continue;const top=b.position[2]+b.size[2]/2;if(top<c[2]-.005)continue;
-  for(const sgn of[1,-1]){const fx=c[0]+sgn*reach*ux,fy=c[1]+sgn*reach*uy,gx=Math.abs(fx-b.position[0])-b.size[0]/2,gy=Math.abs(fy-b.position[1])-b.size[1]/2;clear=Math.min(clear,Math.max(0,Math.hypot(Math.max(gx,0),Math.max(gy,0))-.012))}}
+  for(const[fx,fy]of pts){const gx=Math.abs(fx-b.position[0])-b.size[0]/2,gy=Math.abs(fy-b.position[1])-b.size[1]/2;clear=Math.min(clear,Math.max(0,Math.hypot(Math.max(gx,0),Math.max(gy,0))-.002))}}
  return clear;
 }
 export function graspPlan(p,item){
@@ -77,7 +79,8 @@ export function graspPlan(p,item){
   for(let k=0;k<12;k++){const t=base+k*Math.PI/12,cl=fingerClearance(p,item,c,t,r+.01);if(cl>best+1e-4){best=cl;yaw=t}}
  }
  // pad centre at the part's middle; the PiPER's pads sit 15 mm behind its fingertips (the tool point)
- const padOffset=p.profile.id==='piper'?.015:0,z=Math.max(.006,c[2]-padOffset);
+ // fingertips stay 3 mm above whatever the part rests on (table, tray floor), never pushing into it
+ const padOffset=p.profile.id==='piper'?.015:0,z=Math.max(.006,c[2]-height/2+.003,c[2]-padOffset);
  // open only as wide as the part needs, so the fingers don't land on its neighbours
  return{center:c,grasp:[c[0],c[1],z],yaw,width,height,padOffset,openTo:Math.min(p.profile.open,width/2+.01)};
 }
