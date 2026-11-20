@@ -55,4 +55,11 @@ capability calls each robot's provider turns into its own joint commands).
   touch is checked after closing and again 5 cm into the lift, with a re-grasp on slip.
 - Release: the garment is lowered until it rests on the drum floor or the pile, then the fingers open and the
   garment becomes free (the fingers no longer touch it), so it can't hang on a finger.
-- A garment that misses its target is picked again (up to three extra jobs per run).
+- A garment that misses its target is picked again (up to three extra jobs per run); the result line reports
+  what is in the drum at the end.
+- Over the washer the hand turns to lie along the hinge (Panda's hand is 20 cm wide and met the open lid), and
+  the lid hinge has 0.12 N m of friction so a hanging garment can't swing it shut.
+- A free garment sleeps once its mean vertex speed stays under 2 cm/s for 0.5 s (or after 4 s under 5 cm/s):
+  two free garments resting on each other jitter slightly and otherwise never slept (8.7 ms per step).
+- Verified 20 November 2026 in Chromium: PiPER "Clear the table & load all" six of six in the drum, lid 1.24 rad;
+  PiPER and Panda "Load the laundry basket" three of three; idle step 1.6 ms afterwards.

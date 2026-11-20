@@ -54,12 +54,15 @@ export function createModel(engine,scene){
 // The solver then couples one or two garments at a time: 1.5-3 ms per step instead of 12 ms with every
 // garment touching every other. Contact bits: world 1/1, hand 8/1, grip skin 0/16, garments by state below.
 const BITS={sleep:[2,1],free:[2,3],held:[18,11]};
-export function garmentState(p,item,state){if(!item?.garment||item.state===state)return;const m=p.model,v=p.data.qvel,k=item.flex;item.state=state;item.still=0;
+export function garmentState(p,item,state){if(!item?.garment||item.state===state)return;const m=p.model,v=p.data.qvel,k=item.flex;item.state=state;item.still=0;item.free=0;
  [m.flex_contype[k],m.flex_conaffinity[k]]=BITS[state];const sleep=state==='sleep';
  for(const b of item.bodies){m.body_gravcomp[b]=sleep?1:0;const a=m.body_dofadr[b];for(let j=0;j<3;j++){m.dof_damping[a+j]=sleep?5:0;if(sleep)v[a+j]=0}}}
 // a free garment goes back to sleep once it has lain still for half a second
-export function settleGarments(p,dt){const m=p.model,v=p.data.qvel;for(const item of p.items.values()){if(item.state!=='free')continue;let fast=0;
- for(const b of item.bodies){const a=m.body_dofadr[b];fast=Math.max(fast,Math.hypot(v[a],v[a+1],v[a+2]))}item.still=fast<.03?item.still+dt:0;if(item.still>.5)garmentState(p,item,'sleep')}}
+// (judged by its mean vertex speed: two free garments resting on each other keep a little contact jitter), or
+// after 4 s free once it is no longer really moving
+export function settleGarments(p,dt){const m=p.model,v=p.data.qvel;for(const item of p.items.values()){if(item.state!=='free')continue;let sum=0;
+ for(const b of item.bodies){const a=m.body_dofadr[b];sum+=Math.hypot(v[a],v[a+1],v[a+2])}const mean=sum/item.bodies.length;item.free=(item.free||0)+dt;
+ item.still=mean<.02?item.still+dt:0;if(item.still>.5||(item.free>4&&mean<.05))garmentState(p,item,'sleep')}}
 export function objectPosition(p,item){const obj=typeof item==='string'?p.items.get(item):item;if(obj.soft){const points=p.data.flexvert_xpos,a=obj.vertexAdr*3;let pos=[0,0,0];for(let i=0;i<obj.vertexNum;i++)for(let j=0;j<3;j++)pos[j]+=points[a+i*3+j]/obj.vertexNum;return pos}return Array.from(p.data.qpos).slice(obj.qadr,obj.qadr+3)}
 export function pinchPosition(p,item){const obj=typeof item==='string'?p.items.get(item):item;if(!obj.soft)return objectPosition(p,obj);const a=obj.vertexAdr*3;let best=0;for(let i=1;i<obj.vertexNum;i++)if(p.data.flexvert_xpos[a+i*3+2]>p.data.flexvert_xpos[a+best*3+2])best=i;obj.pinch=best;return Array.from(p.data.flexvert_xpos).slice(a+best*3,a+best*3+3)}
 export function moveRigid(p,item,pos){const obj=typeof item==='string'?p.items.get(item):item;p.data.qpos.set([...pos,1,0,0,0],obj.qadr);p.data.qvel.fill(0,obj.vadr,obj.vadr+6)}
