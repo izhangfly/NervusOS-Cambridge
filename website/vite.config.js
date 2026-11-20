@@ -1,1 +1,1 @@
-import{defineConfig}from'vite';export default defineConfig({server:{proxy:{'/api':'http://127.0.0.1:8910'}},build:{rollupOptions:{output:{manualChunks(id){if(id.includes('/three/'))return'three';if(id.includes('/@mujoco/'))return'mujoco'}}}}});
+import{defineConfig}from'vite';export default defineConfig({worker:{format:'es'},server:{proxy:{'/api':'http://127.0.0.1:8910'}},build:{rollupOptions:{output:{manualChunks(id){if(id.includes('/three/'))return'three';if(id.includes('/@mujoco/'))return'mujoco'}}}}});
