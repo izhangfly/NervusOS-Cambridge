@@ -119,7 +119,7 @@ function softTransfer(p,job){
  const high=Math.max(.27,grasp[2]+.15),over=[grasp[0],grasp[1],high];
  // lower the hanging garment well into the drum before letting go, so it falls in instead of bridging the rim
  const drop=job.category==='washer'?.165:job.dest[2]+.13,dest=[job.dest[0],job.dest[1],drop],hover=[dest[0],dest[1],high];
- const s=(t,en,zh,x={})=>step(t,en,zh,{yaw,openTo:g.openTo,...x});
+ const openTo=plush?Math.min(p.profile.open,.027+.01):p.profile.open,s=(t,en,zh,x={})=>step(t,en,zh,{yaw,openTo,...x});
  return[
   s(over,`Wrist scan · ${job.label.en}`,`腕部扫描 · ${job.label.zh}`,{vision:job.category,item:job.id,duration:.7}),
   s([grasp[0],grasp[1],grasp[2]+.05],plush?'Turn the fingers around the toy':'Find the highest fold',plush?'夹爪对准玩偶':'找到最高的褶皱',{duration:.6}),
