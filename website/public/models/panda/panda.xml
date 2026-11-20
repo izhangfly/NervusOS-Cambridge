@@ -1,0 +1,150 @@
+<mujoco model="panda">
+  <compiler angle="radian" meshdir="assets" autolimits="true" />
+  <option integrator="implicitfast" timestep="0.002" iterations="35" />
+  <default>
+    <default class="panda">
+      <material specular="0.5" shininess="0.25" />
+      <joint armature="0.1" damping="1" axis="0 0 1" range="-2.8973 2.8973" />
+      <general dyntype="none" biastype="affine" ctrlrange="-2.8973 2.8973" forcerange="-87 87" />
+      <default class="finger">
+        <joint axis="0 1 0" type="slide" range="0 0.04" />
+      </default>
+      <default class="visual">
+        <geom type="mesh" contype="0" conaffinity="0" group="2" />
+      </default>
+      <default class="collision">
+        <geom type="mesh" group="3" />
+        <default class="fingertip_pad_collision_1">
+          <geom type="box" size="0.0085 0.004 0.0085" pos="0 0.0055 0.0445" />
+        </default>
+        <default class="fingertip_pad_collision_2">
+          <geom type="box" size="0.003 0.002 0.003" pos="0.0055 0.002 0.05" />
+        </default>
+        <default class="fingertip_pad_collision_3">
+          <geom type="box" size="0.003 0.002 0.003" pos="-0.0055 0.002 0.05" />
+        </default>
+        <default class="fingertip_pad_collision_4">
+          <geom type="box" size="0.003 0.002 0.0035" pos="0.0055 0.002 0.0395" />
+        </default>
+        <default class="fingertip_pad_collision_5">
+          <geom type="box" size="0.003 0.002 0.0035" pos="-0.0055 0.002 0.0395" />
+        </default>
+      </default>
+    </default>
+  </default>
+  <asset>
+    <material class="panda" name="white" rgba="1 1 1 1" />
+    <material class="panda" name="off_white" rgba="0.901961 0.921569 0.929412 1" />
+    <material class="panda" name="black" rgba="0.25 0.25 0.25 1" />
+    <material class="panda" name="green" rgba="0 1 0 1" />
+    <material class="panda" name="light_blue" rgba="0.039216 0.541176 0.780392 1" />
+    <mesh name="link0_off_white" file="link0_off_white.stl" />
+    <mesh name="link0_black" file="link0_black.stl" />
+    <mesh name="link0_white" file="link0_white.stl" />
+    <mesh name="link1_white" file="link1_white.stl" />
+    <mesh name="link2_white" file="link2_white.stl" />
+    <mesh name="link3_white" file="link3_white.stl" />
+    <mesh name="link3_black" file="link3_black.stl" />
+    <mesh name="link4_white" file="link4_white.stl" />
+    <mesh name="link4_black" file="link4_black.stl" />
+    <mesh name="link5_black" file="link5_black.stl" />
+    <mesh name="link5_white" file="link5_white.stl" />
+    <mesh name="link6_off_white" file="link6_off_white.stl" />
+    <mesh name="link6_white" file="link6_white.stl" />
+    <mesh name="link6_black" file="link6_black.stl" />
+    <mesh name="link6_light_blue" file="link6_light_blue.stl" />
+    <mesh name="link6_green" file="link6_green.stl" />
+    <mesh name="link7_white" file="link7_white.stl" />
+    <mesh name="link7_black" file="link7_black.stl" />
+    <mesh name="hand_off_white" file="hand_off_white.stl" />
+    <mesh name="hand_black" file="hand_black.stl" />
+    <mesh name="hand_white" file="hand_white.stl" />
+    <mesh name="left_finger_off_white" file="left_finger_off_white.stl" />
+    <mesh name="left_finger_black" file="left_finger_black.stl" />
+    <mesh name="right_finger_off_white" file="right_finger_off_white.stl" />
+    <mesh name="right_finger_black" file="right_finger_black.stl" />
+  </asset>
+  <worldbody>
+    <body name="link0" childclass="panda" gravcomp="1">
+      <inertial mass="0.629769" pos="-0.041018 -0.00014 0.049974" fullinertia="0.00315 0.00388 0.004285 8.2904e-7 0.00015 8.2299e-6" />
+      <body name="link1" pos="0 0 0.333" gravcomp="1">
+        <inertial mass="4.970684" pos="0.003875 0.002081 -0.04762" fullinertia="0.70337 0.70661 0.0091170 -0.00013900 0.0067720 0.019169" />
+        <joint name="joint1" />
+        <body name="link2" quat="1 -1 0 0" gravcomp="1">
+          <inertial mass="0.646926" pos="-0.003141 -0.02872 0.003495" fullinertia="0.0079620 2.8110e-2 2.5995e-2 -3.925e-3 1.0254e-2 7.04e-4" />
+          <joint name="joint2" range="-1.7628 1.7628" />
+          <body name="link3" pos="0 -0.316 0" quat="1 1 0 0" gravcomp="1">
+            <joint name="joint3" />
+            <inertial mass="3.228604" pos="2.7518e-2 3.9252e-2 -6.6502e-2" fullinertia="3.7242e-2 3.6155e-2 1.083e-2 -4.761e-3 -1.1396e-2 -1.2805e-2" />
+            <body name="link4" pos="0.0825 0 0" quat="1 1 0 0" gravcomp="1">
+              <inertial mass="3.587895" pos="-5.317e-2 1.04419e-1 2.7454e-2" fullinertia="2.5853e-2 1.9552e-2 2.8323e-2 7.796e-3 -1.332e-3 8.641e-3" />
+              <joint name="joint4" range="-3.0718 -0.0698" />
+              <body name="link5" pos="-0.0825 0.384 0" quat="1 -1 0 0" gravcomp="1">
+                <inertial mass="1.225946" pos="-1.1953e-2 4.1065e-2 -3.8437e-2" fullinertia="3.5549e-2 2.9474e-2 8.627e-3 -2.117e-3 -4.037e-3 2.29e-4" />
+                <joint name="joint5" />
+                <body name="link6" quat="1 1 0 0" gravcomp="1">
+                  <inertial mass="1.666555" pos="6.0149e-2 -1.4117e-2 -1.0517e-2" fullinertia="1.964e-3 4.354e-3 5.433e-3 1.09e-4 -1.158e-3 3.41e-4" />
+                  <joint name="joint6" range="-0.0175 3.7525" />
+                  <body name="link7" pos="0.088 0 0" quat="1 1 0 0" gravcomp="1">
+                    <inertial mass="7.35522e-01" pos="1.0517e-2 -4.252e-3 6.1597e-2" fullinertia="1.2516e-2 1.0027e-2 4.815e-3 -4.28e-4 -1.196e-3 -7.41e-4" />
+                    <joint name="joint7" />
+                    <body name="hand" pos="0 0 0.107" quat="0.9238795 0 0 -0.3826834" gravcomp="1">
+                      <inertial mass="0.73" pos="-0.01 0 0.03" diaginertia="0.001 0.0025 0.0017" />
+                      <body name="left_finger" pos="0 0 0.0584" gravcomp="1">
+                        <inertial mass="0.015" pos="0 0 0" diaginertia="2.375e-6 2.375e-6 7.5e-7" />
+                        <joint name="finger_joint1" class="finger" />
+                        <geom mesh="left_finger_off_white" material="off_white" class="visual" density="0" />
+                        <geom mesh="left_finger_black" material="black" class="visual" density="0" />
+                      </body>
+                      <body name="right_finger" pos="0 0 0.0584" quat="0 0 0 1" gravcomp="1">
+                        <inertial mass="0.015" pos="0 0 0" diaginertia="2.375e-6 2.375e-6 7.5e-7" />
+                        <joint name="finger_joint2" class="finger" />
+                        <geom mesh="right_finger_off_white" material="off_white" class="visual" density="0" />
+                        <geom mesh="right_finger_black" material="black" class="visual" density="0" />
+                      </body>
+                      <geom mesh="hand_off_white" material="off_white" class="visual" density="0" />
+                      <geom mesh="hand_black" material="black" class="visual" density="0" />
+                      <geom mesh="hand_white" material="white" class="visual" density="0" />
+                      <site name="tool" pos="0 0 .1034" size=".008" rgba=".2 .5 1 1" />
+                    </body>
+                    <geom mesh="link7_white" material="white" class="visual" density="0" />
+                    <geom mesh="link7_black" material="black" class="visual" density="0" />
+                  </body>
+                  <geom mesh="link6_off_white" material="off_white" class="visual" density="0" />
+                  <geom mesh="link6_white" material="white" class="visual" density="0" />
+                  <geom mesh="link6_black" material="black" class="visual" density="0" />
+                  <geom mesh="link6_light_blue" material="light_blue" class="visual" density="0" />
+                  <geom mesh="link6_green" material="green" class="visual" density="0" />
+                </body>
+                <geom mesh="link5_black" material="black" class="visual" density="0" />
+                <geom mesh="link5_white" material="white" class="visual" density="0" />
+              </body>
+              <geom mesh="link4_white" material="white" class="visual" density="0" />
+              <geom mesh="link4_black" material="black" class="visual" density="0" />
+            </body>
+            <geom mesh="link3_white" material="white" class="visual" density="0" />
+            <geom mesh="link3_black" material="black" class="visual" density="0" />
+          </body>
+          <geom mesh="link2_white" material="white" class="visual" density="0" />
+        </body>
+        <geom mesh="link1_white" material="white" class="visual" density="0" />
+      </body>
+      <geom mesh="link0_off_white" material="off_white" class="visual" density="0" />
+      <geom mesh="link0_black" material="black" class="visual" density="0" />
+      <geom mesh="link0_white" material="white" class="visual" density="0" />
+    </body>
+  </worldbody>
+  <equality>
+    <joint joint1="finger_joint1" joint2="finger_joint2" solimp="0.95 0.99 0.001" solref="0.005 1" />
+  </equality>
+  <actuator>
+    <position name="joint1" joint="joint1" kp="550" kv="65" forcerange="-100 100" inheritrange="1" />
+    <position name="joint2" joint="joint2" kp="550" kv="65" forcerange="-100 100" inheritrange="1" />
+    <position name="joint3" joint="joint3" kp="550" kv="65" forcerange="-100 100" inheritrange="1" />
+    <position name="joint4" joint="joint4" kp="550" kv="65" forcerange="-100 100" inheritrange="1" />
+    <position name="joint5" joint="joint5" kp="550" kv="65" forcerange="-100 100" inheritrange="1" />
+    <position name="joint6" joint="joint6" kp="550" kv="65" forcerange="-100 100" inheritrange="1" />
+    <position name="joint7" joint="joint7" kp="550" kv="65" forcerange="-100 100" inheritrange="1" />
+    <position name="gripper" joint="finger_joint1" kp="180" kv="20" forcerange="-20 20" ctrlrange="0 .04" />
+  </actuator>
+</mujoco>

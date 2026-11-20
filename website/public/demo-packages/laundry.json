@@ -1,0 +1,72 @@
+{
+  "id": "laundry",
+  "name": {
+    "en": "Laundry transfer",
+    "zh": "衣物转运"
+  },
+  "subtitle": {
+    "en": "Open the lid. Pick each garment. Load the washer.",
+    "zh": "打开机盖，逐件抓取衣物，放进洗衣机。"
+  },
+  "description": {
+    "en": "A compact top-loader, a laundry basket and a pile of clothes on the table. The wrist camera surveys the load; the gripper opens the lid by its handle, then transfers cotton T-shirts, a knit jacket and denim trousers one at a time. Fabric drapes and falls in MuJoCo.",
+    "zh": "小型波轮洗衣机、衣篮，以及桌面上的一叠衣服。腕部摄像头观察衣物，夹爪握住把手开盖，再逐件转运棉质 T 恤、针织外套和牛仔裤。布料在 MuJoCo 中垂落、折叠和下落。"
+  },
+  "icon": "Shirt",
+  "color": "#4f78a6",
+  "category": {
+    "en": "Home",
+    "zh": "家用"
+  },
+  "scope": "home",
+  "version": "0.2",
+  "publisher": {
+    "en": "NervusOS demo collection",
+    "zh": "NervusOS 演示合集"
+  },
+  "price": 0,
+  "permissions": [
+    {
+      "id": "motion",
+      "label": {
+        "en": "Move the arm and gripper",
+        "zh": "控制机械臂与夹爪"
+      }
+    },
+    {
+      "id": "wrist-camera",
+      "label": {
+        "en": "Use the simulated wrist camera",
+        "zh": "使用模拟腕部摄像头"
+      }
+    }
+  ],
+  "origin": {
+    "en": "MuJoCo deformable fabric · simulated wrist perception · planned pinch grasps. Browser concept; hardware handling needs validation.",
+    "zh": "MuJoCo 可变形布料 · 模拟腕部感知 · 规划夹取。浏览器概念演示，实际硬件处理仍需验证。"
+  },
+  "actions": [
+    {
+      "id": "load",
+      "name": {
+        "en": "Load the laundry basket",
+        "zh": "将衣篮内衣物放入洗衣机"
+      },
+      "description": {
+        "en": "Open the lid and load three basket garments, one by one.",
+        "zh": "打开机盖，逐件放入衣篮里的三件衣物。"
+      }
+    },
+    {
+      "id": "all",
+      "name": {
+        "en": "Clear the table & load all",
+        "zh": "清理桌面并放入全部衣物"
+      },
+      "description": {
+        "en": "Collect the table pile into the basket, then load all six garments.",
+        "zh": "先将桌面衣物收进衣篮，再逐件放入全部六件衣物。"
+      }
+    }
+  ]
+}

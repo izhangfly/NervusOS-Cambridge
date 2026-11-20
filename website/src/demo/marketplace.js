@@ -1,0 +1,2 @@
+export function validPurchases(value,apps){if(!value||typeof value!=='object'||Array.isArray(value))return{};return Object.fromEntries(apps.filter(a=>a.price>0&&value[a.id]?.status==='paid-demo'&&value[a.id]?.amount===a.price&&typeof value[a.id]?.receipt==='string').map(a=>[a.id,value[a.id]]))}
+export function demoReceipt(app,now=Date.now()){return{app:app.id,status:'paid-demo',amount:app.price,currency:'GBP',receipt:`DEMO-${app.id.toUpperCase()}-${now.toString(36).toUpperCase()}`,created:now,profiles:['piper','panda']}}

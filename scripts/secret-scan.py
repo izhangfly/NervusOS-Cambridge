@@ -5,7 +5,7 @@
     scripts/secret-scan.py --all    every tracked file
 
 It blocks private keys, API tokens, Syncthing API keys, hard-coded passwords, any Chinese text (the repo is
-English only), files over 50 MB, and the address of the server that relays the Mac-Dell link. That address
+English only, except the bilingual website/), files over 50 MB, and the address of the server that relays the Mac-Dell link. That address
 is never written into a file, this one included: it is read at run time from `ssh -G hetzner`, from the
 relay URLs in the local Syncthing config, and from $NERVUS_SCAN_HOSTS. Extra local-only patterns (one
 regular expression per line) can go in ~/.config/nervus-scan/extra.txt. Matches are printed masked.
@@ -110,6 +110,8 @@ def main() -> int:
         for label, rx in patterns:
             for m in rx.finditer(blob):
                 bad.append((path, blob[:m.start()].count(b"\n") + 1, label, mask(m.group(0).decode("utf-8", "replace"))))
+        if path.startswith("website/"):
+            continue  # the public NervusOS website is bilingual (English/Chinese switch): Chinese is allowed there only
         for n, line in enumerate(blob.decode("utf-8", "replace").splitlines(), 1):
             m = CJK.search(line)
             if m:

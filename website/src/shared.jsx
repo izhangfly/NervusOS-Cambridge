@@ -1,0 +1,9 @@
+import React from 'react';import {Link} from 'react-router-dom';import {ArrowUpRight,ArrowRight,ExternalLink} from 'lucide-react';import {useLanguage} from './i18n';
+export const Arrow=()=> <ArrowUpRight size={17} strokeWidth={1.6}/>;
+export function ButtonLink({to,children,blue=false,light=false,external=false}){const cl=`button ${blue?'blue':''} ${light?'light':''}`;return external?<a className={cl} href={to} target="_blank" rel="noreferrer">{children}<Arrow/></a>:<Link className={cl} to={to}>{children}<Arrow/></Link>}
+export function Eyebrow({children}){return <div className="eyebrow"><span className="small-square"/>{children}</div>}
+export function PageHead({number,title,description,children}){return <header className="page-head"><Eyebrow>{number}</Eyebrow><h1>{title}</h1><p className="lead">{description}</p>{children}</header>}
+export function Section({number,title,description,children,className=''}){return <section className={`section ${className}`}><div className="section-intro"><Eyebrow>{number}</Eyebrow><h2>{title}</h2>{description&&<p>{description}</p>}</div>{children}</section>}
+export function Source({href,children}){const{t}=useLanguage();return <a className="source" href={href} target="_blank" rel="noreferrer">{children||t('Source & implementation','来源与实现')}<ExternalLink size={13}/></a>}
+export function CallToAction(){const{t}=useLanguage();return <section className="cta"><Eyebrow>{t('BUILD WITH US','一起构建')}</Eyebrow><h2>{t('A useful task. A real robot.','具体的任务，真实的机器人。')}</h2><p>{t('We’re looking for lab teams and supervised workstation partners to test the next version against work they already do.','我们希望和实验室、有人值守的工位团队一起，把下一版系统用在他们已有的任务上。')}</p><ButtonLink blue to="/contact">{t('Start a conversation','联系团队')}</ButtonLink></section>}
+export const REPO='https://github.com/izhangfly/NervusOS-Cambridge';

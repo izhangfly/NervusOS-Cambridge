@@ -1,0 +1,79 @@
+{
+  "id": "quality",
+  "name": {
+    "en": "LineSight QC",
+    "zh": "LineSight 质检"
+  },
+  "subtitle": {
+    "en": "Inspect an indexed conveyor. Route pass and rework parts.",
+    "zh": "检查步进输送线，将合格品与返工件分流。"
+  },
+  "description": {
+    "en": "A production-line app for small component manufacturers. The conveyor advances machined housings into a wrist-camera inspection station. The app checks the visible finish marker, then moves each housing into the pass or rework lane. Sold by an example automation publisher through the app store.",
+    "zh": "面向小型零部件厂商的产线应用。输送线将加工壳体送入腕部摄像头检查工位，应用检查可见的表面标记，再把每件壳体分到合格或返工通道。演示自动化开发者通过应用商店销售此应用。"
+  },
+  "icon": "ScanLine",
+  "color": "#aa7952",
+  "category": {
+    "en": "Manufacturing",
+    "zh": "制造业"
+  },
+  "scope": "factory",
+  "version": "0.2",
+  "publisher": {
+    "en": "Northline Automation · example publisher",
+    "zh": "Northline Automation · 示例开发者"
+  },
+  "price": 49,
+  "permissions": [
+    {
+      "id": "motion",
+      "label": {
+        "en": "Move the arm and gripper",
+        "zh": "控制机械臂与夹爪"
+      }
+    },
+    {
+      "id": "wrist-camera",
+      "label": {
+        "en": "Inspect using the simulated wrist camera",
+        "zh": "通过模拟腕部摄像头检查"
+      }
+    },
+    {
+      "id": "line",
+      "label": {
+        "en": "Index the demo conveyor",
+        "zh": "控制演示步进输送线"
+      }
+    }
+  ],
+  "origin": {
+    "en": "Example commercial app · simulated finish classification and indexed belt. A demo purchase unlocks both arm profiles; no payment is collected.",
+    "zh": "示例商业应用 · 模拟表面分类与步进输送。演示购买后适用于两种机械臂，不收取实际费用。"
+  },
+  "actions": [
+    {
+      "id": "inspect",
+      "name": {
+        "en": "Inspect a batch",
+        "zh": "检查一批零件"
+      },
+      "description": {
+        "en": "Scan six housings; separate pass and rework parts.",
+        "zh": "检查六件壳体，分开合格品和返工件。"
+      }
+    },
+    {
+      "id": "new-batch",
+      "name": {
+        "en": "New batch & inspect",
+        "zh": "新批次并检查"
+      },
+      "description": {
+        "en": "Run the line with a freshly generated batch.",
+        "zh": "生成新批次，再次运行质检线。"
+      }
+    }
+  ]
+}

@@ -1,0 +1,79 @@
+{
+  "id": "assembly",
+  "name": {
+    "en": "BearingFit",
+    "zh": "BearingFit 轴承装配"
+  },
+  "subtitle": {
+    "en": "Feed a bearing. Seat it in a carrier. Advance the line.",
+    "zh": "供给轴承、放入壳体、推进产线。"
+  },
+  "description": {
+    "en": "An assembly app for manufacturers building small wheel modules. An indexed conveyor presents a housing; the arm takes a bearing from the feeder, lowers it into the locating pocket and releases it. Completed modules leave the cell on the belt. A different production task, using the same NervusOS motion interface.",
+    "zh": "面向小型轮组制造商的装配应用。步进输送线送来壳体，机械臂从供料盘取出轴承，下降到定位孔中并松开。装配完成的模块随后沿输送线离开工位。它执行另一种产线任务，使用同一个 NervusOS 运动接口。"
+  },
+  "icon": "Cog",
+  "color": "#6b79a8",
+  "category": {
+    "en": "Manufacturing",
+    "zh": "制造业"
+  },
+  "scope": "factory",
+  "version": "0.2",
+  "publisher": {
+    "en": "BenchFlow Robotics · example publisher",
+    "zh": "BenchFlow Robotics · 示例开发者"
+  },
+  "price": 79,
+  "permissions": [
+    {
+      "id": "motion",
+      "label": {
+        "en": "Move the arm and gripper",
+        "zh": "控制机械臂与夹爪"
+      }
+    },
+    {
+      "id": "wrist-camera",
+      "label": {
+        "en": "Locate parts using the simulated wrist camera",
+        "zh": "通过模拟腕部摄像头定位零件"
+      }
+    },
+    {
+      "id": "line",
+      "label": {
+        "en": "Index the demo assembly line",
+        "zh": "控制演示步进装配线"
+      }
+    }
+  ],
+  "origin": {
+    "en": "Simulated locating and bearing placement, without a press-fit force model. Demo licence runs on PiPER and Panda; no real transaction.",
+    "zh": "模拟定位和轴承放置，没有压装力模型。演示许可同时适用于 PiPER 与 Panda，不产生实际交易。"
+  },
+  "actions": [
+    {
+      "id": "assemble",
+      "name": {
+        "en": "Assemble six modules",
+        "zh": "装配六个轮组"
+      },
+      "description": {
+        "en": "Load each housing with a bearing and send it down the line.",
+        "zh": "逐件向壳体放入轴承，再沿产线送出。"
+      }
+    },
+    {
+      "id": "new-batch",
+      "name": {
+        "en": "New order & assemble",
+        "zh": "新订单并装配"
+      },
+      "description": {
+        "en": "Generate another production order and repeat the process.",
+        "zh": "生成另一份生产订单，再次执行装配流程。"
+      }
+    }
+  ]
+}

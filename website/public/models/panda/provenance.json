@@ -1,0 +1,12 @@
+{
+  "source": "https://github.com/google-deepmind/mujoco_menagerie/tree/main/franka_emika_panda",
+  "sdk": "https://github.com/frankarobotics/libfranka",
+  "ros": "https://github.com/frankarobotics/franka_ros",
+  "license": "Apache-2.0",
+  "changes": [
+    "Visual meshes merged by body/material and decimated",
+    "Browser position servo gains",
+    "Tool site",
+    "Arm contact meshes omitted; original frames, inertias and joint limits retained"
+  ]
+}

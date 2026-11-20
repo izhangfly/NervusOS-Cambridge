@@ -1,0 +1,12 @@
+{
+  "source": "https://github.com/agilexrobotics/agx_arm_sim",
+  "commit": "f8cd8b147c75d59e14f90fb0646770eefa268ed0",
+  "model": "mujoco/agilex_arm/agilex_piper/piper.xml",
+  "changes": [
+    "simplified STL visuals",
+    "no arm contact geometry",
+    "browser servo gains",
+    "added tool site"
+  ],
+  "license": "MIT as stated by source README"
+}
