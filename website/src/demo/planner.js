@@ -129,7 +129,10 @@ function softTransfer(p,job){
  const high=Math.max(.27,grasp[2]+.15),over=[grasp[0],grasp[1],high];
  // lower the hanging garment until it rests on the drum floor (or the basket floor / the clothes already there)
  // before letting go: it can't catch on the rim, and the open fingers slide out of a garment that is already supported
- const drop=job.category==='washer'?(plush?.165:.115):job.dest[2]+(plush?.13:.075),dest=[job.dest[0],job.dest[1],drop],hover=[dest[0],dest[1],high];
+ const washer=job.category==='washer',drop=washer?(plush?.165:.115):job.dest[2]+(plush?.13:.075),dest=[job.dest[0],job.dest[1]-(washer?.015:0),drop],hover=[dest[0],dest[1],high];
+ // over the washer the hand turns to lie along the hinge (fingers closing along x): a wide hand (Panda's is 20 cm)
+ // pointing across the drum would meet the open lid as it lowers
+ const put=washer?{yaw:0}:{};
  // on cloth the fingers stop 2 mm short of closed: squeezing a thin sheet all the way shut pushes it out of the pinch
  const openTo=plush?Math.min(p.profile.open,.027+.01):p.profile.open,closeTo=plush?0:.002,s=(t,en,zh,x={})=>step(t,en,zh,{yaw,openTo,closeTo,...x});
  return[
@@ -140,9 +143,9 @@ function softTransfer(p,job){
   s(grasp,plush?'Touch sensors · check the grip':'Grip pads on · touch sensors check the fabric',plush?'触觉传感器 · 确认夹持':'抓取垫启动 · 触觉确认布料',{grip:true,adhere:!plush,event:'grip-check',item:job.id,soft:true,duration:.3}),
   s([grasp[0],grasp[1],grasp[2]+.05],'Lift slowly · touch sensors watch for slip','缓慢抬起 · 触觉监测滑脱',{grip:true,adhere:!plush,event:'grip-check',item:job.id,soft:true,slip:true,duration:.6}),
   s(over,'Clear of the pile · touch check again','离开衣堆 · 再次触觉确认',{grip:true,adhere:!plush,event:'grip-check',item:job.id,soft:true,slip:true,duration:.8}),
-  s(hover,`Transfer to ${job.category}`,`转运到${job.category}`,{grip:true,adhere:!plush,duration:1.1}),
-  s(dest,'Lower the draping fabric','放低垂落的布料',{grip:true,adhere:!plush,duration:.85}),
-  s(dest,'Open the fingers · release','张开夹爪 · 松开',{event:'release',item:job.id,duration:.45}),
-  s(hover,'Retreat · check placement','抬起 · 检查放置',{duration:.9}),
+  s(hover,`Transfer to ${job.category}`,`转运到${job.category}`,{grip:true,adhere:!plush,duration:1.1,...put}),
+  s(dest,'Lower the draping fabric','放低垂落的布料',{grip:true,adhere:!plush,duration:.85,...put}),
+  s(dest,'Open the fingers · release','张开夹爪 · 松开',{event:'release',item:job.id,duration:.45,...put}),
+  s(hover,'Retreat · check placement','抬起 · 检查放置',{duration:.9,...put}),
  ];
 }

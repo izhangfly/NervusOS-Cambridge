@@ -10,7 +10,9 @@ export function createModel(engine,scene){
  world+='<body name="grasp_anchor" mocap="true" pos=".3 0 .25"><geom type="sphere" size=".001" contype="0" conaffinity="0" rgba="0 0 0 0"/></body>';
  let equality='';
  if(scene.id==='laundry'){
-  world+='<body name="washer_lid" pos=".34 .29 .132" gravcomp="1"><joint name="lid_hinge" axis="-1 0 0" range="0 1.60" damping=".04" frictionloss=".006"/><inertial pos="0 -.074 .004" mass=".045" diaginertia=".00016 .00016 .00016"/><geom type="box" pos="0 -.077 .002" size=".100 .077 .005" rgba=".88 .92 .94 1"/><geom type="capsule" fromto="-.026 -.140 .016 .026 -.140 .016" size=".005" mass=".008"/></body>';
+  // stiff hinge (0.12 N m of friction, under 1 N at the handle): the lid stays where the gripper leaves it, and a
+  // hanging garment brushing past can't swing it shut
+  world+='<body name="washer_lid" pos=".34 .29 .132" gravcomp="1"><joint name="lid_hinge" axis="-1 0 0" range="0 1.60" damping=".04" frictionloss=".12"/><inertial pos="0 -.074 .004" mass=".045" diaginertia=".00016 .00016 .00016"/><geom type="box" pos="0 -.077 .002" size=".100 .077 .005" rgba=".88 .92 .94 1"/><geom type="capsule" fromto="-.026 -.140 .016 .026 -.140 .016" size=".005" mass=".008"/></body>';
   equality+='<connect name="grasp_lid" body1="washer_lid" body2="grasp_anchor" anchor="0 -.140 .016" active="false" solref=".012 1"/>';
  }
  if(scene.conveyor){
