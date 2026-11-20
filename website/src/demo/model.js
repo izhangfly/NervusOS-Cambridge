@@ -5,7 +5,7 @@ export const nameId=(p,type,name)=>p.mj.mj_name2id(p.model,p.mj.mjtObj[type].val
 export function createModel(engine,scene){
  const{mj,xml,meshes}=engine,profile=robotProfile(engine.id),vfs=new mj.MjVFS();Object.entries(meshes).forEach(([n,b])=>vfs.addBuffer(n,b));
  let base=xml.replace('meshdir="assets"','meshdir=""');const stripped=base.replace(/<mesh\b[^>]*\/>/g,'').replace(/<geom\b[^>]*type="mesh"[^>]*\/>/g,'').replace(/<geom\b[^>]*mesh="[^"]+"[^>]*\/>/g,'');const kmodel=mj.MjModel.from_xml_string(stripped,vfs),ghost=new mj.MjData(kmodel);
- let combined=base.replace(/<option\b[^>]*\/>/,`<option integrator="${scene.items.some(x=>x.soft)?'discrete':'implicitfast'}" timestep=".004" iterations="30" tolerance="1e-7" jacobian="sparse"/>`);
+ let combined=base.replace(/<option\b[^>]*\/>/,`<option integrator="${scene.items.some(x=>x.soft)?'discrete':'implicitfast'}" timestep=".004" iterations="30" tolerance="1e-7" jacobian="sparse" cone="elliptic" impratio="10"/>`);
  let world=primitiveXML({shape:'box',size:[1.20,.94,.06],position:[.24,0,-.03],color:'#c1bdb3'})+scene.static.map(primitiveXML).join('');
  world+='<body name="grasp_anchor" mocap="true" pos=".3 0 .25"><geom type="sphere" size=".001" contype="0" conaffinity="0" rgba="0 0 0 0"/></body>';
  let equality='';
