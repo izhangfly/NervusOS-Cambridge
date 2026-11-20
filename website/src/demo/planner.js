@@ -1,4 +1,4 @@
-import{objectPosition,pinchPosition,setAwake}from'./model.js';import{BASKETS,BASKET,WASHER,DESK,classifyToy,classifyFinish}from'./scene.js';
+import{objectPosition,pinchPosition,garmentState}from'./model.js';import{BASKETS,BASKET,WASHER,DESK,classifyToy,classifyFinish}from'./scene.js';
 const text=(en,zh)=>({en,zh}),step=(target,en,zh,extra={})=>({target,label:text(en,zh),duration:.65,...extra});
 export function planJobs(p,action){
  const items=[...p.items.values()],jobs=[];
@@ -30,7 +30,7 @@ export function pickTop(p,pick){
  let best=null,bz=-1;for(const it of cands){const z=topVertex(p,it);if(z>bz){bz=z;best=it}}return best;
 }
 export function jobSteps(p,job){
- if(job.pick){const it=pickTop(p,job.pick);if(!it)return[];job.id=it.id;setAwake(p,it,true);(p.trace||(p.trace=[])).push({pick:job.pick,id:it.id,category:job.category})}
+ if(job.pick){const it=pickTop(p,job.pick);if(!it)return[];if(job.id&&job.id!==it.id)garmentState(p,p.items.get(job.id),'free');job.id=it.id;garmentState(p,it,'held');(p.trace||(p.trace=[])).push({pick:job.pick,id:it.id,category:job.category})}
  if(job.type==='lid'){
   const hinge=[.34,.29,.132],r=.14,arc=a=>[hinge[0],hinge[1]-r*Math.cos(a)+.016*Math.sin(a),hinge[2]+r*Math.sin(a)+.016*Math.cos(a)+.012];
   // The fingers close across the handle bar (along the world y axis, across its 10 mm diameter) with the
@@ -125,14 +125,16 @@ function softTransfer(p,job){
  const high=Math.max(.27,grasp[2]+.15),over=[grasp[0],grasp[1],high];
  // lower the hanging garment well into the drum before letting go, so it falls in instead of bridging the rim
  const drop=job.category==='washer'?.165:job.dest[2]+.13,dest=[job.dest[0],job.dest[1],drop],hover=[dest[0],dest[1],high];
- const openTo=plush?Math.min(p.profile.open,.027+.01):p.profile.open,s=(t,en,zh,x={})=>step(t,en,zh,{yaw,openTo,...x});
+ // on cloth the fingers stop 2 mm short of closed: squeezing a thin sheet all the way shut pushes it out of the pinch
+ const openTo=plush?Math.min(p.profile.open,.027+.01):p.profile.open,closeTo=plush?0:.002,s=(t,en,zh,x={})=>step(t,en,zh,{yaw,openTo,closeTo,...x});
  return[
   s(over,`Wrist scan · ${job.label.en}`,`腕部扫描 · ${job.label.zh}`,{vision:job.category,item:job.id,duration:.7}),
   s([grasp[0],grasp[1],grasp[2]+.05],plush?'Turn the fingers around the toy':'Find the highest fold',plush?'夹爪对准玩偶':'找到最高的褶皱',{duration:.6}),
   s(grasp,plush?'Lower around the toy':'Lower the fingertips beside the fold',plush?'下降到玩偶两侧':'指尖下降到褶皱两侧',{duration:.7}),
   s(grasp,plush?'Squeeze the soft body':'Close slowly · gather a fold of fabric',plush?'夹住柔软身体':'慢慢合拢 · 收拢布料褶皱',{grip:true,ramp:!plush,duration:plush?.55:1.1}),
   s(grasp,plush?'Touch sensors · check the grip':'Grip pads on · touch sensors check the fabric',plush?'触觉传感器 · 确认夹持':'抓取垫启动 · 触觉确认布料',{grip:true,adhere:!plush,event:'grip-check',item:job.id,soft:true,duration:.3}),
-  s(over,'Lift slowly · the fabric hangs from the pinch','缓慢抬起 · 布料从夹点垂下',{grip:true,adhere:!plush,duration:1.2}),
+  s([grasp[0],grasp[1],grasp[2]+.05],'Lift slowly · touch sensors watch for slip','缓慢抬起 · 触觉监测滑脱',{grip:true,adhere:!plush,event:'grip-check',item:job.id,soft:true,slip:true,duration:.6}),
+  s(over,'The fabric hangs from the pinch','布料从夹点垂下',{grip:true,adhere:!plush,duration:.8}),
   s(hover,`Transfer to ${job.category}`,`转运到${job.category}`,{grip:true,adhere:!plush,duration:1.1}),
   s(dest,'Lower the draping fabric','放低垂落的布料',{grip:true,adhere:!plush,duration:.85}),
   s(dest,'Open the fingers · release','张开夹爪 · 松开',{event:'release',item:job.id,duration:.45}),

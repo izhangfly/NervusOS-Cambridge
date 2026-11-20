@@ -1,5 +1,5 @@
 import loadMujoco from '@mujoco/mujoco';import wasmUrl from '@mujoco/mujoco/mujoco.wasm?url';import{robotProfile}from'./robots.js';
-export{createModel,objectPosition,pinchPosition,attach,detach,moveRigid,setAwake,settleGarments}from'./model.js';
+export{createModel,objectPosition,pinchPosition,attach,detach,moveRigid,garmentState,settleGarments}from'./model.js';
 let wasm;const models=new Map();export const HOME=robotProfile('piper').home;
 export async function loadPhysics(id='piper'){
  if(!wasm)wasm=loadMujoco({locateFile:p=>p.endsWith('.wasm')?wasmUrl:p}).catch(e=>{wasm=null;throw e});

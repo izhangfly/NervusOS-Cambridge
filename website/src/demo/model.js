@@ -45,17 +45,19 @@ export function createModel(engine,scene){
  p.initial=Array.from(data.qpos);p.ctrlInitial=Array.from(data.ctrl);p.eqInitial=Array.from(data.eq_active);
  p.dispose=()=>{data.delete();ghost.delete();model.delete();kmodel.delete()};return p;
 }
-// Garments nobody is handling sleep: gravity compensated, heavily damped, and colliding only with the world.
-// An awake garment (the one being picked, or one still falling) also collides with the other garments and
-// the gripper. So a pile keeps its layers, a pinch can only take the chosen garment, and the solver only
-// couples one garment at a time (1.5-3 ms per step instead of 12 ms with every garment touching every other).
-// Contact bits: world 1/1, hand 8/1, adhesive skin 0/16, sleeping garment 2/1, awake garment 18/11.
-export function setAwake(p,item,awake){if(!item.garment||item.awake===awake)return;const m=p.model,v=p.data.qvel,k=item.flex;item.awake=awake;item.still=0;
- m.flex_contype[k]=awake?18:2;m.flex_conaffinity[k]=awake?11:1;
- for(const b of item.bodies){m.body_gravcomp[b]=awake?0:1;const a=m.body_dofadr[b];for(let j=0;j<3;j++){m.dof_damping[a+j]=awake?0:5;if(!awake)v[a+j]=0}}}
-// put a garment back to sleep once it has lain still for half a second (and is not the one being handled)
-export function settleGarments(p,dt,active){const m=p.model,v=p.data.qvel;for(const item of p.items.values()){if(!item.awake||item.id===active)continue;let fast=0;
- for(const b of item.bodies){const a=m.body_dofadr[b];fast=Math.max(fast,Math.hypot(v[a],v[a+1],v[a+2]))}item.still=fast<.03?item.still+dt:0;if(item.still>.5)setAwake(p,item,false)}}
+// Garment states. 'sleep': nobody is handling it and it lies still, so it is gravity compensated, heavily
+// damped and collides only with the world. 'free': falling or settling, so it also collides with the other
+// garments (it lands on top of a pile instead of sinking into it). 'held': the one garment the current job
+// picks, the only one the fingers and the adhesive grip skin can touch, so a pinch takes exactly one.
+// The solver then couples one or two garments at a time: 1.5-3 ms per step instead of 12 ms with every
+// garment touching every other. Contact bits: world 1/1, hand 8/1, grip skin 0/16, garments by state below.
+const BITS={sleep:[2,1],free:[2,3],held:[18,11]};
+export function garmentState(p,item,state){if(!item?.garment||item.state===state)return;const m=p.model,v=p.data.qvel,k=item.flex;item.state=state;item.still=0;
+ [m.flex_contype[k],m.flex_conaffinity[k]]=BITS[state];const sleep=state==='sleep';
+ for(const b of item.bodies){m.body_gravcomp[b]=sleep?1:0;const a=m.body_dofadr[b];for(let j=0;j<3;j++){m.dof_damping[a+j]=sleep?5:0;if(sleep)v[a+j]=0}}}
+// a free garment goes back to sleep once it has lain still for half a second
+export function settleGarments(p,dt){const m=p.model,v=p.data.qvel;for(const item of p.items.values()){if(item.state!=='free')continue;let fast=0;
+ for(const b of item.bodies){const a=m.body_dofadr[b];fast=Math.max(fast,Math.hypot(v[a],v[a+1],v[a+2]))}item.still=fast<.03?item.still+dt:0;if(item.still>.5)garmentState(p,item,'sleep')}}
 export function objectPosition(p,item){const obj=typeof item==='string'?p.items.get(item):item;if(obj.soft){const points=p.data.flexvert_xpos,a=obj.vertexAdr*3;let pos=[0,0,0];for(let i=0;i<obj.vertexNum;i++)for(let j=0;j<3;j++)pos[j]+=points[a+i*3+j]/obj.vertexNum;return pos}return Array.from(p.data.qpos).slice(obj.qadr,obj.qadr+3)}
 export function pinchPosition(p,item){const obj=typeof item==='string'?p.items.get(item):item;if(!obj.soft)return objectPosition(p,obj);const a=obj.vertexAdr*3;let best=0;for(let i=1;i<obj.vertexNum;i++)if(p.data.flexvert_xpos[a+i*3+2]>p.data.flexvert_xpos[a+best*3+2])best=i;obj.pinch=best;return Array.from(p.data.flexvert_xpos).slice(a+best*3,a+best*3+3)}
 export function moveRigid(p,item,pos){const obj=typeof item==='string'?p.items.get(item):item;p.data.qpos.set([...pos,1,0,0,0],obj.qadr);p.data.qvel.fill(0,obj.vadr,obj.vadr+6)}
