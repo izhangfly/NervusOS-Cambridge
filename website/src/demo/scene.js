@@ -1,4 +1,4 @@
-import{garmentMesh}from'./cloth.js';
+import{garmentMesh}from'./cloth-mesh.js';
 const label=(en,zh)=>({en,zh});
 export const COLORS=['#e96b57','#d8ae41','#4b87bb','#64a47d','#a57cb7','#eb9455','#62aeb1'];
 export const BLOCKS=['cube','brick','sphere','cylinder','triangle','arch','star'];

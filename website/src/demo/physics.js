@@ -1,10 +1,10 @@
-import loadMujoco from '@mujoco/mujoco';import wasmUrl from '@mujoco/mujoco/mujoco.wasm?url';import{robotProfile}from'./robots.js';
+import loadMujoco from '@mujoco/mujoco';import wasmUrl from '@mujoco/mujoco/mujoco.wasm?url';import{robotProfile}from'./robots.js';import{loadRobotAssets}from'./assets.js';
 export{createModel,objectPosition,pinchPosition,attach,detach,moveRigid,garmentState,settleGarments}from'./model.js';
-let wasm;const models=new Map();export const HOME=robotProfile('piper').home;
+let wasm;export const HOME=robotProfile('piper').home;
+// MuJoCo (WebAssembly) plus the robot's description; runs inside a physics worker (cell.worker.js)
 export async function loadPhysics(id='piper'){
  if(!wasm)wasm=loadMujoco({locateFile:p=>p.endsWith('.wasm')?wasmUrl:p}).catch(e=>{wasm=null;throw e});
- if(!models.has(id))models.set(id,(async()=>{const mj=await wasm,profile=robotProfile(id);const response=await fetch(profile.model);if(!response.ok)throw Error('Robot model unavailable');const xml=await response.text();const names=[...new Set([...xml.matchAll(/<mesh[^>]*file="([^"]+)"/g)].map(x=>x[1]))];const meshes=Object.fromEntries(await Promise.all(names.map(async name=>{const r=await fetch(`/models/${id}/assets/${name}`);if(!r.ok)throw Error('Robot mesh unavailable');return[name,new Uint8Array(await r.arrayBuffer())]})));return{mj,id,xml,meshes}})().catch(e=>{models.delete(id);throw e}));
- return models.get(id);
+ const[mj,assets]=await Promise.all([wasm,loadRobotAssets(id)]);return{mj,...assets};
 }
 export function toolPosition(p,data=p.data,site=p.tool){return Array.from(data.site_xpos).slice(site*3,site*3+3)}
 function solve(A,b){const n=b.length,m=A.map((r,i)=>[...r,b[i]]);for(let i=0;i<n;i++){let pivot=i;for(let k=i+1;k<n;k++)if(Math.abs(m[k][i])>Math.abs(m[pivot][i]))pivot=k;[m[i],m[pivot]]=[m[pivot],m[i]];const d=m[i][i]||1e-10;for(let j=i;j<=n;j++)m[i][j]/=d;for(let k=0;k<n;k++)if(k!==i){const a=m[k][i];for(let j=i;j<=n;j++)m[k][j]-=a*m[i][j]}}return m.map(r=>r[n])}
