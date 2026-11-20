@@ -25,7 +25,7 @@ export function pickTop(p,pick){
  let best=null,bz=-1;for(const it of cands){const z=topVertex(p,it);if(z>bz){bz=z;best=it}}return best;
 }
 export function jobSteps(p,job){
- if(job.pick){const it=pickTop(p,job.pick);if(!it)return[];job.id=it.id}
+ if(job.pick){const it=pickTop(p,job.pick);if(!it)return[];job.id=it.id;(p.trace||(p.trace=[])).push({pick:job.pick,id:it.id,category:job.category})}
  if(job.type==='lid'){
   const hinge=[.34,.29,.132],r=.14,arc=a=>[hinge[0],hinge[1]-r*Math.cos(a)+.016*Math.sin(a),hinge[2]+r*Math.sin(a)+.016*Math.cos(a)+.012];
   return[step([.34,.15,.27],'Wrist camera · locate lid handle','腕部摄像头 · 定位机盖把手',{vision:'lid'}),step(arc(0),'Approach the lid handle','靠近机盖把手'),step(arc(0),'Grip the handle','夹住把手',{grip:true,event:'lid-grip',duration:.5}),...[.35,.75,1.15,1.52].map(a=>step(arc(a),'Lift the hinged lid','提起铰链机盖',{grip:true,duration:.8})),step(arc(1.52),'Release the open lid','松开已打开的机盖',{event:'lid-release',duration:.5}),step([.28,0,.30],'Move clear of the lid','离开机盖',{duration:.7})];
