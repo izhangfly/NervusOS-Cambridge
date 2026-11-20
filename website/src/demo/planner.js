@@ -68,8 +68,9 @@ export function graspPlan(p,item){
 }
 function rigidTransfer(p,job){
  const item=p.items.get(job.id),g=graspPlan(p,item),high=Math.max(.27,g.grasp[2]+.14),yaw=g.yaw;
- const release=job.category==='assembled'?job.dest[2]+.012-g.padOffset+g.height/2:job.dest[2]+.07;
- const dest=[job.dest[0],job.dest[1],release],hover=[dest[0],dest[1],high],over=[g.grasp[0],g.grasp[1],high];
+ let to=job.dest;if(job.carrier){const cp=objectPosition(p,job.carrier);to=[cp[0],cp[1],cp[2]-.004]}   // pocket floor, read from the carrier's real pose
+ const release=job.category==='assembled'?to[2]+g.height/2+.006-g.padOffset:to[2]+.07;
+ const dest=[to[0],to[1],release],hover=[dest[0],dest[1],high],over=[g.grasp[0],g.grasp[1],high];
  const s=(t,en,zh,x={})=>step(t,en,zh,{yaw,...x});
  return[
   s(over,`Wrist scan · ${job.label.en}`,`腕部扫描 · ${job.label.zh}`,{vision:job.category,item:job.id,duration:.7}),
@@ -98,7 +99,8 @@ function softTransfer(p,job){
  // fingertips press down to the fabric's mid-plane (its collision skin is 4 mm thick), so the pads touch it
  const grasp=plush?[c[0],c[1],Math.max(.006,c[2]-pad)]:[pin[0],pin[1],Math.max(low+.0005,Math.min(pin[2]-.006,low+.004))];
  const high=Math.max(.27,grasp[2]+.15),over=[grasp[0],grasp[1],high];
- const drop=job.category==='washer'?.205:job.dest[2]+.13,dest=[job.dest[0],job.dest[1],drop],hover=[dest[0],dest[1],high];
+ // lower the hanging garment well into the drum before letting go, so it falls in instead of bridging the rim
+ const drop=job.category==='washer'?.165:job.dest[2]+.13,dest=[job.dest[0],job.dest[1],drop],hover=[dest[0],dest[1],high];
  const s=(t,en,zh,x={})=>step(t,en,zh,{yaw,...x});
  return[
   s(over,`Wrist scan · ${job.label.en}`,`腕部扫描 · ${job.label.zh}`,{vision:job.category,item:job.id,duration:.7}),

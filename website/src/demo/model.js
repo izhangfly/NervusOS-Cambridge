@@ -13,7 +13,20 @@ export function createModel(engine,scene){
   world+='<body name="washer_lid" pos=".34 .29 .132" gravcomp="1"><joint name="lid_hinge" axis="-1 0 0" range="0 1.60" damping=".04" frictionloss=".006"/><inertial pos="0 -.074 .004" mass=".045" diaginertia=".00016 .00016 .00016"/><geom type="box" pos="0 -.077 .002" size=".100 .077 .005" rgba=".88 .92 .94 1"/><geom type="capsule" fromto="-.026 -.140 .016 .026 -.140 .016" size=".005" mass=".008"/></body>';
   equality+='<connect name="grasp_lid" body1="washer_lid" body2="grasp_anchor" anchor="0 -.140 .016" active="false" solref=".012 1"/>';
  }
+ if(scene.conveyor){
+  // The belt: a long plate on a slide joint, driven by a position actuator. Parts rest on it and are carried
+  // by friction; the drawn slats follow the plate's actual travel. Starts at the conveyor's left end.
+  const c=scene.conveyor;world+=`<body name="belt" pos="${v([c.left,c.y,0])}"><joint name="belt_slide" type="slide" axis="1 0 0" range="-3 3" damping="30" armature="1"/><geom name="belt_plate" type="box" size="1.45 .072 .003" pos="1.45 0 .041" friction="1.2 .01 .001" mass="4" rgba="0 0 0 0"/></body>`;
+  combined=combined.replace('</actuator>','<position name="belt_drive" joint="belt_slide" kp="5000" kv="500" ctrlrange="-3 3"/></actuator>');
+ }
  for(const item of scene.items){
+  if(item.carrier){
+   // a carrier with a square pocket (46 mm) that a 38 mm bearing drops into
+   const g=(hx,hy,hz,x,y,z)=>`<geom type="box" size="${v([hx,hy,hz])}" pos="${v([x,y,z])}" rgba="${rgba(item.color)}" friction=".9 .02 .001" mass=".025"/>`;
+   world+=`<body name="${item.id}" pos="${v(item.position)}"><freejoint name="free_${item.id}"/>${g(.0375,.0325,.003,0,0,-.007)}${g(.00725,.0325,.007,.03025,0,.003)}${g(.00725,.0325,.007,-.03025,0,.003)}${g(.023,.00475,.007,0,.02775,.003)}${g(.023,.00475,.007,0,-.02775,.003)}</body>`;
+   equality+=`<weld name="grasp_${item.id}" body1="${item.id}" body2="grasp_anchor" active="false" solref=".010 1" torquescale=".05"/>`;
+   continue;
+  }
   if(item.soft){world+=`<flexcomp name="${item.id}" type="direct" dim="2" point="${v(item.mesh.points.flat())}" element="${item.mesh.indices.join(' ')}" mass="${item.mass}" radius="${item.kind==='plush'?'.0018':'.004'}" rgba="${rgba(item.color)}"><edge equality="true" solref="${item.kind==='plush'?'.025':'.012'} 1"/><elasticity young="${item.bend}" poisson=".3" thickness="${item.kind==='plush'?'.003':'.0015'}" elastic2d="bend" damping=".003"/><contact selfcollide="none" ${item.kind==='plush'?'':'contype="2" conaffinity="1"'} friction="${item.kind==='plush'?'.7':'.42'} .015 .001" solref=".014 1"/></flexcomp>`;
    // A body per mesh vertex allows a pinch to hold one vertex while the rest of the fabric remains free.
    equality+=`<connect name="grasp_${item.id}" body1="${item.id}_0" body2="grasp_anchor" anchor="${v(item.mesh.points[0])}" active="false" solref=".008 1"/>`;
@@ -28,7 +41,7 @@ export function createModel(engine,scene){
  const data=new mj.MjData(model),p={mj,model,data,scene,profile,kin:{model:kmodel,ghost,tool:mj.mj_name2id(kmodel,mj.mjtObj.mjOBJ_SITE.value,'tool')},tool:mj.mj_name2id(model,mj.mjtObj.mjOBJ_SITE.value,'tool'),items:new Map(),xml:combined};
  data.qpos.set(profile.home);data.ctrl.set(profile.home.slice(0,profile.dof+1));ghost.qpos.set(profile.home);mj.mj_forward(model,data);mj.mj_forward(kmodel,ghost);
  for(const item of scene.items){const obj={...item,eq:nameId(p,'mjOBJ_EQUALITY','grasp_'+item.id)};if(item.soft){obj.flex=nameId(p,'mjOBJ_FLEX',item.id);obj.vertexAdr=model.flex_vertadr[obj.flex];obj.vertexNum=model.flex_vertnum[obj.flex];obj.bodies=Array.from({length:obj.vertexNum},(_,i)=>nameId(p,'mjOBJ_BODY',item.id+'_'+i));}else{obj.body=nameId(p,'mjOBJ_BODY',item.id);const j=nameId(p,'mjOBJ_JOINT','free_'+item.id);obj.qadr=model.jnt_qposadr[j];obj.vadr=model.jnt_dofadr[j];}p.items.set(item.id,obj)}
- p.adhere=['adhere_l','adhere_r'].map(n=>nameId(p,'mjOBJ_ACTUATOR',n)).filter(i=>i>=0);p.touch=['touch_l','touch_r'].map(n=>{const id=nameId(p,'mjOBJ_SENSOR',n);return id<0?-1:model.sensor_adr[id]});p.anchor=nameId(p,'mjOBJ_BODY','grasp_anchor');p.mocap=model.body_mocapid[p.anchor];if(scene.id==='laundry'){p.lid=nameId(p,'mjOBJ_BODY','washer_lid');p.lidEq=nameId(p,'mjOBJ_EQUALITY','grasp_lid');const j=nameId(p,'mjOBJ_JOINT','lid_hinge');p.lidAdr=model.jnt_qposadr[j];}
+ if(scene.conveyor){p.beltAct=nameId(p,'mjOBJ_ACTUATOR','belt_drive');p.beltAdr=model.jnt_qposadr[nameId(p,'mjOBJ_JOINT','belt_slide')]}p.adhere=['adhere_l','adhere_r'].map(n=>nameId(p,'mjOBJ_ACTUATOR',n)).filter(i=>i>=0);p.touch=['touch_l','touch_r'].map(n=>{const id=nameId(p,'mjOBJ_SENSOR',n);return id<0?-1:model.sensor_adr[id]});p.anchor=nameId(p,'mjOBJ_BODY','grasp_anchor');p.mocap=model.body_mocapid[p.anchor];if(scene.id==='laundry'){p.lid=nameId(p,'mjOBJ_BODY','washer_lid');p.lidEq=nameId(p,'mjOBJ_EQUALITY','grasp_lid');const j=nameId(p,'mjOBJ_JOINT','lid_hinge');p.lidAdr=model.jnt_qposadr[j];}
  p.initial=Array.from(data.qpos);p.ctrlInitial=Array.from(data.ctrl);p.eqInitial=Array.from(data.eq_active);
  p.dispose=()=>{data.delete();ghost.delete();model.delete();kmodel.delete()};return p;
 }
