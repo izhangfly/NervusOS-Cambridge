@@ -51,7 +51,7 @@ export class Simulator{
  advance(dt){const p=this.p;if(!p||!this.ready||this.stopped||this.paused)return;const simdt=dt*this.speed,substeps=Math.max(1,Math.round(simdt/.004));
  for(let n=0;n<substeps;n++){
   const a=this.action;if(a){a.elapsed+=.004;const job=a.job;if(job.type==='index'||job.type==='outfeed'){let x=Math.min(1,a.elapsed/a.duration);x=x*x*(3-2*x);p.data.ctrl[p.beltAct]=-(a.start+(a.target-a.start)*x);
-  }else{const index=a.steps.findIndex(s=>a.elapsed<=s.end),s=a.steps[index<0?a.steps.length-1:index];let x=Math.max(0,Math.min(1,(a.elapsed-s.start)/s.duration));x=x*x*(3-2*x);for(let i=0;i<p.profile.dof;i++)p.data.ctrl[i]=s.from[i]+(s.to[i]-s.from[i])*x;p.data.ctrl[p.profile.gripper]=s.grip?(s.ramp?p.profile.open*(1-x):0):p.profile.open;for(const id of p.adhere||[])p.data.ctrl[id]=s.adhere?1:0;
+  }else{const index=a.steps.findIndex(s=>a.elapsed<=s.end),s=a.steps[index<0?a.steps.length-1:index];let x=Math.max(0,Math.min(1,(a.elapsed-s.start)/s.duration));x=x*x*(3-2*x);for(let i=0;i<p.profile.dof;i++)p.data.ctrl[i]=s.from[i]+(s.to[i]-s.from[i])*x;p.data.ctrl[p.profile.gripper]=s.grip?(s.ramp?p.profile.open*(1-x):0):(s.openTo??p.profile.open);for(const id of p.adhere||[])p.data.ctrl[id]=s.adhere?1:0;
    if(a.elapsed>s.start+s.duration*.82&&!a.events.has(s.start)){a.events.add(s.start);if(s.vision)this.onUpdate({vision:s.vision,item:s.item||null});if(s.event)this.event(s);if(a.replan){const r=a.replan;a.replan=null;if(r==='skip'){this.counts.missed=(this.counts.missed||0)+1;a.retries=0;a.jobIndex++}this.nextJob();break}}
    this.currentStep=s.label;
   }}

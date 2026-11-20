@@ -61,17 +61,26 @@ export function graspPlan(p,item){
  if(item.proxy==='box'){
   const [sx,sy,sz]=item.size,opts=[[ax,sx],[ay,sy]].filter(([,w])=>w<=gap).sort((a,b)=>a[1]-b[1]);
   const [axis,w]=opts[0]||[ax,Math.min(sx,sy)];yaw=Math.atan2(axis[1],axis[0]);width=w;height=sz;
- }else{const r=item.proxy==='sphere'?item.size[0]*.56:item.size[0];width=2*r;height=item.proxy==='sphere'?2*r:item.size[2];yaw=Math.atan2(c[1],c[0])+Math.PI/2}
+ }else{
+  // round part: any angle grips it, so choose the one whose finger line passes furthest from its neighbours
+  const r=item.proxy==='sphere'?item.size[0]*.56:item.size[0];width=2*r;height=item.proxy==='sphere'?2*r:item.size[2];
+  const others=[...p.items.values()].filter(o=>o!==item&&!o.soft).map(o=>objectPosition(p,o)).filter(o=>Math.hypot(o[0]-c[0],o[1]-c[1])<.16);
+  const base=Math.atan2(c[1],c[0])+Math.PI/2;let best=-1;yaw=base;
+  for(let k=0;k<12;k++){const t=base+k*Math.PI/12,ux=Math.cos(t),uy=Math.sin(t);let clear=1;
+   for(const o of others){const dx=o[0]-c[0],dy=o[1]-c[1],along=Math.abs(dx*ux+dy*uy),off=Math.abs(-dx*uy+dy*ux);if(along<.08)clear=Math.min(clear,off)}
+   if(clear>best+1e-4){best=clear;yaw=t}}
+ }
  // pad centre at the part's middle; the PiPER's pads sit 15 mm behind its fingertips (the tool point)
  const padOffset=p.profile.id==='piper'?.015:0,z=Math.max(.006,c[2]-padOffset);
- return{center:c,grasp:[c[0],c[1],z],yaw,width,height,padOffset};
+ // open only as wide as the part needs, so the fingers don't land on its neighbours
+ return{center:c,grasp:[c[0],c[1],z],yaw,width,height,padOffset,openTo:Math.min(p.profile.open,width/2+.01)};
 }
 function rigidTransfer(p,job){
  const item=p.items.get(job.id),g=graspPlan(p,item),high=Math.max(.27,g.grasp[2]+.14),yaw=g.yaw;
  let to=job.dest;if(job.carrier){const cp=objectPosition(p,job.carrier);to=[cp[0],cp[1],cp[2]-.004]}   // pocket floor, read from the carrier's real pose
  const release=job.category==='assembled'?to[2]+g.height/2+.006-g.padOffset:to[2]+.07;
  const dest=[to[0],to[1],release],hover=[dest[0],dest[1],high],over=[g.grasp[0],g.grasp[1],high];
- const s=(t,en,zh,x={})=>step(t,en,zh,{yaw,...x});
+ const s=(t,en,zh,x={})=>step(t,en,zh,{yaw,openTo:g.openTo,...x});
  return[
   s(over,`Wrist scan · ${job.label.en}`,`腕部扫描 · ${job.label.zh}`,{vision:job.category,item:job.id,duration:.7}),
   s([g.grasp[0],g.grasp[1],g.grasp[2]+.05],'Turn the fingers across two flat faces','转动夹爪对准两个平行面',{duration:.6}),
@@ -101,7 +110,7 @@ function softTransfer(p,job){
  const high=Math.max(.27,grasp[2]+.15),over=[grasp[0],grasp[1],high];
  // lower the hanging garment well into the drum before letting go, so it falls in instead of bridging the rim
  const drop=job.category==='washer'?.165:job.dest[2]+.13,dest=[job.dest[0],job.dest[1],drop],hover=[dest[0],dest[1],high];
- const s=(t,en,zh,x={})=>step(t,en,zh,{yaw,...x});
+ const s=(t,en,zh,x={})=>step(t,en,zh,{yaw,openTo:g.openTo,...x});
  return[
   s(over,`Wrist scan · ${job.label.en}`,`腕部扫描 · ${job.label.zh}`,{vision:job.category,item:job.id,duration:.7}),
   s([grasp[0],grasp[1],grasp[2]+.05],plush?'Turn the fingers around the toy':'Find the highest fold',plush?'夹爪对准玩偶':'找到最高的褶皱',{duration:.6}),
