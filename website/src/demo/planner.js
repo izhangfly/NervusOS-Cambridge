@@ -55,20 +55,26 @@ export function resultText(p,counts){switch(p.scene.id){case'laundry':return tex
 // No weld joint: the fingers turn across two parallel faces, close with the gripper's limited force,
 // and friction at the pads carries the part. Touch sensors in both pads confirm the grip.
 const quatAxes=(w,x,y,z)=>[[1-2*(y*y+z*z),2*(x*y+w*z),2*(x*z-w*y)],[2*(x*y-w*z),1-2*(x*x+z*z),2*(y*z+w*x)],[2*(x*z+w*y),2*(y*z-w*x),1-2*(x*x+y*y)]];
+// How much room the two open fingers have at a candidate angle: the distance from the finger blocks to
+// the nearest other part or fixed obstacle taller than the grasp (basket walls, washer). Higher is better.
+export function fingerClearance(p,item,c,yaw,open){
+ const ux=Math.cos(yaw),uy=Math.sin(yaw),reach=open+.026,half=.03;let clear=.2;
+ for(const o of p.items.values()){if(o===item||o.soft)continue;const q=objectPosition(p,o),dx=q[0]-c[0],dy=q[1]-c[1],along=Math.abs(dx*ux+dy*uy),off=Math.abs(-dx*uy+dy*ux);const rad=Math.max(o.size[0],o.size[1])/2;if(along<reach+rad)clear=Math.min(clear,Math.max(0,off-half-rad))}
+ for(const b of p.scene.static||[]){if(b.shape!=='box')continue;const top=b.position[2]+b.size[2]/2;if(top<c[2]-.005)continue;
+  for(const sgn of[1,-1]){const fx=c[0]+sgn*reach*ux,fy=c[1]+sgn*reach*uy,gx=Math.abs(fx-b.position[0])-b.size[0]/2,gy=Math.abs(fy-b.position[1])-b.size[1]/2;clear=Math.min(clear,Math.max(0,Math.hypot(Math.max(gx,0),Math.max(gy,0))-.012))}}
+ return clear;
+}
 export function graspPlan(p,item){
  const q=Array.from(p.data.qpos).slice(item.qadr,item.qadr+7),c=q.slice(0,3),[ax,ay]=quatAxes(q[3],q[4],q[5],q[6]),gap=2*p.profile.open-.008;
  let yaw,width,height;
  if(item.proxy==='box'){
-  const [sx,sy,sz]=item.size,opts=[[ax,sx],[ay,sy]].filter(([,w])=>w<=gap).sort((a,b)=>a[1]-b[1]);
+  const [sx,sy,sz]=item.size,opts=[[ax,sx],[ay,sy]].filter(([,w])=>w<=gap).sort((a,b)=>(fingerClearance(p,item,c,Math.atan2(b[0][1],b[0][0]),b[1]/2+.01)-fingerClearance(p,item,c,Math.atan2(a[0][1],a[0][0]),a[1]/2+.01))||a[1]-b[1]);
   const [axis,w]=opts[0]||[ax,Math.min(sx,sy)];yaw=Math.atan2(axis[1],axis[0]);width=w;height=sz;
  }else{
   // round part: any angle grips it, so choose the one whose finger line passes furthest from its neighbours
   const r=item.proxy==='sphere'?item.size[0]*.56:item.size[0];width=2*r;height=item.proxy==='sphere'?2*r:item.size[2];
-  const others=[...p.items.values()].filter(o=>o!==item&&!o.soft).map(o=>objectPosition(p,o)).filter(o=>Math.hypot(o[0]-c[0],o[1]-c[1])<.16);
   const base=Math.atan2(c[1],c[0])+Math.PI/2;let best=-1;yaw=base;
-  for(let k=0;k<12;k++){const t=base+k*Math.PI/12,ux=Math.cos(t),uy=Math.sin(t);let clear=1;
-   for(const o of others){const dx=o[0]-c[0],dy=o[1]-c[1],along=Math.abs(dx*ux+dy*uy),off=Math.abs(-dx*uy+dy*ux);if(along<.08)clear=Math.min(clear,off)}
-   if(clear>best+1e-4){best=clear;yaw=t}}
+  for(let k=0;k<12;k++){const t=base+k*Math.PI/12,cl=fingerClearance(p,item,c,t,r+.01);if(cl>best+1e-4){best=cl;yaw=t}}
  }
  // pad centre at the part's middle; the PiPER's pads sit 15 mm behind its fingertips (the tool point)
  const padOffset=p.profile.id==='piper'?.015:0,z=Math.max(.006,c[2]-padOffset);
