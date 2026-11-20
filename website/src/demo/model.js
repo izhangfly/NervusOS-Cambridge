@@ -14,7 +14,7 @@ export function createModel(engine,scene){
   equality+='<connect name="grasp_lid" body1="washer_lid" body2="grasp_anchor" anchor="0 -.140 .016" active="false" solref=".012 1"/>';
  }
  for(const item of scene.items){
-  if(item.soft){world+=`<flexcomp name="${item.id}" type="direct" dim="2" point="${v(item.mesh.points.flat())}" element="${item.mesh.indices.join(' ')}" mass="${item.mass}" radius=".0018" rgba="${rgba(item.color)}"><edge equality="true" solref="${item.kind==='plush'?'.025':'.012'} 1"/><elasticity young="${item.bend}" poisson=".3" thickness="${item.kind==='plush'?'.003':'.0015'}" elastic2d="bend" damping=".003"/><contact selfcollide="none" friction=".7 .015 .001" solref=".014 1"/></flexcomp>`;
+  if(item.soft){world+=`<flexcomp name="${item.id}" type="direct" dim="2" point="${v(item.mesh.points.flat())}" element="${item.mesh.indices.join(' ')}" mass="${item.mass}" radius="${item.kind==='plush'?'.0018':'.0026'}" rgba="${rgba(item.color)}"><edge equality="true" solref="${item.kind==='plush'?'.025':'.012'} 1"/><elasticity young="${item.bend}" poisson=".3" thickness="${item.kind==='plush'?'.003':'.0015'}" elastic2d="bend" damping=".003"/><contact selfcollide="none" friction="${item.kind==='plush'?'.7':'.42'} .015 .001" solref=".014 1"/></flexcomp>`;
    // A body per mesh vertex allows a pinch to hold one vertex while the rest of the fabric remains free.
    equality+=`<connect name="grasp_${item.id}" body1="${item.id}_0" body2="grasp_anchor" anchor="${v(item.mesh.points[0])}" active="false" solref=".008 1"/>`;
   }else{

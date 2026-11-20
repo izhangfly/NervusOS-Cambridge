@@ -1,10 +1,13 @@
-import{objectPosition,pinchPosition}from'./model.js';import{BASKETS,BASKET,WASHER,classifyToy,classifyFinish}from'./scene.js';
+import{objectPosition,pinchPosition}from'./model.js';import{BASKETS,BASKET,WASHER,DESK,classifyToy,classifyFinish}from'./scene.js';
 const text=(en,zh)=>({en,zh}),step=(target,en,zh,extra={})=>({target,label:text(en,zh),duration:.65,...extra});
 export function planJobs(p,action){
  const items=[...p.items.values()],jobs=[];
  if(p.scene.id==='laundry'){
-  jobs.push({type:'lid'});if(action.id==='all')for(const item of items.filter(x=>x.area==='desk').reverse())jobs.push({type:'transfer',id:item.id,dest:[...BASKET],category:'basket',label:text('Collect table garment','收集桌面衣物')});
-  for(const item of items.filter(x=>action.id==='all'||x.area==='basket').reverse())jobs.push({type:'transfer',id:item.id,dest:[WASHER[0],WASHER[1],.025],category:'washer',label:text('Load garment','放入衣物')});
+  // Garments are chosen when each job starts, never in advance: always the one on top of its pile
+  // (pulling one from underneath drags the rest along), and never one that is already in the washer.
+  jobs.push({type:'lid'});
+  if(action.id==='all')for(const _ of items.filter(x=>x.area==='desk'))jobs.push({type:'transfer',pick:'desk',dest:[...BASKET],category:'basket',label:text('Collect table garment','收集桌面衣物')});
+  for(const _ of items.filter(x=>action.id==='all'||x.area==='basket'))jobs.push({type:'transfer',pick:action.id==='all'?'any':'basket',dest:[WASHER[0],WASHER[1],.025],category:'washer',label:text('Load garment','放入衣物')});
  }else if(p.scene.id==='kitting'){
   // Classify from observed demo features rather than storing a route in each app.
   for(const item of items){const category=classifyToy(item);jobs.push({type:'transfer',id:item.id,category,dest:BASKETS[category],label:text({blocks:'Block',cars:'Toy car',plush:'Soft animal'}[category],{blocks:'积木',cars:'玩具汽车',plush:'柔软玩偶'}[category])})}
@@ -13,7 +16,16 @@ export function planJobs(p,action){
  else{jobs.push({type:'legacy',action})}
  return jobs;
 }
+const near=(pos,c,r)=>Math.hypot(pos[0]-c[0],pos[1]-c[1])<r;
+export const inWasher=(p,item)=>{const c=objectPosition(p,item);return near(c,WASHER,.1)&&c[2]<.2};
+function topVertex(p,item){const a=item.vertexAdr*3,f=p.data.flexvert_xpos;let z=-1;for(let i=0;i<item.vertexNum;i++)z=Math.max(z,f[a+i*3+2]);return z}
+// the garment on top of the chosen pile, or null when that pile is empty
+export function pickTop(p,pick){
+ const cands=[...p.items.values()].filter(it=>it.soft&&!inWasher(p,it)&&(pick==='any'||(pick==='desk'?near(objectPosition(p,it),DESK,.13):near(objectPosition(p,it),BASKET,.14))));
+ let best=null,bz=-1;for(const it of cands){const z=topVertex(p,it);if(z>bz){bz=z;best=it}}return best;
+}
 export function jobSteps(p,job){
+ if(job.pick){const it=pickTop(p,job.pick);if(!it)return[];job.id=it.id}
  if(job.type==='lid'){
   const hinge=[.34,.29,.132],r=.14,arc=a=>[hinge[0],hinge[1]-r*Math.cos(a)+.016*Math.sin(a),hinge[2]+r*Math.sin(a)+.016*Math.cos(a)+.012];
   return[step([.34,.15,.27],'Wrist camera · locate lid handle','腕部摄像头 · 定位机盖把手',{vision:'lid'}),step(arc(0),'Approach the lid handle','靠近机盖把手'),step(arc(0),'Grip the handle','夹住把手',{grip:true,event:'lid-grip',duration:.5}),...[.35,.75,1.15,1.52].map(a=>step(arc(a),'Lift the hinged lid','提起铰链机盖',{grip:true,duration:.8})),step(arc(1.52),'Release the open lid','松开已打开的机盖',{event:'lid-release',duration:.5}),step([.28,0,.30],'Move clear of the lid','离开机盖',{duration:.7})];

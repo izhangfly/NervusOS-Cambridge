@@ -1,3 +1,4 @@
+import{garmentMesh}from'./cloth.js';
 const label=(en,zh)=>({en,zh});
 export const COLORS=['#e96b57','#d8ae41','#4b87bb','#64a47d','#a57cb7','#eb9455','#62aeb1'];
 export const BLOCKS=['cube','brick','sphere','cylinder','triangle','arch','star'];
@@ -8,19 +9,7 @@ function basket(id,pos,size=[.135,.13,.075],color='#bed0be'){
  const[x,y,z]=pos,[w,d,h]=size;
  return[box(id+'-floor',[w,d,.009],[x,y,z],color),box(id+'-front',[w,.006,h],[x,y-d/2,z+h/2],color),box(id+'-back',[w,.006,h],[x,y+d/2,z+h/2],color),box(id+'-left',[.006,d,h],[x-w/2,y,z+h/2],color),box(id+'-right',[.006,d,h],[x+w/2,y,z+h/2],color)];
 }
-export function garment(kind,position,size=.13){
- const points=[],uv=[],indices=[],map=new Map(),N=6;
- const inside=(x,y)=>kind==='trousers'?!(y<.48&&Math.abs(x-.5)<.11):((Math.abs(x-.5)<.29&&y<.83)||(y>=.63&&y<=.89))&&!(y>.76&&Math.abs(x-.5)<.13);
- for(let j=0;j<=N;j++)for(let i=0;i<=N;i++){
-  const x=i/N,y=j/N;if(!inside(x,y))continue;map.set(i+','+j,points.length);uv.push(x,y);
-  points.push([position[0]+(x-.5)*size,position[1]+(y-.5)*size*1.12,position[2]+.005*Math.sin(i*1.7+j*.9)]);
- }
- for(let j=0;j<N;j++)for(let i=0;i<N;i++){
-  const a=map.get(i+','+j),b=map.get((i+1)+','+j),c=map.get(i+','+(j+1)),d=map.get((i+1)+','+(j+1));
-  if(a!==undefined&&b!==undefined&&c!==undefined)indices.push(a,b,c);if(b!==undefined&&c!==undefined&&d!==undefined)indices.push(b,d,c);
- }
- return{points,indices,uv};
-}
+export function garment(kind,position,size=.13){return garmentMesh(kind,position,size)}
 function plush(position){
  const points=[],uv=[],indices=[],segments=8,rings=4,r=.027;
  points.push([position[0],position[1],position[2]+r]);uv.push(.5,1);
