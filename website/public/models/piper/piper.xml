@@ -86,7 +86,7 @@
   </contact>
 
   <equality>
-    <joint joint1="joint8" joint2="joint7" polycoef="0 -1 0 0 0" />
+    <joint joint1="joint8" joint2="joint7" polycoef="0 -1 0 0 0" solimp="0.95 0.99 0.001" solref="0.004 1" />
   </equality>
 
   <actuator>
