@@ -19,7 +19,7 @@ capability calls each robot's provider turns into its own joint commands).
 | 7 | Physical conveyor (driven belt body, friction carries parts), carriers with a bearing pocket | done |
 | 8 | Physical cloth pinch and washer lid opened by gripping its handle | done; laundry layout and garment states reworked (below) |
 | 9 | Fleet view: PiPER and Panda workcells in one scene, install once, run on both, capability trace | done |
-| 10 | Rebuild for ianzhyy.com and the NervusOS VPS site, verify in Chromium and WebKit | todo |
+| 10 | Rebuild for ianzhyy.com and the NervusOS VPS site, verify in Chromium and WebKit | done, deployed 21 November 2026 |
 
 ## Decisions and measurements
 
@@ -124,3 +124,16 @@ physics meshes, and incomplete arm collision geometry. The demo is not hardware 
   iPhone width inspected six parts on each profile, with no page errors, failed requests, horizontal
   overflow or overlapping fleet controls/wrist camera. Both checks also exercised pause/resume,
   stop/re-arm, switching between fleet and one arm, and leaving the page to dispose workers.
+
+- Live checks found and corrected two final regressions. Panda's 3 mm finger stop left a gap wider
+  than the flat fabric contact thickness; the 2 mm stop retains the cloth through wrist turns.
+  The live WebKit phone run then loaded three garments on each arm, with measured drum counts.
+  Pause now treats a pending worker start as running, matching the interface while reset messages
+  briefly report idle. A regression test covers that transition.
+- Final verification: all 31 Node tests passed and both production builds completed. Published
+  WebKit phone and Chromium desktop checks passed pause/resume, stop/re-arm, fleet switching,
+  replay and page disposal, with no page errors or failed requests.
+- Both sites were deployed on 21 November 2026. The standalone deployment verified 132 file hashes,
+  retained old hashed assets and checked the contact service health. The portfolio release uses
+  `assets-20261121182510`; its files match the local build and earlier immutable asset folders remain
+  available to open tabs. Source and release notes are pushed to NervusOS-Cambridge.

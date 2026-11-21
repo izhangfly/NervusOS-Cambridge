@@ -28,7 +28,7 @@ Settings links to [libfranka](https://github.com/frankarobotics/libfranka), [fra
 
 ## Verification
 
-`npm run build` builds the production bundle; `npm test` runs 30 tests covering app definitions, household/factory metadata, random scene composition, local receipts, both robot profiles, legacy attachment constraints and worker-cell control regressions, closed-lid clearance and handle opening, cloth draping, the server and mocked contact forwarding.
+`npm run build` builds the production bundle; `npm test` runs 31 tests covering app definitions, household/factory metadata, random scene composition, local receipts, both robot profiles, legacy attachment constraints and worker-cell control regressions, closed-lid clearance and handle opening, cloth draping, the server and mocked contact forwarding.
 
 Browser verification checks cancellation and purchases of both factory apps, permissions, installations, pause/resume/stop/rearm, profile switching with retained licences, seven Panda sliders, persistence, English/Chinese and layouts at 390/768 pixels. Full task runs on both arms check finite physics and actual receiving positions: three or six laundry garments, seven blocks/three cars/three animals, a six-part QC batch and six assembly modules.
 
