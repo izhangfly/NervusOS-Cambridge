@@ -1,4 +1,6 @@
 // Fleet controls follow every visible cell, while telemetry follows the selected arm.
+// Start resets emit idle before the worker reports running; the UI already shows the pending task.
+export const fleetPauseIntent=cells=>cells.some(c=>c.starting||c.stats.status==='running');
 export function fleetState(cells,focus,{ready=true,stopped=false}={}){
  const focused=cells.find(c=>c.id===focus)?.stats||{},states=cells.map(c=>c.stats.status||'loading');
  const status=stopped?'stopped':states.includes('error')?'error':!ready?'loading':states.includes('running')?'running':states.includes('paused')?'paused':states.every(s=>s==='complete')?'complete':focused.status||'idle';

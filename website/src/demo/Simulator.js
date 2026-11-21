@@ -1,5 +1,5 @@
 import * as THREE from'three';import{OrbitControls}from'three/examples/jsm/controls/OrbitControls.js';import{STLLoader}from'three/examples/jsm/loaders/STLLoader.js';
-import{fleetState}from'./runtime.js';
+import{fleetState,fleetPauseIntent}from'./runtime.js';
 import{robotProfile}from'./robots';import{loadRobotAssets}from'./assets';import{GarmentSurface}from'./cloth';import{washerLid,primitive,softMesh,toyMesh,plushDetail,loadProps,propsView,disposeGroup}from'./view';
 // The page side of the demo. Each robot's workcell (physics, planning, sensing) runs in its own worker
 // (cell.worker.js); this class only draws what the workers report. One arm, or the fleet: PiPER and Panda
@@ -59,7 +59,7 @@ export class Simulator{
  // ------------------------------------------------------------------ public controls (the desktop app calls these)
  setApp(app,force=false){if(!app)return;const same=this.activeApp?.id===app.id;this.activeApp=app;if(same&&!force)return;this.ready=false;this.seed=newSeed();this.trace=[];this.drawTrace();for(const c of this.cells.values()){c.revision++;c.starting=false;c.stats={status:'loading'};if(c.loaded)this.post(c,{type:'setApp',app:app.id,force,seed:this.seed})}this.publish()}
  start(action){if(!this.activeApp?.actions.some(a=>a.id===action?.id)||!this.ready||this.stopped||[...this.cells.values()].some(c=>['running','paused'].includes(c.stats.status)))return false;this.trace=[];this.drawTrace();for(const c of this.cells.values()){c.starting=true;c.stats.status='running'}this.publish();this.all({type:'start',action:action.id,seed:newSeed()});return true}
- pause(){const paused=[...this.cells.values()].some(c=>c.stats.status==='running');this.all({type:'call',method:'pause',args:[paused]})}
+ pause(){this.all({type:'call',method:'pause',args:[fleetPauseIntent([...this.cells.values()])]})}
  stop(){this.stopped=true;this.publish();this.all({type:'call',method:'stop'})}
  rearm(){this.stopped=false;this.all({type:'call',method:'rearm'})}
  reset(){this.all({type:'call',method:'reset'})}
