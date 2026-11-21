@@ -5,9 +5,9 @@
 // other while they sleep (see garmentState in model.js). Rendering: a fine surface (R times denser) interpolated from the simulated
 // points every frame with a Catmull-Rom patch, so the fabric bends smoothly instead of showing the
 // coarse triangles, plus a painted garment texture (collar, hems, seams, pockets, zip) and a woven
-// bump map. The simulation stays light enough for phones; what you see is a real piece of clothing.
+// bump map. The simulation stays light enough for phones; the rendered surface retains the garment silhouette and thickness.
 import * as THREE from 'three';
-import { SHAPES, garmentMesh } from './cloth-mesh.js';
+import { SHAPES, garmentMesh, garmentOutline } from './cloth-mesh.js';
 export { garmentMesh };
 
 // Catmull-Rom weights for t in [0,1] over four control points.
@@ -18,7 +18,7 @@ function crWeights(t) {
 
 // The rendered garment: a fine surface driven by the simulated vertices.
 export class GarmentSurface {
-  constructor(item, R = 4) {
+  constructor(item, R = 8) {
     const { grid } = item.mesh, { N } = grid, shape = SHAPES[grid.kind] || SHAPES.tshirt, M = N * R, G = N + 1;
     this.item = item; this.N = N; this.G = G;
     this.index = Int32Array.from(grid.index);
@@ -43,24 +43,15 @@ export class GarmentSurface {
       }
       this.fill.push(rule);
     }
-    // fine vertices inside the outline, each with its 4x4 stencil on the grid
-    const verts = [], uvs = [], fine = new Int32Array((M + 1) * (M + 1)).fill(-1), stencil = [];
-    for (let b = 0; b <= M; b++) for (let a = 0; a <= M; a++) {
-      const u = a / M, v = b / M; if (!shape(u, v)) continue;
-      fine[b * (M + 1) + a] = verts.length / 3; verts.push(0, 0, 0); uvs.push(u, v);
-      const x = u * N, y = v * N, i0 = Math.min(N - 1, Math.floor(x)), j0 = Math.min(N - 1, Math.floor(y));
-      const wx = crWeights(x - i0), wy = crWeights(y - j0), ids = [], ws = [];
-      for (let q = 0; q < 4; q++) for (let r = 0; r < 4; r++) {
-        const gi = Math.max(0, Math.min(N, i0 - 1 + r)), gj = Math.max(0, Math.min(N, j0 - 1 + q));
-        ids.push(gj * G + gi); ws.push(wx[r] * wy[q]);
-      }
-      stencil.push(ids, ws);
-    }
-    const tris = [], fi = (a, b) => fine[b * (M + 1) + a];
-    for (let b = 0; b < M; b++) for (let a = 0; a < M; a++) {
-      const p = fi(a, b), q = fi(a + 1, b), r = fi(a, b + 1), s = fi(a + 1, b + 1);
-      if (p >= 0 && q >= 0 && r >= 0) tris.push(p, q, r);
-      if (q >= 0 && s >= 0 && r >= 0) tris.push(q, s, r);
+    // Fine silhouette vertices, including exact clipped outline intersections, with 4x4 grid stencils.
+    const {uv:uvs,indices:tris}=garmentOutline(grid.kind,M),verts=new Array(uvs.length/2*3).fill(0),stencil=[];
+    for(let k=0;k<uvs.length;k+=2){
+      const u=uvs[k],v=uvs[k+1],x=u*N,y=v*N,i0=Math.min(N-1,Math.floor(x)),j0=Math.min(N-1,Math.floor(y));
+      const wx=crWeights(x-i0),wy=crWeights(y-j0),ids=[],ws=[];
+      for(let q=0;q<4;q++)for(let r=0;r<4;r++){
+        const gi=Math.max(0,Math.min(N,i0-1+r)),gj=Math.max(0,Math.min(N,j0-1+q));
+        ids.push(gj*G+gi);ws.push(wx[r]*wy[q]);
+      }stencil.push(ids,ws);
     }
     this.stencil = stencil; this.full = new Float64Array(G * G * 3);
     // Real cloth has thickness: draw a front face, a back face (offset along the normal) and the rim

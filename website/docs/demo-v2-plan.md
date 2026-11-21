@@ -12,25 +12,25 @@ capability calls each robot's provider turns into its own joint commands).
 |---|---|---|
 | 1 | Garments: coarse MuJoCo flex, fine smooth render surface, painted garment textures | done (`cloth.js`) |
 | 2 | Laundry: pick the top garment at run time, skip loaded ones; garments sleep until handled (see below) | done |
-| 3 | Conveyor beside the arm; one belt position moves every part and the belt surface | done (kinematic), being made physical (step 7) |
+| 3 | Conveyor beside the arm; one belt position moves every part and the belt surface | done (actuated belt and friction transport) |
 | 4 | Robot contact: finger pads, palm, touch sensors, elliptic friction cones | done (both models; PiPER finger coupling stiffened) |
 | 5 | IK with gripper twist (yaw), so the fingers close across two parallel faces | done (`inverseKinematics(p,target,seed,yaw)`, ~2 ms) |
-| 6 | Physical pick and place: squeeze with limited force, check touch sensors, retry, no weld joints | rigid parts done (`rigidTransfer` in planner.js); soft items next |
+| 6 | Physical pick and place: squeeze with limited force, check touch sensors, retry, no weld joints | done: rigid friction grasps; simplified adhesive cloth pinches |
 | 7 | Physical conveyor (driven belt body, friction carries parts), carriers with a bearing pocket | done |
 | 8 | Physical cloth pinch and washer lid opened by gripping its handle | done; laundry layout and garment states reworked (below) |
-| 9 | Fleet view: PiPER and Panda workcells in one scene, install once, run on both, capability trace | todo |
+| 9 | Fleet view: PiPER and Panda workcells in one scene, install once, run on both, capability trace | done |
 | 10 | Rebuild for ianzhyy.com and the NervusOS VPS site, verify in Chromium and WebKit | todo |
 
 ## Decisions and measurements
 
 - Physics cost per 4 ms step, laundry scene, before any change: 27.7 ms (969 DoF). Garment-garment contact
   was the cost: 7x7-grid garments 15.6 ms with it, 5.5 ms without; 6x6 grid without it 3.4 ms. Garments now
-  collide with the world, the gripper and the washer, not with each other (`contype="2" conaffinity="1"`).
-- Both robot models shipped visual-only geometry (all `contype="0"`). Finger axes: PiPER fingers close along
+  use selective contact states, described below, to keep browser cost bounded.
+- Originally, both robot models shipped visual-only geometry (all `contype="0"`). Finger axes: PiPER fingers close along
   the tool site's y axis (link6 frame), fingertips at the tool site; Panda follows MuJoCo Menagerie (pads
   `size .0085 .004 .0085` at `0 .0055 .0445` in each finger frame, closing along the hand's y axis).
-- Collision groups: world and rigid parts `contype 1 / conaffinity 1`; garments `2 / 1` (world yes, each other
-  no); finger pads and palm `1 / 1`.
+- Collision groups: world and rigid parts `1/1`, finger pads and palm `8/1`, grip skin `0/16`;
+  garment states select the contact masks described below.
 - A grasp is valid only when both finger-pad touch sensors read above a threshold after closing; otherwise the
   job re-plans from the object's current pose (up to two retries) and the trace says why.
 
@@ -63,3 +63,64 @@ capability calls each robot's provider turns into its own joint commands).
   two free garments resting on each other jitter slightly and otherwise never slept (8.7 ms per step).
 - Verified 20 November 2026 in Chromium: PiPER "Clear the table & load all" six of six in the drum, lid 1.24 rad;
   PiPER and Panda "Load the laundry basket" three of three; idle step 1.6 ms afterwards.
+
+## Release review (21 November 2026)
+
+- Physics and planning live in `Cell` and `cell.worker.js`; `Simulator` draws worker snapshots. The page no
+  longer executes MuJoCo steps. Independent workers let the browser schedule the two simulations; no
+  particular CPU core is promised.
+- Fleet status stays active until both robots finish. Pause/resume sends an explicit state to each cell.
+  Stop remains latched across app/view changes. Cancellation clears cloth adhesion and holds joint targets.
+- Scene revisions reject old worker updates. A current manifest is required before enabling controls.
+  Changing between one arm and fleet cancels the task and rebuilds the requested workcells; rapid changes
+  cannot recreate an unwanted cell. Disposal terminates workers and resolves pending development requests.
+- Redraws are capped at 30 Hz while running, and idle cells sleep once motion settles. Hidden tabs do not
+  step physics or render. Fine garment geometry updates only for a new snapshot; wrist rendering also
+  requires a new frame. Cloth outlines now clip triangles at sleeve/collar/leg boundaries rather than
+  keeping staircase edges. The surface has front/back faces and a connecting rim.
+- Production builds omit window inspection hooks and the worker evaluation handler. Settings explains
+  focus versus robot replacement. Storage failures do not crash the desktop.
+- Fresh Node verification: 30 tests passed. Production WebKit at iPhone width completed basket laundry on
+  both arms (3 garments each), with pause/resume, stop/re-arm, fleet/one-arm and page disposal checks.
+  Factory and final deployment checks are recorded after completion below.
+
+Simulation boundaries remain: selective garment contact, simplified adhesive cloth pinches, reduced
+physics meshes, and incomplete arm collision geometry. The demo is not hardware task validation.
+
+- Full laundry review found an avoidable failure: collecting the desk pile into the basket restacked six
+  garments, which created tangles. The task now loads from each existing pile directly, one at a time.
+  Starting the next job always clears the previous cloth grip state. A deterministic PiPER simulation
+  loaded all six after this change; final production browser validation follows.
+- Lifecycle checks passed: rapid fleet toggles, rapid app changes, stop persistence, pause with no time
+  advance, cancellation with zero adhesion, zero idle redraws in a one-second sample, no time advance in
+  the visibility-guard test, and disposal with no workers or outstanding inspection promises.
+
+- The final drum audit recovers requested garments left by skipped touch checks. Failed picks defer to
+  other garments, so a difficult fold cannot starve the table load. Panda pinches the selected fold
+  higher to clear its wider palm from the basket; cloth approach uses a narrower opening. Recovery is
+  bounded, and the final count is measured from the drum. Simulation checks with both profiles loaded
+  six garments; production browser checks are repeated after these changes.
+
+- Garment settling runs after each fixed physics step, independent of browser frame batching. An extra
+  Panda motion slowdown was removed after touch diagnostics showed it destabilized the cloth grasp.
+- The washer cabinet is hollow: four walls surround the drum rather than a solid render box hiding the
+  loaded clothes. On phones, the wrist camera is compact and placed below the fleet controls.
+- Production WebKit at 393 px completed full laundry on both arms: 6 garments each, no page errors or
+  failed requests, no horizontal overflow. Final factory/layout and deployment checks follow.
+
+- Sorting review: toy cylinders now fit within both grippers' release opening; plush toys use
+  tetrahedral volume elasticity rather than collapsible surface shells. Scatter spacing and receiver
+  positions keep the batch within both robots' workspace. Separate basket slots prevent all items
+  being forced into one pile. Release opens the fingers fully.
+- Toy tidy and LineSight results audit actual final receiving positions. Historical per-job tallies
+  cannot count an item that is still hovering, in the wrong basket or outside the scene. QC also uses
+  separate receiving slots, with a second layer for batches beyond four items in one channel.
+- Deterministic Toy tidy checks: PiPER (seed 42) and Panda (seed 43) placed all 13 toys in their receiving baskets.
+  Panda recovered one rim-caught block through a new physical pick. The close-to-base IK fallback
+  tries inward and outward wrist lean after the normal level approach fails. Sorting recovery is bounded.
+
+- Final local release verification: `npm test` passed all 30 tests and `npm run build` completed.
+  The production Chromium desktop check sorted all 13 toys on both profiles. Production WebKit at
+  iPhone width inspected six parts on each profile, with no page errors, failed requests, horizontal
+  overflow or overlapping fleet controls/wrist camera. Both checks also exercised pause/resume,
+  stop/re-arm, switching between fleet and one arm, and leaving the page to dispose workers.

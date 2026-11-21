@@ -11,3 +11,5 @@
 [lang="zh-CN"] h1{line-height:1.15;letter-spacing:-.035em}[lang="zh-CN"] .hero h1{line-height:1.18}.highlight{display:inline-block}
 
 @media(max-width:680px){[lang="zh-CN"] .hero h1{font-size:clamp(32px,10.6vw,44px)}}
+
+button{color:inherit}

@@ -1,4 +1,5 @@
 import * as THREE from'three';import{OrbitControls}from'three/examples/jsm/controls/OrbitControls.js';import{STLLoader}from'three/examples/jsm/loaders/STLLoader.js';
+import{fleetState}from'./runtime.js';
 import{robotProfile}from'./robots';import{loadRobotAssets}from'./assets';import{GarmentSurface}from'./cloth';import{washerLid,primitive,softMesh,toyMesh,plushDetail,loadProps,propsView,disposeGroup}from'./view';
 // The page side of the demo. Each robot's workcell (physics, planning, sensing) runs in its own worker
 // (cell.worker.js); this class only draws what the workers report. One arm, or the fleet: PiPER and Panda
@@ -10,13 +11,13 @@ const STATUS={loading:['Loading','加载中'],idle:['Ready','就绪'],running:['
 function readFleet(){try{return localStorage.getItem('nervus-demo-fleet')!=='0'}catch{return true}}
 export class Simulator{
  constructor(container,{onUpdate,onReady,onError,lang='en',robot='piper',app}){Object.assign(this,{container,onUpdate,onReady,onError,lang,focus:robotProfile(robot).id,activeApp:app});if(import.meta.env.DEV)window.__nervusSim=this;
-  this.disposed=false;this.ready=false;this.stopped=false;this.speed=1;this.cells=new Map();this.seed=newSeed();this.fleet=readFleet();this.trace=[];this.debugCalls=new Map();this.buildView();this.sync().catch(e=>this.fail(e))}
+  this.disposed=false;this.ready=false;this.stopped=false;this.speed=1;this.cells=new Map();this.seed=newSeed();this.fleet=readFleet();this.trace=[];this.debugCalls=new Map();this.syncVersion=0;this.dirty=true;this.buildView();this.sync().catch(e=>this.fail(e))}
  get robotId(){return this.focus}
  fail(e){if(this.disposed)return;this.onError(e);this.onUpdate({status:'error'})}
  // ------------------------------------------------------------------ view
  buildView(){this.scene=new THREE.Scene();this.scene.background=new THREE.Color('#eeeee9');this.scene.fog=new THREE.Fog('#eeeee9',3.6,9);this.camera=new THREE.PerspectiveCamera(39,1,.01,15);this.camera.up.set(0,0,1);
   this.renderer=new THREE.WebGLRenderer({antialias:true});this.renderer.setPixelRatio(Math.min(devicePixelRatio,1.6));this.renderer.shadowMap.enabled=true;this.renderer.shadowMap.type=THREE.PCFSoftShadowMap;this.renderer.toneMapping=THREE.ACESFilmicToneMapping;this.container.appendChild(this.renderer.domElement);this.renderer.domElement.setAttribute('aria-label','Interactive robot task scene');
-  this.controls=new OrbitControls(this.camera,this.renderer.domElement);this.controls.enableDamping=true;this.controls.minDistance=.50;this.controls.maxDistance=4.5;this.controls.maxPolarAngle=Math.PI*.85;this.resetCamera();
+  this.controls=new OrbitControls(this.camera,this.renderer.domElement);this.controls.addEventListener('start',()=>{this.interacting=true;this.dirty=true});this.controls.addEventListener('end',()=>{this.interacting=false});this.controls.enableDamping=true;this.controls.minDistance=.50;this.controls.maxDistance=4.5;this.controls.maxPolarAngle=Math.PI*.85;this.resetCamera();
   this.scene.add(new THREE.HemisphereLight('#ffffff','#949c92',2.7));const key=this.key=new THREE.DirectionalLight('#fffdf7',3.1);key.castShadow=true;key.shadow.bias=-.00025;this.scene.add(key,key.target);const fill=new THREE.DirectionalLight('#c2d8ff',.9);fill.position.set(-1,1,1.2);this.scene.add(fill);this.placeLight();
   primitive(this.scene,{shape:'box',size:[9,9,.02],position:[0,.6,-.79],color:'#e3e2dc'});const grid=new THREE.GridHelper(9,90,'#c9c9bf','#d6d6ce');grid.rotation.x=Math.PI/2;grid.position.set(0,.6,-.778);this.scene.add(grid);
   this.wristCamera=new THREE.PerspectiveCamera(78,1.5,.008,3);this.wristCamera.up.set(0,1,0);this.wristRenderer=new THREE.WebGLRenderer({antialias:false});this.wristRenderer.setPixelRatio(1);this.wristRenderer.setSize(216,144);this.wristRenderer.toneMapping=THREE.ACESFilmicToneMapping;this.wristBox=document.createElement('div');this.wristBox.className='wrist-camera';this.wristTitle=document.createElement('span');this.wristBox.append(this.wristTitle,this.wristRenderer.domElement);this.wristRenderer.domElement.setAttribute('aria-label','Simulated wrist camera view');this.container.append(this.wristBox);
@@ -28,36 +29,38 @@ export class Simulator{
  offset(id){return this.fleet?LANE[id]:[0,0,0]}
  placeLight(){const c=this.fleet?[.24,.55,0]:[.24,0,0],r=this.fleet?2.0:1.4;this.key.position.set(c[0]+.5,c[1]-.9,2.5);this.key.target.position.set(...c);const s=this.key.shadow;s.mapSize.set(this.fleet?2048:1024,this.fleet?2048:1024);Object.assign(s.camera,{left:-r,right:r,top:r,bottom:-r});s.camera.updateProjectionMatrix();s.map?.dispose();s.map=null}
  resetCamera(){if(!this.camera)return;if(this.fleet){const far=this.camera.aspect<1?1.55:1;this.camera.position.set(.14+2.16*far,.6-.9*far,.04+1.71*far);this.controls?.target.set(.14,.6,.04)}else{const panda=this.focus==='panda';this.camera.position.set(...(panda?[1.45,-1.68,1.22]:[1.32,-1.52,1.08]));this.controls?.target.set(.25,0,panda?.16:.04)}}
- resize(){const r=this.container.getBoundingClientRect();if(r.width<1||r.height<1)return;this.renderer.setSize(r.width,r.height);this.camera.aspect=r.width/r.height;this.camera.updateProjectionMatrix()}
+ resize(){const oldAspect=this.camera.aspect,r=this.container.getBoundingClientRect();if(r.width<1||r.height<1)return;this.renderer.setSize(r.width,r.height);this.camera.aspect=r.width/r.height;this.camera.updateProjectionMatrix();if((oldAspect<1)!==(this.camera.aspect<1))this.resetCamera();this.dirty=true}
  setLanguage(lang){this.lang=lang;const zh=lang==='zh';if(this.wristTitle)this.wristTitle.textContent=zh?'腕部摄像头 · 模拟':'WRIST CAMERA · SIMULATED';
   if(this.fleetButtons){this.fleetButtons[0].textContent=zh?'单臂':'One arm';this.fleetButtons[1].textContent=zh?'机群 · PiPER + Panda':'Fleet · PiPER + Panda';this.fleetBar.setAttribute('aria-label',zh?'显示单臂或机群':'Show one arm or the fleet');this.fleetButtons.forEach((b,i)=>b.setAttribute('aria-pressed',String(this.fleet===(i===1))))}
   if(this.traceHead){this.traceHead.innerHTML=`<b>${zh?'能力调用追踪':'CAPABILITY TRACE'}</b><small>${zh?'同一应用调用 → 各机器人自己的关节指令':'same app call → each robot’s own joint commands'}</small>`;this.drawTrace()}
-  for(const c of this.cells.values())c.environment?.traverse(o=>{if(o.userData.labels)this.drawLabel(o)})}
+  for(const c of this.cells.values())c.environment?.traverse(o=>{if(o.userData.labels)this.drawLabel(o)});this.dirty=true;this.wristDirty=true}
  // ------------------------------------------------------------------ cells (one worker per robot)
- async sync(){const want=this.lanes();this.onUpdate({status:'loading'});
+ async sync(){const version=++this.syncVersion,want=this.lanes();this.ready=false;this.publish();
   for(const[id,c]of this.cells)if(!want.includes(id))this.dropCell(c);
-  for(const id of want){const c=this.cells.get(id);if(c){c.group.position.set(...this.offset(id))}else await this.addCell(id)}
-  this.placeLight();this.resetCamera();this.checkReady()}
- async addCell(id){const c={id,profile:robotProfile(id),stats:{},frame:null,manifest:null,inflight:false,acc:0,group:new THREE.Group(),worker:new Worker(new URL('./cell.worker.js',import.meta.url),{type:'module'})};this.cells.set(id,c);this.ready=false;
+  for(const id of want){if(this.disposed||version!==this.syncVersion)return;const c=this.cells.get(id);if(c){c.group.position.set(...this.offset(id))}else await this.addCell(id)}
+  if(this.disposed||version!==this.syncVersion)return;this.placeLight();this.resetCamera();this.checkReady()}
+ async addCell(id){const c={id,profile:robotProfile(id),stats:{status:'loading'},revision:0,awakeUntil:0,frame:null,dirty:true,manifest:null,inflight:false,acc:0,group:new THREE.Group(),worker:new Worker(new URL('./cell.worker.js',import.meta.url),{type:'module'})};this.cells.set(id,c);this.ready=false;
   c.group.position.set(...this.offset(id));this.scene.add(c.group);this.buildBench(c);
-  c.worker.onmessage=e=>this.message(c,e.data);c.worker.onerror=e=>this.fail(Error(`${c.profile.short}: ${e.message||'physics worker failed'}`));c.worker.postMessage({type:'init',robot:id});
+  c.worker.onmessage=e=>this.message(c,e.data);c.worker.onerror=e=>{c.stats.status='error';this.fail(Error(`${c.profile.short}: ${e.message||'physics worker failed'}`))};c.worker.postMessage({type:'init',robot:id});
   const[assets,props]=await Promise.all([loadRobotAssets(id),loadProps()]);if(this.disposed||this.cells.get(id)!==c)return;this.propAssets=props;this.buildRobot(c,assets);if(c.manifest)this.buildEnvironment(c,c.manifest)}
- dropCell(c){c.worker.terminate();this.scene.remove(c.group);disposeGroup(c.group);this.cells.delete(c.id)}
- post(c,m){c.worker.postMessage(m)}
+ dropCell(c){c.worker.terminate();this.scene.remove(c.group);disposeGroup(c.group);this.cells.delete(c.id);for(const[id,d]of this.debugCalls)if(d.robot===c.id){d.resolve(null);this.debugCalls.delete(id)}}
+ post(c,m){if(m.type==='call'||m.type==='setApp'||m.type==='start')c.awakeUntil=performance.now()+2000;if(!this.disposed&&this.cells.get(c.id)===c)c.worker.postMessage({...m,revision:c.revision})}
  all(m){for(const c of this.cells.values())this.post(c,m)}
- message(c,m){if(this.disposed||this.cells.get(c.id)!==c)return;
-  if(m.type==='ready'){c.loaded=true;if(this.activeApp)this.post(c,{type:'setApp',app:this.activeApp.id,force:true,seed:this.seed});else this.checkReady();return}
-  if(m.type==='manifest'){c.manifest=m.manifest;c.frame=m.frame;if(c.robotMeshes)this.buildEnvironment(c,m.manifest);this.checkReady();return}
-  if(m.type==='frame'){if(m.frame)c.frame=m.frame;c.inflight=false;return}
-  if(m.type==='update'){const{trace,...u}=m.update;Object.assign(c.stats,u);if(trace)this.addTrace(c,trace);if(c.id===this.focus&&Object.keys(u).length)this.onUpdate(u);if(u.status)this.drawStatus();return}
-  if(m.type==='error'){this.fail(Error(this.fleet?`${c.profile.short}: ${m.message}`:m.message));return}
-  if(m.type==='debug'){this.debugCalls.get(m.id)?.(m.value);this.debugCalls.delete(m.id)}}
- checkReady(){const cells=this.lanes().map(id=>this.cells.get(id));const ok=cells.every(c=>c&&c.loaded&&c.robotMeshes&&(c.manifest||!this.activeApp));if(ok&&!this.ready){this.ready=true;const f=this.cells.get(this.focus);this.onUpdate({status:f.stats.status||'idle',...f.stats,ready:true,robot:this.focus});this.drawStatus();this.onReady?.()}}
+ message(c,m){if(this.disposed||this.cells.get(c.id)!==c)return;if(m.type!=='ready'&&m.type!=='debug'&&m.revision!==c.revision)return;
+  if(m.type==='ready'){c.loaded=true;if(this.activeApp)this.post(c,{type:'setApp',app:this.activeApp.id,force:true,seed:this.seed});if(this.stopped)this.post(c,{type:'call',method:'stop'});if(!this.activeApp)this.checkReady();return}
+  if(m.type==='manifest'){c.manifest=m.manifest;c.manifestRevision=m.revision;c.frame=m.frame;c.dirty=true;c.inflight=false;c.acc=0;if(c.robotMeshes)this.buildEnvironment(c,m.manifest);this.checkReady();return}
+  if(m.type==='started'){c.starting=false;if(!m.ok)c.stats.status='idle';this.publish();return}
+  if(m.type==='frame'){if(m.frame){c.frame=m.frame;c.dirty=true}c.inflight=false;return}
+  if(m.type==='update'){const{trace,...u}=m.update;Object.assign(c.stats,u);if(trace)this.addTrace(c,trace);if(Object.keys(u).length)this.publish();if(u.status)this.drawStatus();return}
+  if(m.type==='error'){c.starting=false;c.stats.status='error';c.inflight=false;this.fail(Error(this.fleet?`${c.profile.short}: ${m.message}`:m.message));return}
+  if(m.type==='debug'){this.debugCalls.get(m.id)?.resolve(m.value);this.debugCalls.delete(m.id)}}
+ publish(){this.onUpdate({...fleetState(this.lanes().map(id=>this.cells.get(id)).filter(Boolean).map(c=>c.starting?{...c,stats:{...c.stats,status:'running'}}:c),this.focus,{ready:this.ready,stopped:this.stopped}),robot:this.focus,fleet:this.fleet})}
+ checkReady(){const cells=this.lanes().map(id=>this.cells.get(id));const ok=cells.every(c=>c&&c.loaded&&c.robotMeshes&&((c.manifest&&c.manifestRevision===c.revision)||!this.activeApp));if(ok&&!this.ready){this.ready=true;this.publish();this.dirty=true;this.drawStatus();this.onReady?.()}}
  // ------------------------------------------------------------------ public controls (the desktop app calls these)
- setApp(app,force=false){if(!app)return;const same=this.activeApp?.id===app.id;this.activeApp=app;if(same&&!force)return;this.seed=newSeed();this.trace=[];this.drawTrace();this.all({type:'setApp',app:app.id,force,seed:this.seed})}
- start(action){if(!this.ready||this.stopped)return false;this.trace=[];this.drawTrace();this.all({type:'start',action:action.id,seed:newSeed()});return true}
- pause(){this.all({type:'call',method:'pause'})}
- stop(){this.stopped=true;this.all({type:'call',method:'stop'})}
+ setApp(app,force=false){if(!app)return;const same=this.activeApp?.id===app.id;this.activeApp=app;if(same&&!force)return;this.ready=false;this.seed=newSeed();this.trace=[];this.drawTrace();for(const c of this.cells.values()){c.revision++;c.starting=false;c.stats={status:'loading'};if(c.loaded)this.post(c,{type:'setApp',app:app.id,force,seed:this.seed})}this.publish()}
+ start(action){if(!this.activeApp?.actions.some(a=>a.id===action?.id)||!this.ready||this.stopped||[...this.cells.values()].some(c=>['running','paused'].includes(c.stats.status)))return false;this.trace=[];this.drawTrace();for(const c of this.cells.values()){c.starting=true;c.stats.status='running'}this.publish();this.all({type:'start',action:action.id,seed:newSeed()});return true}
+ pause(){const paused=[...this.cells.values()].some(c=>c.stats.status==='running');this.all({type:'call',method:'pause',args:[paused]})}
+ stop(){this.stopped=true;this.publish();this.all({type:'call',method:'stop'})}
  rearm(){this.stopped=false;this.all({type:'call',method:'rearm'})}
  reset(){this.all({type:'call',method:'reset'})}
  cancel(){this.all({type:'call',method:'cancel'})}
@@ -65,13 +68,13 @@ export class Simulator{
  setGripper(closed){const c=this.cells.get(this.focus);if(c)this.post(c,{type:'call',method:'setGripper',args:[closed]})}
  // Settings -> robot: in the fleet both arms are already running, so this only moves the focus
  // (wrist camera, arm control, telemetry); with one arm it swaps the workcell.
- async setRobot(id){id=robotProfile(id).id;if(id===this.focus&&this.ready){this.onReady?.();return}this.focus=id;
-  if(this.fleet&&this.cells.has(id)){this.resetCamera();const c=this.cells.get(id);this.onUpdate({...c.stats,robot:id});this.drawStatus();this.onReady?.();return}
+ async setRobot(id){this.wristDirty=true;id=robotProfile(id).id;if(id===this.focus&&this.ready){this.onReady?.();return}this.focus=id;
+  if(this.fleet&&this.cells.has(id)){this.resetCamera();this.publish();this.drawStatus();if(this.ready)this.onReady?.();return}
   this.ready=false;try{await this.sync()}catch(e){this.fail(e)}}
- async setFleet(on){if(on===this.fleet)return;this.fleet=on;try{localStorage.setItem('nervus-demo-fleet',on?'1':'0')}catch{}this.setLanguage(this.lang);this.cancel();this.reset();this.trace=[];this.drawTrace();this.ready=false;
-  for(const[id,c]of this.cells)if(this.lanes().includes(id))this.post(c,{type:'setApp',app:this.activeApp?.id,force:true,seed:this.seed});
+ async setFleet(on){if(on===this.fleet)return;this.fleet=on;try{localStorage.setItem('nervus-demo-fleet',on?'1':'0')}catch{}this.setLanguage(this.lang);this.cancel();this.trace=[];this.drawTrace();this.ready=false;
+  for(const[id,c]of this.cells)if(this.lanes().includes(id)&&this.activeApp){c.revision++;c.starting=false;c.stats={status:'loading'};if(c.loaded)this.post(c,{type:'setApp',app:this.activeApp.id,force:true,seed:this.seed})}
   try{await this.sync()}catch(e){this.fail(e)}}
- debug(robot,fn){const c=this.cells.get(robot||this.focus);if(!c)return Promise.resolve(null);const id=Math.random();return new Promise(r=>{this.debugCalls.set(id,r);this.post(c,{type:'debug',id,src:String(fn)})})}
+ debug(robot,fn){if(!import.meta.env.DEV)return Promise.resolve(null);const c=this.cells.get(robot||this.focus);if(!c)return Promise.resolve(null);const id=Math.random();return new Promise(r=>{this.debugCalls.set(id,{robot:c.id,resolve:r});this.post(c,{type:'debug',id,src:String(fn)})})}
  // ------------------------------------------------------------------ capability trace
  addTrace(c,entries){for(const e of entries)this.trace.unshift({robot:c.profile.short,id:c.id,...e});this.trace.length=Math.min(this.trace.length,40);if(!this.traceTimer)this.traceTimer=setTimeout(()=>{this.traceTimer=null;this.drawTrace()},120)}
  traceText(e){const n=v=>v.toFixed(2).replace('-','−');switch(e.cap){
@@ -110,7 +113,7 @@ export class Simulator{
  label(c,labels,pos){const canvas=document.createElement('canvas');canvas.width=512;canvas.height=96;const sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(canvas),depthTest:false,toneMapped:false}));sprite.position.set(...pos);sprite.scale.set(.22,.042,1);sprite.userData={labels,canvas};c.environment.add(sprite);this.drawLabel(sprite)}
  drawLabel(o){const ctx=o.userData.canvas.getContext('2d');ctx.clearRect(0,0,512,96);ctx.fillStyle='#fafbf7';ctx.fillRect(0,0,512,96);ctx.fillStyle='#354642';ctx.textAlign='center';ctx.font='500 29px sans-serif';ctx.fillText(o.userData.labels[this.lang],256,57);o.material.map.needsUpdate=true}
  // ------------------------------------------------------------------ drawing a frame
- syncCell(c){const d=c.frame,man=c.manifest;if(!d||!man||!c.objectViews)return;
+ syncCell(c){const d=c.frame,man=c.manifest;if(!d||!man||!c.objectViews)return;c.dirty=false;
   for(const m of c.robotMeshes){const id=m.id;if(id<0)continue;m.group.position.set(d.xpos[id*3],d.xpos[id*3+1],d.xpos[id*3+2]);m.group.quaternion.set(d.xquat[id*4+1],d.xquat[id*4+2],d.xquat[id*4+3],d.xquat[id*4])}
   const w=man.wristBody;c.cameraHousing.position.set(d.xpos[w*3],d.xpos[w*3+1],d.xpos[w*3+2]);c.cameraHousing.quaternion.set(d.xquat[w*4+1],d.xquat[w*4+2],d.xquat[w*4+3],d.xquat[w*4]);
   const left=(man.scene.conveyor?man.scene.conveyor.left:-9)-.03;
@@ -121,11 +124,17 @@ export class Simulator{
   if(c.lidView&&man.lid!==null){const l=man.lid;c.lidView.position.set(d.xpos[l*3],d.xpos[l*3+1],d.xpos[l*3+2]);c.lidView.quaternion.set(d.xquat[l*4+1],d.xquat[l*4+2],d.xquat[l*4+3],d.xquat[l*4])}
   const travel=d.belt/1.45;for(const b of c.belts||[]){if(b.userData.tex)b.userData.tex.offset.x=travel/(.896/8);for(const s of b.children){if(s.userData.x0===undefined)s.userData.x0=s.position.x;s.position.x=((((s.userData.x0+.445-travel)%.896)+.896)%.896)-.445}}}
  aimWristCamera(c){const t=c.frame.tool,o=c.group.position,pos=new THREE.Vector3(t[0],t[1],t[2]).add(o),dir=new THREE.Vector3(t[5],t[8],t[11]);this.wristCamera.position.copy(pos).addScaledVector(dir,-.055).add(new THREE.Vector3(t[3],t[6],t[9]).multiplyScalar(.055));this.wristCamera.up.set(t[4],t[7],t[10]);this.wristCamera.lookAt(pos.clone().addScaledVector(dir,.35))}
- tick(now){if(this.disposed)return;const dt=Math.min((now-this.last)/1000,.035);this.last=now;
-  try{for(const c of this.cells.values()){if(!c.manifest)continue;if(c.inflight){c.acc=Math.min(c.acc+dt,.1);continue}c.inflight=true;this.post(c,{type:'tick',dt:Math.min(c.acc+dt,.1),speed:this.speed});c.acc=0}
-   for(const c of this.cells.values())this.syncCell(c)}catch(e){this.fail(e)}
-  this.controls.update();this.renderer.render(this.scene,this.camera);
-  const f=this.cells.get(this.focus);if(f?.frame&&f.robotMeshes&&now-(this.lastWrist||0)>95){this.aimWristCamera(f);f.cameraHousing.visible=false;const hide=f.robotMeshes.filter(g=>/finger|link7|link8/.test(g.name));hide.forEach(g=>g.group.visible=false);this.wristRenderer.render(this.scene,this.wristCamera);f.cameraHousing.visible=true;hide.forEach(g=>g.group.visible=true);this.lastWrist=now}
-  this.raf=requestAnimationFrame(this.tick)}
- dispose(){this.disposed=true;cancelAnimationFrame(this.raf);clearTimeout(this.traceTimer);this.resizeObserver.disconnect();for(const c of this.cells.values())c.worker.terminate();this.cells.clear();this.controls.dispose();disposeGroup(this.scene);this.renderer.dispose();this.wristRenderer.dispose();this.renderer.domElement.remove();this.wristBox.remove();this.fleetBar.remove();this.traceBox.remove()}
+ tick(now){if(this.disposed)return;this.raf=requestAnimationFrame(this.tick);this.last=now;
+  if(document.hidden)return;
+  // Cap scene redraws at 30 Hz (12 Hz while idle); only update garment geometry on a new worker frame.
+  const active=[...this.cells.values()].some(c=>c.stats.status==='running');
+  const interval=active||this.interacting?1000/30:1000/12;if(now-(this.lastDraw||0)<interval)return;this.lastDraw=now;
+  try{for(const c of this.cells.values()){if(!c.manifest||c.inflight||!this.ready||(!active&&!c.frame?.awake&&now>c.awakeUntil)||['paused','stopped','error'].includes(c.stats.status))continue;
+    const elapsed=Math.min((now-(c.lastTick||now-interval))/1000,.1);c.lastTick=now;c.inflight=true;this.post(c,{type:'tick',dt:elapsed,speed:this.speed})}
+   for(const c of this.cells.values())if(c.dirty){this.syncCell(c);this.dirty=true;if(c.id===this.focus)this.wristDirty=true}
+  }catch(e){this.fail(e)}
+  const changed=this.controls.update();if(this.dirty||changed||active){this.renderer.render(this.scene,this.camera);this.dirty=false}
+  const f=this.cells.get(this.focus);if(f?.frame&&f.robotMeshes&&this.wristDirty&&now-(this.lastWrist||0)>180){this.aimWristCamera(f);f.cameraHousing.visible=false;const hide=f.robotMeshes.filter(g=>/finger|link7|link8/.test(g.name));hide.forEach(g=>g.group.visible=false);this.wristRenderer.render(this.scene,this.wristCamera);f.cameraHousing.visible=true;hide.forEach(g=>g.group.visible=true);this.lastWrist=now;this.wristDirty=false}
+ }
+ dispose(){this.disposed=true;if(import.meta.env.DEV&&window.__nervusSim===this)delete window.__nervusSim;cancelAnimationFrame(this.raf);clearTimeout(this.traceTimer);this.resizeObserver.disconnect();for(const c of this.cells.values())c.worker.terminate();this.cells.clear();for(const d of this.debugCalls.values())d.resolve(null);this.debugCalls.clear();this.controls.dispose();disposeGroup(this.scene);this.renderer.dispose();this.wristRenderer.dispose();this.renderer.domElement.remove();this.wristBox.remove();this.fleetBar.remove();this.traceBox.remove()}
 }

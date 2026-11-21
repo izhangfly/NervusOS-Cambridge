@@ -6,3 +6,12 @@ test('a toy scatter has every requested family and all seven block shapes, with 
 test('laundry has a table pile, basket load, three garment patterns and physical deformable meshes',()=>{const scene=makeScene(laundry,42);assert.equal(scene.items.filter(i=>i.area==='basket').length,3);assert.equal(scene.items.filter(i=>i.area==='desk').length,3);assert.deepEqual(new Set(scene.items.map(i=>i.fabric)),new Set(['cotton','denim','knit']));for(const i of scene.items){assert.ok(i.soft);assert.ok(i.mesh.indices.length>30);assert.ok(i.mesh.indices.every(n=>n>=0&&n<i.mesh.points.length));assert.ok(i.mesh.points.flat().every(Number.isFinite))}});
 test('profile switching changes joint count and limits while retaining the common tool contract',()=>{assert.equal(ROBOTS.piper.dof,6);assert.equal(ROBOTS.panda.dof,7);assert.notEqual(ROBOTS.piper.model,ROBOTS.panda.model);for(const r of Object.values(ROBOTS)){assert.equal(r.home.length,r.dof+2);assert.equal(r.limits.length,r.dof);assert.equal(r.gripper,r.dof);r.home.slice(0,r.dof).forEach((q,i)=>assert.ok(q>=r.limits[i][0]&&q<=r.limits[i][1]));assert.match(r.sdk,/github/)} });
 test('demo receipts unlock both robot profiles and malformed entitlements are rejected',()=>{const receipt=demoReceipt(quality,1234);assert.equal(receipt.amount,quality.price);assert.equal(receipt.currency,'GBP');assert.deepEqual(receipt.profiles,['piper','panda']);assert.deepEqual(validPurchases({quality:receipt},apps),{quality:receipt});assert.deepEqual(validPurchases({quality:{...receipt,amount:1},laundry:receipt},apps),{});assert.deepEqual(validPurchases(null,apps),{})});
+
+test('fine garment surfaces retain necklines, sleeves and the gap between trouser legs',async()=>{
+ const {garmentOutline}=await import('../src/demo/cloth-mesh.js');
+ const covers=(mesh,[x,y])=>{for(let i=0;i<mesh.indices.length;i+=3){const [a,b,c]=mesh.indices.slice(i,i+3).map(k=>mesh.uv.slice(2*k,2*k+2));const cross=(p,q)=>(q[0]-p[0])*(y-p[1])-(q[1]-p[1])*(x-p[0]);if(cross(a,b)>=-1e-9&&cross(b,c)>=-1e-9&&cross(c,a)>=-1e-9)return true}return false};
+ const tee=garmentOutline('tshirt'),trousers=garmentOutline('trousers');
+ assert.equal(covers(tee,[.5,.94]),false,'neck opening');assert.equal(covers(tee,[.9,.69]),true,'sleeve');
+ assert.equal(covers(trousers,[.5,.25]),false,'leg gap');assert.equal(covers(trousers,[.5,.9]),true,'waist');
+ assert.ok(tee.uv.some(v=>Math.abs(v*40-Math.round(v*40))>.01),'outline edges are clipped between grid samples');
+});

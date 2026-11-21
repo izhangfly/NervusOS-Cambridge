@@ -70,7 +70,10 @@ function laundryBasket([w,d,h],color='#e9ecec'){
 export function washerModel(){
  const g=new THREE.Group(),W=.23,D=.24,H=.122,cy=-.004;   // cabinet centred a little forward of the drum
  const add=(geo,mat,x,y,z)=>{const m=new THREE.Mesh(geo,mat);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;g.add(m);return m};
- add(new RoundedBoxGeometry(W,D,H,4,.012),enamel(),0,cy,H/2);                                             // cabinet
+ // Four cabinet walls leave the drum hollow; a solid box would cover the clothes through the opening.
+ const wall=.012;
+ for(const y of[cy-(D-wall)/2,cy+(D-wall)/2])add(new RoundedBoxGeometry(W,wall,H,3,.004),enamel(),0,y,H/2);
+ for(const x of[-(W-wall)/2,(W-wall)/2])add(new RoundedBoxGeometry(wall,D-2*wall,H,3,.004),enamel(),x,cy,H/2);
  add(new THREE.BoxGeometry(W-.01,D-.01,.008),new THREE.MeshStandardMaterial({color:'#2f3438',roughness:.7}),0,cy,.004);   // plinth
  // top deck with the round opening
  const deck=new THREE.Shape();const hw=W/2-.004,hd=D/2-.004;deck.moveTo(-hw,-hd+cy);deck.lineTo(hw,-hd+cy);deck.lineTo(hw,hd+cy);deck.lineTo(-hw,hd+cy);deck.lineTo(-hw,-hd+cy);

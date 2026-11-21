@@ -4,5 +4,5 @@ export default {
  icon:'Shirt',color:'#4f78a6',category:{en:'Home',zh:'家用'},scope:'home',version:'0.2',publisher:{en:'NervusOS demo collection',zh:'NervusOS 演示合集'},price:0,
  permissions:[{id:'motion',label:{en:'Move the arm and gripper',zh:'控制机械臂与夹爪'}},{id:'wrist-camera',label:{en:'Use the simulated wrist camera',zh:'使用模拟腕部摄像头'}}],
  origin:{en:'MuJoCo deformable fabric · simulated wrist perception · planned pinch grasps. Browser concept; hardware handling needs validation.',zh:'MuJoCo 可变形布料 · 模拟腕部感知 · 规划夹取。浏览器概念演示，实际硬件处理仍需验证。'},
- actions:[{id:'load',name:{en:'Load the laundry basket',zh:'将衣篮内衣物放入洗衣机'},description:{en:'Open the lid and load three basket garments, one by one.',zh:'打开机盖，逐件放入衣篮里的三件衣物。'}},{id:'all',name:{en:'Clear the table & load all',zh:'清理桌面并放入全部衣物'},description:{en:'Collect the table pile into the basket, then load all six garments.',zh:'先将桌面衣物收进衣篮，再逐件放入全部六件衣物。'}}]
+ actions:[{id:'load',name:{en:'Load the laundry basket',zh:'将衣篮内衣物放入洗衣机'},description:{en:'Open the lid and load three basket garments, one by one.',zh:'打开机盖，逐件放入衣篮里的三件衣物。'}},{id:'all',name:{en:'Clear the table & load all',zh:'清理桌面并放入全部衣物'},description:{en:'Load all six garments from the basket and table, one at a time.',zh:'从衣篮和桌面逐件抓取，将全部六件衣物放进洗衣机。'}}]
 };

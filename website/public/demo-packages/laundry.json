@@ -64,8 +64,8 @@
         "zh": "清理桌面并放入全部衣物"
       },
       "description": {
-        "en": "Collect the table pile into the basket, then load all six garments.",
-        "zh": "先将桌面衣物收进衣篮，再逐件放入全部六件衣物。"
+        "en": "Load all six garments from the basket and table, one at a time.",
+        "zh": "从衣篮和桌面逐件抓取，将全部六件衣物放进洗衣机。"
       }
     }
   ]

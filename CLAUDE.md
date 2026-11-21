@@ -14,7 +14,7 @@
 
 - The relay server's address or hostname, in any file, doc or comment. Write `YOUR_SERVER_IP` instead.
 - Keys: `keys/`, `**/signing/*.pem`, SSH or deploy keys, Syncthing API keys, tokens, passwords.
-- Chinese text. The repository is English only.
+- Chinese text outside `website/`. The website is bilingual and is exempt from the English-only check; secret checks still apply. All other repository content remains English only.
 
 ## Safety rules for the robot host (Surface Pro 9, A7-BAH)
 

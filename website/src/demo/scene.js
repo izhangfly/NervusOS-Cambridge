@@ -2,7 +2,7 @@ import{garmentMesh}from'./cloth-mesh.js';
 const label=(en,zh)=>({en,zh});
 export const COLORS=['#e96b57','#d8ae41','#4b87bb','#64a47d','#a57cb7','#eb9455','#62aeb1'];
 export const BLOCKS=['cube','brick','sphere','cylinder','triangle','arch','star'];
-export const BASKETS={blocks:[.18,.19,.025],cars:[.33,.19,.025],plush:[.48,.19,.025]};
+export const BASKETS={blocks:[.18,.27,.025],cars:[.33,.27,.025],plush:[.48,.27,.025]};
 // laundry: a low, wide basket to the arm's right and the table pile out in front of it, ~10 cm apart, so the
 // open fingers and the wrist never meet the basket wall while working on the pile (and vice versa)
 export const WASHER=[.34,.20,.132],BASKET=[.17,-.27,.018],DESK=[.45,-.07,.012],BASKET_SIZE=[.24,.20,.065];
@@ -20,7 +20,10 @@ function plush(position){
  for(let i=0;i<segments;i++)indices.push(0,1+i,1+(i+1)%segments);
  for(let j=0;j<rings-2;j++)for(let i=0;i<segments;i++){const a=1+j*segments+i,b=1+j*segments+(i+1)%segments,c=a+segments,d=b+segments;indices.push(a,c,b,b,c,d)}
  for(let i=0;i<segments;i++)indices.push(bottom,1+(rings-2)*segments+(i+1)%segments,1+(rings-2)*segments+i);
- return{points,indices,uv};
+ // Tetrahedra fill the plush body: it can squeeze, but cannot collapse into a hollow sheet.
+ const center=points.length;points.push([...position]);uv.push(.5,.5);
+ const volumeIndices=[];for(let i=0;i<indices.length;i+=3)volumeIndices.push(center,indices[i],indices[i+1],indices[i+2]);
+ return{points,indices,uv,volumeIndices};
 }
 const rigid=(id,kind,pos,color,size=[.034,.034,.032],extra={})=>({id,kind,position:pos,color,size,proxy:kind==='sphere'?'sphere':kind==='cylinder'||kind==='housing'||kind==='bearing'?'cylinder':'box',...extra});
 export function makeScene(app,seed=Math.floor(Math.random()*0xffffffff)){
@@ -38,7 +41,7 @@ export function makeScene(app,seed=Math.floor(Math.random()*0xffffffff)){
   Object.entries(BASKETS).forEach(([kind,pos],i)=>{scene.static.push(...basket(kind,pos,[.132,.128,.080],['#7ca68c','#769cc0','#ba967c'][i]));scene.labels.push({text:label({blocks:'Blocks · 7 shapes',cars:'Toy cars',plush:'Soft animals'}[kind],{blocks:'积木 · 七种形状',cars:'玩具汽车',plush:'柔软玩偶'}[kind]),position:[pos[0],pos[1]+.06,.17]})});
   const specs=[...BLOCKS.map(kind=>({kind,category:'blocks'})),...Array.from({length:3},()=>({kind:'car',category:'cars'})),...Array.from({length:3},()=>({kind:'plush',category:'plush'}))];
   const shuffled=[...specs].sort(()=>rand()-.5);
-  shuffled.forEach((spec,i)=>{const pos=[(i===12?.34:.20+Math.floor(i/4)*.037+(i%4)*.077)+(rand()-.5)*.018,-.25+Math.floor(i/4)*.076+(rand()-.5)*.018,.028],color=COLORS[Math.floor(rand()*COLORS.length)];const item=rigid('toy_'+i,spec.kind,pos,color,spec.kind==='car'?[.06,.03,.024]:[.035,.035,.035],{category:spec.category,angle:rand()*Math.PI});if(spec.kind==='plush'){item.soft=true;item.mesh=plush([pos[0],pos[1],.033]);item.mass=.025;item.bend=500;item.fabric='fleece';item.position[2]=.033}scene.items.push(item)});
+  shuffled.forEach((spec,i)=>{const pos=[(i===12?.36:.20+(i%4)*.08)+(rand()-.5)*.006,(i===12?-.02:-.30+Math.floor(i/4)*.095)+(rand()-.5)*.006,.028],color=COLORS[Math.floor(rand()*COLORS.length)];const item=rigid('toy_'+i,spec.kind,pos,color,spec.kind==='car'?[.06,.03,.024]:spec.kind==='cylinder'?[.0175,.0175,.035]:[.035,.035,.035],{category:spec.category,angle:rand()*Math.PI});if(spec.kind==='plush'){item.soft=true;item.mesh=plush([pos[0],pos[1],.033]);item.mass=.025;item.bend=20000;item.fabric='fleece';item.position[2]=.033}scene.items.push(item)});
  }else if(app.id==='quality'||app.id==='assembly'){
   // The conveyor runs past the arm, beside it, not under it. Parts sit on the belt at a fixed pitch;
   // indexing moves the whole belt, so every part and the belt surface travel together.
