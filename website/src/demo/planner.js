@@ -159,7 +159,7 @@ function softTransfer(p,job){
  // pointing across the drum would meet the open lid as it lowers
  const put=washer?{yaw:0}:{};
  // on cloth the fingers stop 2 mm short of closed: squeezing a thin sheet all the way shut pushes it out of the pinch
- const openTo=plush?Math.min(p.profile.open,.027+.01):Math.min(p.profile.open,.028),closeTo=plush?0:p.profile.id==='panda'?.003:.002,s=(t,en,zh,x={})=>step(t,en,zh,{yaw,openTo,closeTo,...x});
+ const openTo=plush?Math.min(p.profile.open,.027+.01):Math.min(p.profile.open,.028),closeTo=plush?0:.002,s=(t,en,zh,x={})=>step(t,en,zh,{yaw,openTo,closeTo,...x});
  return[
   s(over,`Wrist scan · ${job.label.en}`,`腕部扫描 · ${job.label.zh}`,{vision:job.category,item:job.id,duration:.7}),
   s([grasp[0],grasp[1],grasp[2]+.05],plush?'Turn the fingers around the toy':'Find the highest fold',plush?'夹爪对准玩偶':'找到最高的褶皱',{duration:.6}),
