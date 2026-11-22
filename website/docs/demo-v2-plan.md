@@ -137,3 +137,22 @@ physics meshes, and incomplete arm collision geometry. The demo is not hardware 
   retained old hashed assets and checked the contact service health. The portfolio release uses
   `assets-20261121182510`; its files match the local build and earlier immutable asset folders remain
   available to open tabs. Source and release notes are pushed to NervusOS-Cambridge.
+
+## Layout and controls release (22 November 2026)
+
+- Fleet view opens by default even when an older browser preference selected one arm. The fleet wrist
+  camera starts hidden; its button toggles it without rebuilding the workcells.
+- The capability trace is below the canvas in both views. The old tool-position/joints/state strip is
+  removed, and the orbit hint stays inside the scene. The stop button reads E-STOP. Both model sources
+  are linked.
+- Fullscreen uses the element API when supported and an expanded viewport panel otherwise. Exit and
+  Escape restore normal layout and body scrolling without replacing the simulator.
+- The homepage uses the new founder-supplied photo. The separate Awards photo remains unchanged.
+- Build and all 31 Node tests passed. Local production Chromium desktop and WebKit phone checks passed.
+  Published checks passed replay on both arms, default fleet, hidden/toggleable wrist camera, trace
+  placement, pause/resume, E-STOP/re-arm, view changes, page disposal and fullscreen entry/exit. The
+  phone check exercised the fullscreen fallback; Chromium exercised native fullscreen. Neither run
+  reported page errors, failed requests or horizontal overflow.
+- Uploaded both sites: portfolio release `assets-20261122061713`; standalone deployment verified 133
+  file checksums and contact-service health. Previous hashed assets are retained. Production HTML
+  matches the local release. Desktop and phone photo checks confirmed the refreshed homepage image.
