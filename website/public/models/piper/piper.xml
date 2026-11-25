@@ -1,8 +1,6 @@
 <mujoco model="NervusOS PiPER browser demo">
   <compiler angle="radian" meshdir="assets" />
-
   <option integrator="implicitfast" cone="elliptic" impratio="10" timestep="0.002" />
-
   <default>
     <default class="piper">
       <joint frictionloss="0.3" armature="0.005" damping="2" />
@@ -19,7 +17,6 @@
       </default>
     </default>
   </default>
-
   <asset>
     <material name="gray_mat" rgba="0.59 0.59 0.59 1" />
     <material name="light_gray_mat" rgba="0.98 0.98 0.98 1" />
@@ -30,18 +27,16 @@
     <material name="red_mat" rgba="0.82 0.15 0.15 1" />
     <material name="black_mat" rgba="0 0 0 1" />
     <material name="light_blue" rgba="0.79 0.82 0.93 1" />
-
-    <mesh name="base_link" file="base_link.stl" />
-    <mesh name="link1" file="link1.stl" />
-    <mesh name="link2" file="link2.stl" />
-    <mesh name="link3" file="link3.stl" />
-    <mesh name="link4" file="link4.stl" />
-    <mesh name="link5" file="link5.stl" />
-    <mesh file="link6.stl" />
-    <mesh file="link7.stl" />
-    <mesh file="link8.stl" />
+    <mesh name="base_link" file="base_link_web-v1.stl" />
+    <mesh name="link1" file="link1_web-v1.stl" />
+    <mesh name="link2" file="link2_web-v1.stl" />
+    <mesh name="link3" file="link3_web-v1.stl" />
+    <mesh name="link4" file="link4_web-v1.stl" />
+    <mesh name="link5" file="link5_web-v1.stl" />
+    <mesh file="link6_web-v1.stl" name="link6" />
+    <mesh file="link7_web-v1.stl" name="link7" />
+    <mesh file="link8_web-v1.stl" name="link8" />
   </asset>
-
   <worldbody>
     <light name="spotlight" mode="targetbodycom" target="link8" pos="0 0 1" />
     <body name="base_link" childclass="piper" gravcomp="1" pos="0 0 0">
@@ -67,29 +62,45 @@
                   <body name="link7" pos="0 0 0.13503" quat="1.89468e-08 1.89469e-08 0.707108 0.707105" gravcomp="1">
                     <inertial pos="-0.000277778 -0.0467673 -0.00921029" quat="0.46134 0.536174 -0.553273 0.439968" mass="0.0264823" diaginertia="0.001 0.001 0.001" />
                     <joint name="joint7" axis="0 0 -1" class="finger" range="0 0.035" damping="2" />
-                    <geom type="mesh" mesh="link7" group="2" contype="0" conaffinity="0" density="0" rgba="0.33 0.35 0.37 1" /><geom name="pad_l" type="box" size=".011 .015 .003" pos="0 -.015 -.003" contype="8" conaffinity="1" condim="4" friction="1.6 .02 .002" solref=".004 1" solimp=".95 .99 .001" group="3" rgba="0 0 0 0" density="0" /><geom name="finger_l" type="box" size=".026 .036 .009" pos="0 -.036 -.0145" contype="8" conaffinity="1" friction=".8 .02 .001" group="3" rgba="0 0 0 0" density="0" /><geom name="skin_l" type="box" size=".011 .015 .003" pos="0 -.015 -.003" contype="0" conaffinity="16" margin=".004" gap="0" friction="1.6 .02 .002" group="3" rgba="0 0 0 0" density="0" /><site name="pad_l" type="box" size=".012 .016 .009" pos="0 -.015 -.003" rgba="0 0 0 0" /></body>
+                    <geom type="mesh" mesh="link7" group="2" contype="0" conaffinity="0" density="0" rgba="0.33 0.35 0.37 1" />
+                    <geom name="pad_l" type="box" size=".011 .015 .003" pos="0 -.015 -.003" contype="8" conaffinity="1" condim="4" friction="1.6 .02 .002" solref=".004 1" solimp=".95 .99 .001" group="3" rgba="0 0 0 0" density="0" />
+                    <geom name="finger_l" type="box" size=".026 .036 .009" pos="0 -.036 -.0145" contype="8" conaffinity="1" friction=".8 .02 .001" group="3" rgba="0 0 0 0" density="0" />
+                    <geom name="skin_l" type="box" size=".011 .015 .003" pos="0 -.015 -.003" contype="0" conaffinity="16" margin=".004" gap="0" friction="1.6 .02 .002" group="3" rgba="0 0 0 0" density="0" />
+                    <site name="pad_l" type="box" size=".012 .016 .009" pos="0 -.015 -.003" rgba="0 0 0 0" />
+                  </body>
                   <body name="link8" pos="0 0 0.13503" quat="1.89468e-08 -1.89469e-08 -0.707108 0.707105" gravcomp="1">
                     <inertial pos="0.000277817 0.0467674 -0.0092103" quat="0.553273 0.439968 -0.46134 0.536174" mass="0.0264822" diaginertia="0.001 0.001 0.001" />
                     <joint name="joint8" axis="0 0 1" class="finger" range="-0.035 0" damping="2" />
-                    <geom type="mesh" mesh="link8" group="2" contype="0" conaffinity="0" density="0" rgba="0.33 0.35 0.37 1" /><geom name="pad_r" type="box" size=".011 .015 .003" pos="0 .015 -.003" contype="8" conaffinity="1" condim="4" friction="1.6 .02 .002" solref=".004 1" solimp=".95 .99 .001" group="3" rgba="0 0 0 0" density="0" /><geom name="finger_r" type="box" size=".026 .036 .009" pos="0 .036 -.0145" contype="8" conaffinity="1" friction=".8 .02 .001" group="3" rgba="0 0 0 0" density="0" /><geom name="skin_r" type="box" size=".011 .015 .003" pos="0 .015 -.003" contype="0" conaffinity="16" margin=".004" gap="0" friction="1.6 .02 .002" group="3" rgba="0 0 0 0" density="0" /><site name="pad_r" type="box" size=".012 .016 .009" pos="0 .015 -.003" rgba="0 0 0 0" /></body>
-                <geom type="mesh" mesh="link6" group="2" contype="0" conaffinity="0" density="0" rgba="0.33 0.35 0.37 1" quat="0.707105 0 0 0.707108" /><site name="tool" pos="0 0 0.13503" size=".008" rgba="0.2 0.5 1 1" /><geom name="palm" type="box" size=".034 .07 .03" pos="-.005 0 .036" contype="8" conaffinity="1" friction=".8 .02 .001" group="3" rgba="0 0 0 0" density="0" /></body>
-              <geom type="mesh" mesh="link5" group="2" contype="0" conaffinity="0" density="0" rgba="0.33 0.35 0.37 1" /></body>
-            <geom type="mesh" mesh="link4" group="2" contype="0" conaffinity="0" density="0" rgba="0.33 0.35 0.37 1" /></body>
-          <geom type="mesh" mesh="link3" group="2" contype="0" conaffinity="0" density="0" rgba="0.33 0.35 0.37 1" /></body>
-        <geom type="mesh" mesh="link2" group="2" contype="0" conaffinity="0" density="0" rgba="0.33 0.35 0.37 1" /></body>
-      <geom type="mesh" mesh="link1" group="2" contype="0" conaffinity="0" density="0" rgba="0.33 0.35 0.37 1" /></body>
-    <geom type="mesh" mesh="base_link" group="2" contype="0" conaffinity="0" density="0" rgba="0.33 0.35 0.37 1" /></body>
+                    <geom type="mesh" mesh="link8" group="2" contype="0" conaffinity="0" density="0" rgba="0.33 0.35 0.37 1" />
+                    <geom name="pad_r" type="box" size=".011 .015 .003" pos="0 .015 -.003" contype="8" conaffinity="1" condim="4" friction="1.6 .02 .002" solref=".004 1" solimp=".95 .99 .001" group="3" rgba="0 0 0 0" density="0" />
+                    <geom name="finger_r" type="box" size=".026 .036 .009" pos="0 .036 -.0145" contype="8" conaffinity="1" friction=".8 .02 .001" group="3" rgba="0 0 0 0" density="0" />
+                    <geom name="skin_r" type="box" size=".011 .015 .003" pos="0 .015 -.003" contype="0" conaffinity="16" margin=".004" gap="0" friction="1.6 .02 .002" group="3" rgba="0 0 0 0" density="0" />
+                    <site name="pad_r" type="box" size=".012 .016 .009" pos="0 .015 -.003" rgba="0 0 0 0" />
+                  </body>
+                  <geom type="mesh" mesh="link6" group="2" contype="0" conaffinity="0" density="0" rgba="0.33 0.35 0.37 1" quat="0.707105 0 0 0.707108" />
+                  <site name="tool" pos="0 0 0.13503" size=".008" rgba="0.2 0.5 1 1" />
+                  <geom name="palm" type="box" size=".034 .07 .03" pos="-.005 0 .036" contype="8" conaffinity="1" friction=".8 .02 .001" group="3" rgba="0 0 0 0" density="0" />
+                </body>
+                <geom type="mesh" mesh="link5" group="2" contype="0" conaffinity="0" density="0" rgba="0.33 0.35 0.37 1" />
+              </body>
+              <geom type="mesh" mesh="link4" group="2" contype="0" conaffinity="0" density="0" rgba="0.33 0.35 0.37 1" />
+            </body>
+            <geom type="mesh" mesh="link3" group="2" contype="0" conaffinity="0" density="0" rgba="0.33 0.35 0.37 1" />
+          </body>
+          <geom type="mesh" mesh="link2" group="2" contype="0" conaffinity="0" density="0" rgba="0.33 0.35 0.37 1" />
+        </body>
+        <geom type="mesh" mesh="link1" group="2" contype="0" conaffinity="0" density="0" rgba="0.33 0.35 0.37 1" />
+      </body>
+      <geom type="mesh" mesh="base_link" group="2" contype="0" conaffinity="0" density="0" rgba="0.33 0.35 0.37 1" />
+    </body>
   </worldbody>
-
   <contact>
     <exclude body1="base_link" body2="link1" />
     <exclude body1="link7" body2="link8" />
   </contact>
-
   <equality>
     <joint joint1="joint8" joint2="joint7" polycoef="0 -1 0 0 0" solimp="0.95 0.99 0.001" solref="0.004 1" />
   </equality>
-
   <actuator>
     <position name="joint1" joint="joint1" class="piper" kp="180" kv="24" />
     <position name="joint2" joint="joint2" class="piper" kp="180" kv="24" />
@@ -98,6 +109,11 @@
     <position name="joint5" joint="joint5" class="piper" kp="180" kv="24" />
     <position name="joint6" joint="joint6" class="piper" kp="180" kv="24" />
     <position name="gripper" joint="joint7" class="finger" kp="900" kv="30" />
-  <adhesion name="adhere_l" body="link7" ctrlrange="0 1" gain="3" /><adhesion name="adhere_r" body="link8" ctrlrange="0 1" gain="3" /></actuator>
-
-  <sensor><touch name="touch_l" site="pad_l" /><touch name="touch_r" site="pad_r" /></sensor></mujoco>
+    <adhesion name="adhere_l" body="link7" ctrlrange="0 1" gain="3" />
+    <adhesion name="adhere_r" body="link8" ctrlrange="0 1" gain="3" />
+  </actuator>
+  <sensor>
+    <touch name="touch_l" site="pad_l" />
+    <touch name="touch_r" site="pad_r" />
+  </sensor>
+</mujoco>

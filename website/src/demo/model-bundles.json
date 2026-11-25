@@ -1,0 +1,21 @@
+{
+  "piper": {
+    "visual": "models/piper/visual-43de642ff2d7.bin",
+    "physics": "models/piper/physics-478d858bfc9e.xml"
+  },
+  "panda": {
+    "visual": "models/panda/visual-ea0a3b5f55a0.bin",
+    "physics": "models/panda/physics-378249713c3a.xml"
+  },
+  "ur5e": {
+    "visual": "models/ur5e/visual-d31e4f395d13.bin",
+    "physics": "models/ur5e/physics-a57493d0ac95.xml"
+  },
+  "gen3": {
+    "visual": "models/gen3/visual-f20ba40ab692.bin",
+    "physics": "models/gen3/physics-011f2082ae88.xml"
+  },
+  "engine": {
+    "wasm": "models/engine/mujoco-904645316cfe.wasm"
+  }
+}

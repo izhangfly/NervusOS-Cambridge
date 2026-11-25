@@ -6,7 +6,64 @@
     "simplified STL visuals",
     "no arm contact geometry",
     "browser servo gains",
-    "added tool site"
+    "added tool site",
+    "Welded and reduced display meshes for browser delivery; explicit inertias/contact shapes unchanged"
   ],
-  "license": "MIT as stated by source README"
+  "license": "MIT as stated by source README",
+  "web_meshes": [
+    {
+      "source": "base_link.stl",
+      "browser": "base_link_web-v1.stl",
+      "source_faces": 10700,
+      "browser_faces": 3000
+    },
+    {
+      "source": "link1.stl",
+      "browser": "link1_web-v1.stl",
+      "source_faces": 18760,
+      "browser_faces": 3000
+    },
+    {
+      "source": "link2.stl",
+      "browser": "link2_web-v1.stl",
+      "source_faces": 71916,
+      "browser_faces": 3000
+    },
+    {
+      "source": "link3.stl",
+      "browser": "link3_web-v1.stl",
+      "source_faces": 54070,
+      "browser_faces": 3000
+    },
+    {
+      "source": "link4.stl",
+      "browser": "link4_web-v1.stl",
+      "source_faces": 14608,
+      "browser_faces": 3000
+    },
+    {
+      "source": "link5.stl",
+      "browser": "link5_web-v1.stl",
+      "source_faces": 22956,
+      "browser_faces": 3000
+    },
+    {
+      "source": "link6.stl",
+      "browser": "link6_web-v1.stl",
+      "source_faces": 13422,
+      "browser_faces": 3000
+    },
+    {
+      "source": "link7.stl",
+      "browser": "link7_web-v1.stl",
+      "source_faces": 1838,
+      "browser_faces": 1838
+    },
+    {
+      "source": "link8.stl",
+      "browser": "link8_web-v1.stl",
+      "source_faces": 1836,
+      "browser_faces": 1836
+    }
+  ]
 }

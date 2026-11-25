@@ -4,6 +4,57 @@
   "changes": [
     "Added a procedural parallel gripper with touch sensors",
     "Added gravity compensation and bounded position control",
-    "Excluded visual meshes from self-contact"
+    "Excluded visual meshes from self-contact",
+    "Welded and reduced display meshes for browser delivery; explicit inertias/contact shapes unchanged"
+  ],
+  "web_meshes": [
+    {
+      "source": "base_link.stl",
+      "browser": "base_link_web-v1.stl",
+      "source_faces": 3676,
+      "browser_faces": 3000
+    },
+    {
+      "source": "shoulder_link.stl",
+      "browser": "shoulder_link_web-v1.stl",
+      "source_faces": 9538,
+      "browser_faces": 3000
+    },
+    {
+      "source": "half_arm_1_link.stl",
+      "browser": "half_arm_1_link_web-v1.stl",
+      "source_faces": 10282,
+      "browser_faces": 3000
+    },
+    {
+      "source": "half_arm_2_link.stl",
+      "browser": "half_arm_2_link_web-v1.stl",
+      "source_faces": 9782,
+      "browser_faces": 3000
+    },
+    {
+      "source": "forearm_link.stl",
+      "browser": "forearm_link_web-v1.stl",
+      "source_faces": 9124,
+      "browser_faces": 3000
+    },
+    {
+      "source": "spherical_wrist_1_link.stl",
+      "browser": "spherical_wrist_1_link_web-v1.stl",
+      "source_faces": 10928,
+      "browser_faces": 3000
+    },
+    {
+      "source": "spherical_wrist_2_link.stl",
+      "browser": "spherical_wrist_2_link_web-v1.stl",
+      "source_faces": 10338,
+      "browser_faces": 3000
+    },
+    {
+      "source": "bracelet_with_vision_link.stl",
+      "browser": "bracelet_with_vision_link_web-v1.stl",
+      "source_faces": 23280,
+      "browser_faces": 3000
+    }
   ]
 }

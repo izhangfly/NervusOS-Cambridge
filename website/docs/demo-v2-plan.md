@@ -176,3 +176,15 @@ physics meshes, and incomplete arm collision geometry. The demo is not hardware 
 - Deployed both sites on 25 November 2026. Standalone deployment verified 190 file hashes, retained old hashed assets and confirmed the existing contact service healthy and unchanged. Portfolio release `assets-20261125133425` verified 141 hashes; the public demo HTML matches the local entry point. Prior immutable asset directories were retained. The published cooperative task check passed, as recorded below.
 
 - Published WebKit/iPhone verification completed FixtureMate with UR5e and Gen3, including pause/resume, E-STOP/re-arm and disposal. The physical insert reached its housing; the trace remained below the scene and the document width matched the 393 px viewport. No page errors or failed requests occurred after waiting for the default fleet load before switching worker configurations.
+
+
+## Loading and motion performance follow-up (25 November 2026)
+
+- A cold published fleet load took 55.6 seconds. Models were fetched sequentially, and physics workers also loaded the display meshes. Display bundles now load in parallel; workers receive mesh-free models with identical explicit masses, inertias, joints and touch sensors. PiPER visuals dropped from 10.5 MB to 1.23 MB, and Gen3 from 4.35 MB to 1.20 MB. The engine is compiled once per page and cloned into worker instances, with stable hashed engine/model URLs for repeat visits.
+- Physics now has its own budgeted worker clock, independent of WebGL frame rate. Paused, hidden, stopped and settled scenes own no stepping timer. The renderer still caps active drawing at 30 Hz. Coarser timestep trials were rejected after unstable picks; soft-object physics retains its original 2 ms timestep and 50-iteration solver limit.
+- LineSight batches are generated independently for each arm, with distinct finish sequences, six total parts and 2–4 of each finish. Household layouts remain comparable across arms.
+- Loading is labelled “Loading geometry & physics…” without naming a single arm. Arriving workcells remain visible beneath a compact loading status and progress count.
+- All 48 automated tests passed, including delivered-model dynamics equivalence, hidden/paused/settled worker clocks and manual-command wake-up. Final browser and deployment measurements are recorded below after completion.
+
+- Stable-physics production Chromium completed Toy tidy on all four arms: all 13 toys placed per arm, with bounded recovery picks where needed. Camera visibility, native fullscreen, pause/resume, E-STOP/re-arm, fleet/one-arm switching and disposal passed with no page errors or failed requests.
+- The final lifecycle check passed concurrent view changes, four-arm E-STOP/re-arm, pause/cancel, zero idle redraws, joint/gripper commands from a settled cell, reset, hiding/resuming and disposal. Manual commands immediately publish a frame and allow two seconds of actuator settling; hidden and paused cells still suspend stepping.

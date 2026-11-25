@@ -8,7 +8,9 @@
     "build": "vite build && node server/compress.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "start": "node server/server.mjs",
-    "test": "node --test --test-concurrency=1 tests/*.test.mjs"
+    "test": "node --test --test-concurrency=1 tests/*.test.mjs",
+    "prebuild": "node scripts/build-model-bundles.mjs",
+    "predev": "node scripts/build-model-bundles.mjs"
   },
   "dependencies": {
     "@mujoco/mujoco": "^4.0.1",

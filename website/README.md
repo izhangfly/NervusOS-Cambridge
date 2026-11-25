@@ -79,3 +79,12 @@ The website and service are independent of all existing VPS applications. The pe
 Physics-only runs omit non-colliding visual meshes while preserving mass, inertia, joint addresses and contact geometry; the equivalence is checked against the full UR5e model. Production browser checks use the full supplied meshes. `check-cooperative-browser.mjs` exercises mixed-arm selection, physical task completion, pause/resume, E-STOP/re-arm, trace placement and disposal.
 
 UR5e visual meshes are reduced to binary STL for browser delivery (31.0 MB of originals to 2.2 MB). Explicit body inertias and contact proxies remain unchanged. `scripts/prepare-web-meshes.py` keeps original source meshes under the ignored `build/model-sources/` cache; model provenance records each conversion.
+
+
+### Loading and simulation clocks
+
+Each arm has one content-addressed visual bundle and a mesh-free physics description. The page downloads and compiles MuJoCo once, then shares the compiled module with the workers; every worker retains its own physics memory. PiPER and Gen3 display meshes are welded and reduced, with explicit inertias and contact shapes unchanged. The engine/model URLs remain reusable across website rebuilds.
+
+Physics workers own a budgeted 60 Hz clock; the renderer draws at up to 30 Hz. Hidden, paused, stopped and settled scenes suspend stepping. Soft-object tasks retain 2 ms steps and the 50-iteration solver limit. LineSight assigns distinct randomized six-part sequences to the four arms, with at least two parts of each finish.
+
+`node scripts/check-loading.mjs URL chromium desktop` checks cold/warm loading and verifies one engine request, one visual bundle per arm, and no individual mesh downloads. WebKit phone uses `webkit phone`. `npm run build` and `npm run dev` prepare the model delivery files automatically.

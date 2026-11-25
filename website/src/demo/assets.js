@@ -1,9 +1,14 @@
 import{robotProfile}from'./robots.js';
-// A robot's MJCF description and STL meshes. The physics worker compiles them; the page draws the meshes.
-// Both fetch the same URLs, so the second download comes from the HTTP cache.
-const cache=new Map();
+import bundles from'./model-bundles.json';import{decodeVisualBundle}from'./model-assets.js';
+// One versioned display bundle per arm; only the renderer downloads it.
+const cache=new Map(),descriptions=new Map();
 export function loadRobotAssets(id){
- const profile=robotProfile(id);
- if(!cache.has(profile.id))cache.set(profile.id,(async()=>{const response=await fetch(profile.model);if(!response.ok)throw Error('Robot model unavailable');const xml=await response.text();const names=[...new Set([...xml.matchAll(/<mesh[^>]*file="([^"]+)"/g)].map(x=>x[1]))];const meshes=Object.fromEntries(await Promise.all(names.map(async name=>{const r=await fetch(`/models/${profile.id}/assets/${name}`);if(!r.ok)throw Error('Robot mesh unavailable');return[name,new Uint8Array(await r.arrayBuffer())]})));return{id:profile.id,xml,meshes}})().catch(e=>{cache.delete(profile.id);throw e}));
- return cache.get(profile.id);
+ id=robotProfile(id).id;
+ if(!cache.has(id))cache.set(id,(async()=>{const response=await fetch(import.meta.env.BASE_URL+bundles[id].visual,{cache:'force-cache'});if(!response.ok)throw Error('Robot model unavailable');return decodeVisualBundle(await response.arrayBuffer())})().catch(e=>{cache.delete(id);throw e}));
+ return cache.get(id);
+}
+export function loadRobotDescription(id){
+ id=robotProfile(id).id;
+ if(!descriptions.has(id))descriptions.set(id,(async()=>{const response=await fetch(import.meta.env.BASE_URL+bundles[id].physics,{cache:'force-cache'});if(!response.ok)throw Error('Robot physics unavailable');return{id,xml:await response.text(),meshes:{}}})().catch(e=>{descriptions.delete(id);throw e}));
+ return descriptions.get(id);
 }
