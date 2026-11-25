@@ -2,8 +2,8 @@
 //
 // Physics: each garment is a coarse MuJoCo flex grid (N x N cells, a body per vertex), cut to the
 // garment's outline. Garments collide with the table, baskets, washer and gripper but not with each
-// other while they sleep (see garmentState in model.js). Rendering: a fine surface (R times denser) interpolated from the simulated
-// points every frame with a Catmull-Rom patch, so the fabric bends smoothly instead of showing the
+// other even while they sleep (see garmentState in model.js). Rendering: a fine surface (R times denser) follows the simulated
+// triangles without interpolation overshoot, with smooth vertex normals instead of showing the
 // coarse triangles, plus a painted garment texture (collar, hems, seams, pockets, zip) and a woven
 // bump map. The simulation stays light enough for phones; the rendered surface retains the garment silhouette and thickness.
 import * as THREE from 'three';
@@ -47,11 +47,9 @@ export class GarmentSurface {
     const {uv:uvs,indices:tris}=garmentOutline(grid.kind,M),verts=new Array(uvs.length/2*3).fill(0),stencil=[];
     for(let k=0;k<uvs.length;k+=2){
       const u=uvs[k],v=uvs[k+1],x=u*N,y=v*N,i0=Math.min(N-1,Math.floor(x)),j0=Math.min(N-1,Math.floor(y));
-      const wx=crWeights(x-i0),wy=crWeights(y-j0),ids=[],ws=[];
-      for(let q=0;q<4;q++)for(let r=0;r<4;r++){
-        const gi=Math.max(0,Math.min(N,i0-1+r)),gj=Math.max(0,Math.min(N,j0-1+q));
-        ids.push(gj*G+gi);ws.push(wx[r]*wy[q]);
-      }stencil.push(ids,ws);
+      const fx=x-i0,fy=y-j0,ids=fx+fy<=1?[j0*G+i0,j0*G+i0+1,(j0+1)*G+i0]:[j0*G+i0+1,(j0+1)*G+i0+1,(j0+1)*G+i0];
+      const ws=fx+fy<=1?[1-fx-fy,fx,fy]:[1-fy,fx+fy-1,1-fx];
+      stencil.push(ids,ws);
     }
     this.stencil = stencil; this.full = new Float64Array(G * G * 3);
     // Real cloth has thickness: draw a front face, a back face (offset along the normal) and the rim
@@ -94,7 +92,7 @@ export class GarmentSurface {
     const P = this.base, N = this.bn, st = this.stencil, V = this.V, T = this.tris, h = this.thick / 2;
     for (let n = 0, m = 0; n < st.length; n += 2, m += 3) {
       const ids = st[n], ws = st[n + 1]; let x = 0, y = 0, z = 0;
-      for (let q = 0; q < 16; q++) { const o = ids[q] * 3, w = ws[q]; x += w * full[o]; y += w * full[o + 1]; z += w * full[o + 2]; }
+      for (let q = 0; q < ids.length; q++) { const o = ids[q] * 3, w = ws[q]; x += w * full[o]; y += w * full[o + 1]; z += w * full[o + 2]; }
       P[m] = x; P[m + 1] = y; P[m + 2] = z;
     }
     N.fill(0);

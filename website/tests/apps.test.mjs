@@ -15,3 +15,16 @@ test('fine garment surfaces retain necklines, sleeves and the gap between trouse
  assert.equal(covers(trousers,[.5,.25]),false,'leg gap');assert.equal(covers(trousers,[.5,.9]),true,'waist');
  assert.ok(tee.uv.some(v=>Math.abs(v*40-Math.round(v*40))>.01),'outline edges are clipped between grid samples');
 });
+
+
+test('LineSight batches vary in count and sequence with at least two parts of each finish',()=>{
+ const mixes=new Set(),orders=new Set();
+ for(let seed=1;seed<=80;seed++){
+  const scene=makeScene(quality,seed),parts=scene.items;
+  assert.equal(parts.length,6);assert.deepEqual(scene,makeScene(quality,seed));
+  const pass=parts.filter(p=>p.finish==='pass').length;
+  assert.ok(pass>=2&&pass<=4);mixes.add(pass);orders.add(parts.map(p=>p.finish).join(','));
+  for(const p of parts)assert.equal(p.color,p.finish==='pass'?'#8baba5':'#cf836a');
+ }
+ assert.equal(mixes.size,3);assert.ok(orders.size>10);
+});

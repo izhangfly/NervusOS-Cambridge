@@ -5,7 +5,7 @@
 import{createModel,objectPosition,attach,detach,moveRigid,garmentState,settleGarments}from'./model.js';
 import{toolPosition,inverseKinematics}from'./kinematics.js';
 import{makeScene,WASHER,BASKETS,classifyToy}from'./scene.js';import{planJobs,jobSteps,resultText,inWasher,inToyBasket,toyCounts,inQualityBasket,qualityCounts}from'./planner.js';import{apps}from'./apps/index.js';
-const DT=.004,round=(v,n=2)=>+v.toFixed(n);
+const round=(v,n=2)=>+v.toFixed(n);
 export class Cell{
  constructor(engine,emit){Object.assign(this,{engine,emit,speed:1,stopped:false,paused:false,counts:{},p:null,action:null,lastNotify:0})}
  setApp(appId,force=false,seed){const app=apps.find(a=>a.id===appId)||apps[0];if(!force&&this.p&&this.app?.id===app.id)return null;this.app=app;this.cancel();
@@ -83,9 +83,10 @@ export class Cell{
     if(job.pick&&(a.extra||0)<3){a.extra=(a.extra||0)+1;a.jobs.splice(a.jobIndex+1,0,{...job,id:undefined,tries:0});a.total++}}
    else{item.failedPicks=0;this.counts[job.category]=(this.counts[job.category]||0)+1;}a.retries=0;garmentState(p,item,'free')}
   a.jobIndex++;this.emit({counts:{...this.counts},progress:a.jobIndex/a.total});this.nextJob()}
- advance(dt){const p=this.p;if(!p||this.stopped||this.paused)return;try{this.substeps(Math.max(1,Math.round(dt*this.speed/DT)))}catch(e){this.cancel();this.emit({status:'error'});throw e}}
- substeps(n){const p=this.p;
+ advance(dt){const p=this.p;if(!p||this.stopped||this.paused)return;try{this.substeps(Math.max(1,Math.round(dt*this.speed/p.model.opt.timestep)),24)}catch(e){this.cancel();this.emit({status:'error'});throw e}}
+ substeps(n,budgetMs=Infinity){const p=this.p,DT=p.model.opt.timestep,began=performance.now();
   for(let k=0;k<n;k++){
+   if(k>0&&performance.now()-began>=budgetMs)break;
    const a=this.action;if(a){a.elapsed+=DT;const job=a.job;if(job.type==='index'||job.type==='outfeed'){let x=Math.min(1,a.elapsed/a.duration);x=x*x*(3-2*x);p.data.ctrl[p.beltAct]=-(a.start+(a.target-a.start)*x);
    }else{const index=a.steps.findIndex(s=>a.elapsed<=s.end),i=index<0?a.steps.length-1:index,s=a.steps[i];if(i!==a.si){a.si=i;this.traceStep(s,a.steps[i-1])}
     let x=Math.max(0,Math.min(1,(a.elapsed-s.start)/s.duration));x=x*x*(3-2*x);for(let j=0;j<p.profile.dof;j++)p.data.ctrl[j]=s.from[j]+(s.to[j]-s.from[j])*x;const shut=s.closeTo??0;p.data.ctrl[p.profile.gripper]=s.grip?(s.ramp?shut+((s.openTo??p.profile.open)-shut)*(1-x):shut):(s.openTo??p.profile.open);for(const id of p.adhere||[])p.data.ctrl[id]=s.adhere?1:0;

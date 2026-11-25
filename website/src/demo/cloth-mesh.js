@@ -38,7 +38,7 @@ export function garmentMesh(kind, position, size = .13, N = 5) {
   for (let j = 0; j <= N; j++) for (let i = 0; i <= N; i++) {
     const u = i / N, v = j / N; if (!near(u, v)) continue;
     index[j * (N + 1) + i] = points.length; uv.push(u, v);
-    points.push([position[0] + (u - .5) * size, position[1] + (v - .5) * H, position[2] + .004 * Math.sin(i * 1.7 + j * .9)]);
+    points.push([position[0] + (u - .5) * size, position[1] + (v - .5) * H, position[2] + .0012 * Math.sin(i * 1.7 + j * .9)]);
   }
   const at = (i, j) => (i < 0 || j < 0 || i > N || j > N) ? -1 : index[j * (N + 1) + i];
   for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {

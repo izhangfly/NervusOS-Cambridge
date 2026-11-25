@@ -5,7 +5,7 @@ export const nameId=(p,type,name)=>p.mj.mj_name2id(p.model,p.mj.mjtObj[type].val
 export function createModel(engine,scene){
  const{mj,xml,meshes}=engine,profile=robotProfile(engine.id),vfs=new mj.MjVFS();Object.entries(meshes).forEach(([n,b])=>vfs.addBuffer(n,b));
  let base=xml.replace('meshdir="assets"','meshdir=""');const stripped=base.replace(/<mesh\b[^>]*\/>/g,'').replace(/<geom\b[^>]*type="mesh"[^>]*\/>/g,'').replace(/<geom\b[^>]*mesh="[^"]+"[^>]*\/>/g,'');const kmodel=mj.MjModel.from_xml_string(stripped,vfs),ghost=new mj.MjData(kmodel);
- let combined=base.replace(/<option\b[^>]*\/>/,`<option integrator="${scene.items.some(x=>x.soft)?'discrete':'implicitfast'}" timestep=".004" iterations="30" tolerance="1e-7" jacobian="sparse" cone="elliptic" impratio="10"/>`);
+ let combined=base.replace(/<option\b[^>]*\/>/,`<option integrator="${scene.items.some(x=>x.soft)?'discrete':'implicitfast'}" timestep="${scene.id==='laundry'?'.002':'.004'}" iterations="${scene.id==='laundry'?50:30}" tolerance="1e-7" jacobian="sparse" cone="elliptic" impratio="10"/>`);
  let world=primitiveXML({shape:'box',size:[1.20,.94,.06],position:[.24,0,-.03],color:'#c1bdb3'})+scene.static.map(primitiveXML).join('');
  world+='<body name="grasp_anchor" mocap="true" pos=".3 0 .25"><geom type="sphere" size=".001" contype="0" conaffinity="0" rgba="0 0 0 0"/></body>';
  let equality='';
@@ -29,7 +29,7 @@ export function createModel(engine,scene){
    equality+=`<weld name="grasp_${item.id}" body1="${item.id}" body2="grasp_anchor" active="false" solref=".010 1" torquescale=".05"/>`;
    continue;
   }
-  if(item.soft){world+=`<flexcomp name="${item.id}" type="direct" dim="${item.kind==='plush'?3:2}" point="${v(item.mesh.points.flat())}" element="${(item.mesh.volumeIndices||item.mesh.indices).join(' ')}" mass="${item.mass}" radius="${item.kind==='plush'?'.0018':'.004'}" rgba="${rgba(item.color)}"><edge equality="${item.kind==='plush'?'false':'true'}" solref="${item.kind==='plush'?'.025':'.012'} 1"/><elasticity young="${item.bend}" poisson=".3" thickness="${item.kind==='plush'?'.003':'.0015'}" ${item.kind==='plush'?'':'elastic2d="bend"'} damping=".003"/><contact selfcollide="none" ${item.kind==='plush'?'':'contype="2" conaffinity="1"'} friction="${item.kind==='plush'?'.7':'.42'} .015 .001" solref=".014 1"/></flexcomp>`;
+  if(item.soft){world+=`<flexcomp name="${item.id}" type="direct" dim="${item.kind==='plush'?3:2}" point="${v(item.mesh.points.flat())}" element="${(item.mesh.volumeIndices||item.mesh.indices).join(' ')}" mass="${item.mass}" radius="${item.kind==='plush'?'.0018':'.004'}" rgba="${rgba(item.color)}"><edge equality="${item.kind==='plush'?'false':'true'}" solref="${item.kind==='plush'?'.025':'.012'} 1"/><elasticity young="${item.bend}" poisson=".3" thickness="${item.kind==='plush'?'.003':'.0015'}" ${item.kind==='plush'?'':'elastic2d="bend"'} damping=".003"/><contact selfcollide="${item.kind==='plush'?'none':'auto'}" ${item.kind==='plush'?'':'contype="2" conaffinity="3"'} friction="${item.kind==='plush'?'.7':'.42'} .015 .001" solref=".014 1"/></flexcomp>`;
    // A body per mesh vertex allows a pinch to hold one vertex while the rest of the fabric remains free.
    equality+=`<connect name="grasp_${item.id}" body1="${item.id}_0" body2="grasp_anchor" anchor="${v(item.mesh.points[0])}" active="false" solref=".008 1"/>`;
   }else{
@@ -48,12 +48,12 @@ export function createModel(engine,scene){
  p.dispose=()=>{data.delete();ghost.delete();model.delete();kmodel.delete()};return p;
 }
 // Garment states. 'sleep': nobody is handling it and it lies still, so it is gravity compensated, heavily
-// damped and collides only with the world. 'free': falling or settling, so it also collides with the other
+// damped but keeps contact with every other garment. 'free': falling or settling, so it also collides with the other
 // garments (it lands on top of a pile instead of sinking into it). 'held': the one garment the current job
 // picks, the only one the fingers and the adhesive grip skin can touch, so a pinch takes exactly one.
-// The solver then couples one or two garments at a time: 1.5-3 ms per step instead of 12 ms with every
-// garment touching every other. Contact bits: world 1/1, hand 8/1, grip skin 0/16, garments by state below.
-const BITS={sleep:[2,1],free:[2,3],held:[18,11]};
+// Collision remains active when sleeping: removing it allowed layers to intersect before a lift.
+// Contact bits: world 1/1, hand 8/1, grip skin 0/16, garments by state below.
+const BITS={sleep:[2,3],free:[2,3],held:[18,11]};
 export function garmentState(p,item,state){if(!item?.garment||item.state===state)return;const m=p.model,v=p.data.qvel,k=item.flex;item.state=state;item.still=0;item.free=0;
  [m.flex_contype[k],m.flex_conaffinity[k]]=BITS[state];const sleep=state==='sleep';
  for(const b of item.bodies){m.body_gravcomp[b]=sleep?1:0;const a=m.body_dofadr[b];for(let j=0;j<3;j++){m.dof_damping[a+j]=sleep?5:0;if(sleep)v[a+j]=0}}}
