@@ -5,7 +5,12 @@ try{
  const ctx=await browser.newContext(size==='phone'?devices['iPhone 15']:{viewport:{width:1440,height:1000}});
  await ctx.addInitScript(({ids,receipts})=>{localStorage.setItem('nervus-demo-installed',JSON.stringify(ids));localStorage.setItem('nervus-demo-purchases',JSON.stringify(receipts))},{ids:apps.map(a=>a.id),receipts:Object.fromEntries(apps.filter(a=>a.price).map(a=>[a.id,demoReceipt(a)]))});
  const page=await ctx.newPage();page.on('pageerror',e=>errors.push(e.message));page.on('console',e=>{if(e.type()==='error')errors.push(e.text())});page.on('requestfailed',r=>failed.push(r.url()));
- await page.goto(url,{waitUntil:'domcontentloaded'});await page.getByRole('button',{name:app==='carry'?'CarryTogether':'FixtureMate',exact:true}).click();
+ await page.goto(url,{waitUntil:'domcontentloaded'});
+ // Complete the default fleet load before replacing its workers. Interrupting their asset
+ // requests during a view change produces expected cancellation events on slower networks.
+ const initialPair=apps.find(a=>a.id===new URL(url).searchParams.get('app'))?.cooperative;
+ await page.waitForFunction(({count,state})=>document.querySelectorAll('.cap-col h4').length===count&&[...document.querySelectorAll('.cap-col h4')].every(e=>e.textContent.includes(state)),{count:initialPair?2:4,state:initialPair?'idle':'Ready'},{timeout:90000});
+ await page.getByRole('button',{name:app==='carry'?'CarryTogether':'FixtureMate',exact:true}).click();
  await page.waitForFunction(()=>document.querySelectorAll('.cap-col h4').length===2&&[...document.querySelectorAll('.cap-col h4')].every(e=>e.textContent.includes('idle')),null,{timeout:60000});
  assert.equal(await page.locator('.wrist-camera').isVisible(),false);assert.equal(await page.locator('.telemetry').count(),0);
  await page.getByLabel('Arm A model').selectOption('ur5e');await page.waitForFunction(()=>[...document.querySelectorAll('.cap-col h4')].every(e=>e.textContent.includes('idle')),null,{timeout:60000});
