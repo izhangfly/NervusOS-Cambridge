@@ -88,3 +88,5 @@ Each arm has one content-addressed visual bundle and a mesh-free physics descrip
 Physics workers own a budgeted 60 Hz clock; the renderer draws at up to 30 Hz. Hidden, paused, stopped and settled scenes suspend stepping. Soft-object tasks retain 2 ms steps and the 50-iteration solver limit. LineSight assigns distinct randomized six-part sequences to the four arms, with at least two parts of each finish.
 
 `node scripts/check-loading.mjs URL chromium desktop` checks cold/warm loading and verifies one engine request, one visual bundle per arm, and no individual mesh downloads. WebKit phone uses `webkit phone`. `npm run build` and `npm run dev` prepare the model delivery files automatically.
+
+`node server/compress.mjs OUTPUT_DIRECTORY` prepares gzip/Brotli files in a supplied publication directory; without an argument it uses `dist/`. The portfolio build runs this after darkening its final CSS. Compression tests verify that these files decompress to the published model bundles and styles.
