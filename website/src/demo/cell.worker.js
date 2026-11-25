@@ -9,7 +9,7 @@ self.onmessage=async({data:m})=>{
   if(!cell)return;
   if(m.type==='setApp'){revision=m.revision;const manifest=cell.setApp(m.app,m.force,m.seed);if(manifest)send({type:'manifest',manifest,frame:cell.frame()});return}
   if(m.type==='start'){const r=cell.start(m.action,m.seed);if(r?.manifest)send({type:'manifest',manifest:r.manifest,frame:cell.frame()});send({type:'started',ok:!!r});return}
-  if(m.type==='tick'){if(!cell.p){send({type:'frame',frame:null});return}cell.speed=m.speed;try{cell.advance(m.dt)}finally{cell.telemetry();const f=cell.frame();send({type:'frame',frame:f},[f.xpos.buffer,f.xquat.buffer,f.flex.buffer,f.qpos.buffer,f.tool.buffer])}return}
+  if(m.type==='tick'){if(!cell.p){send({type:'frame',frame:null});return}cell.speed=m.speed;try{cell.advance(m.dt,m.budget)}finally{cell.telemetry();const f=cell.frame();send({type:'frame',frame:f},[f.xpos.buffer,f.xquat.buffer,f.flex.buffer,f.qpos.buffer,f.tool.buffer])}return}
   if(m.type==='call'&&['pause','stop','rearm','reset','cancel','setJoint','setGripper'].includes(m.method)){cell[m.method](...(m.args||[]));return}
   if(m.type==='debug'&&import.meta.env.DEV){let value;try{value=await new Function('cell','return ('+m.src+')(cell)')(cell);value=JSON.parse(JSON.stringify(value??null))}catch(e){value={error:e.message}}send({type:'debug',id:m.id,value});return}
  }catch(e){send({type:'error',message:e?.message||String(e)})}

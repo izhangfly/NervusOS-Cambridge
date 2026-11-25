@@ -46,7 +46,7 @@ capability calls each robot's provider turns into its own joint commands).
 - Layout: basket at (.17, -.27), table pile at (.45, -.07): about 10 cm of clear table between them.
 - Pinch point: the highest fold of the chosen garment where both open fingers clear the basket wall by 15 mm.
 - Garment states (`garmentState` in model.js), contact bits world 1/1, hand 8/1, grip skin 0/16:
-  - sleep (2/1): nobody is handling it and it lies still; gravity compensated, damped, world contact only;
+  - sleep (2/3): nobody is handling it and it lies still; gravity compensated, damped, with world and garment contact;
   - free (2/3): falling or settling; also collides with the other garments, so it lands on top of a pile;
   - held (18/11): the one garment the job picks; the only one the fingers and the grip skin touch.
   A free garment sleeps after 0.5 s still. Cost per 4 ms step: 1.7 ms idle, about 3 ms with one garment
@@ -156,3 +156,18 @@ physics meshes, and incomplete arm collision geometry. The demo is not hardware 
 - Uploaded both sites: portfolio release `assets-20261122061713`; standalone deployment verified 133
   file checksums and contact-service health. Previous hashed assets are retained. Production HTML
   matches the local release. Desktop and phone photo checks confirmed the refreshed homepage image.
+
+## Four-arm and cooperative upgrade (25 November 2026)
+
+- Laundry uses 2 ms physics steps, 50 solver iterations, persistent contact between all cloth layers and `selfcollide=auto`. Starting layers are 12 mm apart. Fine rendering stays within the coarse triangles, removing spline overshoot. Contact isolation selects one soft item for gripping while other items retain contact with their surroundings.
+- The arm still opens the washer lid through the handle. A simulated mechanical hinge detent engages only after that physical opening; reset releases it. Cloth placement reads the held garment centre before lowering.
+- Panda and UR5e use self-contact proxies, IK clearance inequalities and sampled joint paths. New profiles use Cartesian carry paths and bounded carry speed. Bearing placement can re-index and retry a missed physical insertion. Final task status reports incomplete placement as an error.
+- Soft toys have a padded rigid core and a deformable tetrahedral outer shell. Assisted contact pads and limited compression prevent inversion and unstable volume collapse. This remains a reduced soft-body model.
+- LineSight creates six parts with a random count (2–4) and sequence for each finish. Classification and colours derive from the same generated finish.
+- Added the six-joint UR5e and seven-joint Kinova Gen3 using their Menagerie model descriptions, meshes and licences. Model frames include calibrated fingertip offsets. Both implicit OBJ mesh names and explicit STL names render.
+- Default fleet view compares four independent workcells. Cooperative apps use two namespaced providers in one MuJoCo world, with selectable matching or mixed geometry. CarryTogether confirms both contact grips before moving a shared tray. FixtureMate reserves the insertion area while one arm steadies a housing and the partner places an insert. The coordinator enforces ownership, support pose and grip barriers.
+- Worker stepping is budgeted at 6 ms per cell in the four-arm view, 12 ms for single/pair views. Hidden tabs do not step or draw; idle scenes sleep.
+- Physics replay verification: all 64 ordered cooperative pair/action replays passed, covering both actions of both apps on every matching/mixed pair. Factory and teach tasks passed on all four profiles. Final laundry audits counted six garments and Toy tidy counted all 13 toys on each arm; bounded recovery picks were needed in some runs. Panda sorting reported no sampled self-intersection.
+- Fresh builds completed for standalone and portfolio hosting; all 41 Node tests passed, including full-model versus physics-only UR5e inertias/contact equivalence. UR5e visual source meshes were reduced from 31.0 MB to 2.2 MB of binary STL without changing inertias or contact proxies. Browser and deployment verification follow below; deployment is pending.
+
+- Production Chromium desktop completed six QC parts on all four arms with no page errors or failed requests. The check exercised camera visibility, native fullscreen, pause/resume, E-STOP/re-arm, fleet/one-arm switching and disposal. After seam-welding the reduced UR5e visual meshes, a fresh screenshot confirmed clean rendering and inertias/contact equivalence tests passed again.

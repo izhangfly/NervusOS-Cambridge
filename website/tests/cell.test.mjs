@@ -60,3 +60,14 @@ test('sorting completion counts received toys, excluding old tallies and hoverin
   assert.deepEqual(audit(),{blocks:0,cars:0,plush:0});
  }finally{c.p?.dispose()}
 });
+
+test('the lid detent engages only after a physical opening and is released by reset',()=>{
+ const c=new Cell(engine('piper'),()=>{});try{
+  c.setApp('laundry',true,42);const p=c.p;
+  assert.equal(p.data.eq_active[p.lidDetent],0);
+  assert.throws(()=>c.event({event:'lid-release'}));assert.equal(p.data.eq_active[p.lidDetent],0);
+  p.data.qpos[p.lidAdr]=1.7;c.event({event:'lid-release'});
+  assert.equal(p.data.eq_active[p.lidDetent],1);assert.equal(p.model.eq_data[p.lidDetent*p.mj.mjNEQDATA],1.7);
+  c.reset();assert.equal(p.data.eq_active[p.lidDetent],0);assert.equal(p.data.qpos[p.lidAdr],0);
+ }finally{c.p?.dispose()}
+});

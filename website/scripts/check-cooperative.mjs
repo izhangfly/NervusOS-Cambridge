@@ -1,0 +1,4 @@
+import assert from 'node:assert/strict';import {engine} from './physics-fixture.mjs';import {CooperativeCell} from '../src/demo/cooperative-cell.js';
+const [left='piper',right='panda',app='carry',action=app==='carry'?'carry':'assemble']=process.argv.slice(2),events=[];
+const c=new CooperativeCell([engine(left),engine(right)],e=>{events.push(e);if(e.step||e.trace?.some(t=>t.cap==='Touch.Read'))console.log(JSON.stringify(e))});
+try{c.setApp(app);c.start(action);for(let i=0;i<3000&&c.action;i++)c.advance(.04);const final=events.findLast(e=>e.result);console.log(JSON.stringify({pair:[left,right],app,final,positions:c.p.items.map(it=>[it.id,c.pos(it.id)])}));assert.equal(c.action,null);assert.equal(final.status,'complete')}catch(e){console.error(JSON.stringify({stage:c.action?.index,poses:c.p&&[c.pose(0),c.pose(1)],goals:c.action?.stages[c.action.index].targets,positions:c.p?.items.map(it=>[it.id,c.pos(it.id)])}));throw e}finally{c.p?.dispose()}

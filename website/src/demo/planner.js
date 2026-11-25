@@ -43,11 +43,11 @@ export function jobSteps(p,job){
   const hinge=[.34,.29,.132],r=.14,arc=a=>[hinge[0],hinge[1]-r*Math.cos(a)+.016*Math.sin(a),hinge[2]+r*Math.sin(a)+.016*Math.cos(a)+.012];
   // The fingers close across the handle bar (along the world y axis, across its 10 mm diameter) with the
   // fingertips just above the lid, then follow the hinge arc: the lid turns because the hand holds it.
-  const pad=p.profile.id==='piper'?.015:0,yaw=Math.PI/2,handle=a=>{const h=arc(a);return[h[0],h[1],h[2]-.012-Math.min(pad,.004)*Math.cos(a)]};
+  const pad=p.profile.padOffset||0,yaw=Math.PI/2,handle=a=>{const h=arc(a);return[h[0],h[1],h[2]-.012-Math.min(pad,.004)*Math.cos(a)]};
   const s=(t,en,zh,x={})=>step(t,en,zh,{yaw,...x});
-  return[s([.34,.15,.27],'Wrist camera · locate lid handle','腕部摄像头 · 定位机盖把手',{vision:'lid'}),s(handle(0).map((v,i)=>i===2?v+.05:v),'Turn the fingers across the handle','转动夹爪对准把手'),s(handle(0),'Lower around the handle bar','下降到把手两侧',{duration:.6}),s(handle(0),'Squeeze the handle','夹紧把手',{grip:true,duration:.5}),s(handle(0),'Touch sensors · check the grip','触觉传感器 · 确认夹持',{grip:true,event:'grip-check',duration:.25}),...[.35,.75,1.15,1.52].map(a=>s(handle(a),'Lift the hinged lid','提起铰链机盖',{grip:true,duration:.8})),s(handle(1.52),'Release the open lid','松开已打开的机盖',{event:'lid-release',duration:.5}),step([.28,0,.30],'Move clear of the lid','离开机盖',{duration:.7})];
+  return[s([.34,.15,.27],'Wrist camera · locate lid handle','腕部摄像头 · 定位机盖把手',{vision:'lid'}),s(handle(0).map((v,i)=>i===2?v+.05:v),'Turn the fingers across the handle','转动夹爪对准把手'),s(handle(0),'Lower around the handle bar','下降到把手两侧',{duration:.6}),s(handle(0),'Squeeze the handle','夹紧把手',{grip:true,duration:.5}),s(handle(0),'Touch sensors · check the grip','触觉传感器 · 确认夹持',{grip:true,event:'grip-check',duration:.25}),...[.35,.75,1.15,1.85].map(a=>s(handle(a),'Lift the hinged lid','提起铰链机盖',{grip:true,duration:.8})),s(handle(1.85),'Release the open lid','松开已打开的机盖',{event:'lid-release',duration:.5}),step([.28,0,.30],'Move clear of the lid','离开机盖',{duration:.7})];
  }
- if(job.type==='transfer')return p.items.get(job.id).soft?softTransfer(p,job):rigidTransfer(p,job);
+ if(job.type==='transfer'){const item=p.items.get(job.id);if(item.soft)garmentState(p,item,'held');return item.soft?softTransfer(p,job):rigidTransfer(p,job);}
  if(job.type==='transfer'){
   const item=p.items.get(job.id),pin=pinchPosition(p,item),from=[pin[0],pin[1],Math.max(.046,pin[2]+.012)],high=Math.max(.27,from[2]+.12);
   const basketBottom=job.dest[2],drop=item.soft?.205:job.category==='assembled'?.105:basketBottom+.077;
@@ -89,7 +89,7 @@ export function graspPlan(p,item){
  }
  // pad centre at the part's middle; the PiPER's pads sit 15 mm behind its fingertips (the tool point)
  // fingertips stay 3 mm above whatever the part rests on (table, tray floor), never pushing into it
- const padOffset=p.profile.id==='piper'?.015:0,z=Math.max(.006,c[2]-height/2+.003,c[2]-padOffset);
+ const padOffset=p.profile.padOffset||0,z=Math.max(.006,c[2]-height/2+.003,c[2]-padOffset);
  // open only as wide as the part needs, so the fingers don't land on its neighbours
  return{center:c,grasp:[c[0],c[1],z],yaw,width,height,padOffset,openTo:Math.min(p.profile.open,width/2+.01)};
 }
@@ -132,7 +132,7 @@ function softTransfer(p,job){
    const key=(cl>=.02?1+v[2]:cl)+(k===(tries-1)%4?.002:0);if(key>bestKey){bestKey=key;pin=v;yaw=t}}}
  // Panda's smaller fingertip pads need fabric on both sides of the pinch. Choose the midpoint of
  // two adjacent cloth vertices, rather than an isolated peak at the hem that only touches one pad.
- if(!plush&&p.profile.id==='panda'){
+ if(!plush&&['panda','ur5e','gen3'].includes(p.profile.id)){
   const seen=new Set();let best=-Infinity;
   for(let t=0;t<item.mesh.indices.length;t+=3)for(let e=0;e<3;e++){
    const i=item.mesh.indices[t+e],j=item.mesh.indices[t+(e+1)%3],key=Math.min(i,j)+':'+Math.max(i,j);if(seen.has(key))continue;seen.add(key);
@@ -145,31 +145,32 @@ function softTransfer(p,job){
    const clear=Math.min(cl,palm),score=(clear>=.008?1+mid[2]:clear);if(score>best){best=score;pin=mid;yaw=angle}
   }
  }
+ if(plush){let best=-1;for(let k=0;k<12;k++){const angle=Math.atan2(c[1],c[0])+k*Math.PI/12,clear=fingerClearance(p,item,c,angle,.037,c[2]-.015);if(clear>best){best=clear;yaw=angle}}}
  // what the cloth rests on around the pinch: its lowest point within 35 mm
  let local=pin[2];for(let i=0;i<item.vertexNum;i++){const v=V(i);if(Math.hypot(v[0]-pin[0],v[1]-pin[1])<.035)local=Math.min(local,v[2])}
- const pad=p.profile.id==='piper'?.015:0;
+ const pad=p.profile.padOffset||0;
  // fingertips 2 mm below the cloth's mid-plane where it rests (just above the table, basket floor or the garment
  // beneath, which the hand passes through while that one sleeps), so the pads close across the sheet and gather it
- const grasp=plush?[c[0],c[1],Math.max(.006,c[2]-pad)]:[pin[0],pin[1],Math.max(.006,p.profile.id==='panda'?pin[2]-.001:local-.002)];
+ const grasp=plush?[c[0],c[1],Math.max(.006,c[2]-pad)]:[pin[0],pin[1],Math.max(['ur5e','gen3'].includes(p.profile.id)?.0015:.006,['panda','ur5e','gen3'].includes(p.profile.id)?pin[2]-.001-pad:local-.002)];
  const high=Math.max(.27,grasp[2]+.15),over=[grasp[0],grasp[1],high];
  // lower the hanging garment until it rests on the drum floor (or the basket floor / the clothes already there)
  // before letting go: it can't catch on the rim, and the open fingers slide out of a garment that is already supported
- const washer=job.category==='washer',drop=washer?(plush?.165:.115):job.dest[2]+(plush?.13:.075),dest=[job.dest[0],job.dest[1]-(washer?.015:0),drop],hover=[dest[0],dest[1],high];
+ const washer=job.category==='washer',drop=washer?(plush?.165:p.profile.id==='gen3'?.09:.19):job.dest[2]+(plush?.13:.075),dest=[job.dest[0],job.dest[1],drop],hover=[dest[0],dest[1],high];
  // over the washer the hand turns to lie along the hinge (fingers closing along x): a wide hand (Panda's is 20 cm)
  // pointing across the drum would meet the open lid as it lowers
  const put=washer?{yaw:0}:{};
  // on cloth the fingers stop 2 mm short of closed: squeezing a thin sheet all the way shut pushes it out of the pinch
- const openTo=plush?Math.min(p.profile.open,.027+.01):Math.min(p.profile.open,.028),closeTo=plush?0:.002,s=(t,en,zh,x={})=>step(t,en,zh,{yaw,openTo,closeTo,...x});
+ const openTo=plush?Math.min(p.profile.open,.027+.01):Math.min(p.profile.open,.028),closeTo=plush?(['ur5e','gen3'].includes(p.profile.id)?.015:.012):.002,s=(t,en,zh,x={})=>step(t,en,zh,{yaw,openTo,closeTo,...x});
  return[
   s(over,`Wrist scan · ${job.label.en}`,`腕部扫描 · ${job.label.zh}`,{vision:job.category,item:job.id,duration:.7}),
   s([grasp[0],grasp[1],grasp[2]+.05],plush?'Turn the fingers around the toy':'Find the highest fold',plush?'夹爪对准玩偶':'找到最高的褶皱',{duration:.6}),
   s(grasp,plush?'Lower around the toy':'Lower the fingertips beside the fold',plush?'下降到玩偶两侧':'指尖下降到褶皱两侧',{duration:.7}),
-  s(grasp,plush?'Squeeze the soft body':'Close slowly · gather a fold of fabric',plush?'夹住柔软身体':'慢慢合拢 · 收拢布料褶皱',{grip:true,ramp:!plush,duration:plush?.55:1.1}),
-  s(grasp,plush?'Touch sensors · check the grip':'Grip pads on · touch sensors check the fabric',plush?'触觉传感器 · 确认夹持':'抓取垫启动 · 触觉确认布料',{grip:true,adhere:!plush,event:'grip-check',item:job.id,soft:true,duration:.3}),
-  s([grasp[0],grasp[1],grasp[2]+.05],'Lift slowly · touch sensors watch for slip','缓慢抬起 · 触觉监测滑脱',{grip:true,adhere:!plush,event:'grip-check',item:job.id,soft:true,slip:true,duration:.6}),
-  s(over,'Clear of the pile · touch check again','离开衣堆 · 再次触觉确认',{grip:true,adhere:!plush,event:'grip-check',item:job.id,soft:true,slip:true,duration:.8}),
-  s(hover,`Transfer to ${job.category}`,`转运到${job.category}`,{grip:true,adhere:!plush,duration:1.1,...put}),
-  s(dest,'Lower the draping fabric','放低垂落的布料',{grip:true,adhere:!plush,duration:.85,...put}),
+  s(grasp,plush?'Squeeze the soft body':'Close slowly · gather a fold of fabric',plush?'夹住柔软身体':'慢慢合拢 · 收拢布料褶皱',{grip:true,ramp:true,duration:plush?1.5:1.1}),
+  s(grasp,plush?'Grip pads on · check the soft-body contact':'Grip pads on · touch sensors check the fabric',plush?'触觉传感器 · 确认夹持':'抓取垫启动 · 触觉确认布料',{grip:true,adhere:true,event:'grip-check',item:job.id,soft:true,duration:.3}),
+  s([grasp[0],grasp[1],grasp[2]+.05],'Lift slowly · touch sensors watch for slip','缓慢抬起 · 触觉监测滑脱',{grip:true,adhere:true,event:'grip-check',item:job.id,soft:true,slip:true,duration:.6}),
+  s(over,'Clear of the pile · touch check again','离开衣堆 · 再次触觉确认',{grip:true,adhere:true,event:'grip-check',item:job.id,soft:true,slip:true,duration:.8}),
+  s(hover,`Transfer to ${job.category}`,`转运到${job.category}`,{grip:true,adhere:true,duration:1.1,...put}),
+  s(dest,'Lower the draping fabric','放低垂落的布料',{grip:true,adhere:true,duration:.85,centerItem:washer?job.id:undefined,...put}),
   s(dest,'Open the fingers · release','张开夹爪 · 松开',{event:'release',item:job.id,duration:.45,openTo:p.profile.open,...put}),
   s(hover,'Retreat · check placement','抬起 · 检查放置',{duration:.9,openTo:p.profile.open,...put}),
  ];

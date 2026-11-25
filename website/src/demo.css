@@ -48,3 +48,15 @@
  .cap-col li:nth-child(2){display:flex}
  .cap-col li:nth-child(n+3){display:none}
 }
+
+/* Four provider comparisons stay readable without widening the phone viewport. */
+.cap-cols{grid-template-columns:repeat(var(--cols,2),minmax(0,1fr))}
+.cap-col.ur5e h4{color:#82b6e7}.cap-col.gen3 h4{color:#cdb4ed}
+.cap-col:nth-child(n+3){border-top:1px solid #2f4f5c}
+
+.coop-pair{display:flex;gap:12px;padding:9px 12px;border-bottom:1px solid #6f929b;background:#142832;color:#d3e5ed}
+.coop-pair label{display:flex;align-items:center;gap:7px;flex:1;font:10px ui-monospace,monospace;min-width:0}
+.coop-pair select{min-width:0;max-width:100%;flex:1;padding:7px;color:#d3e5ed;background:#203b48;border:1px solid #6f929b;font-size:11px}
+@media(max-width:650px){.coop-pair{flex-direction:column;gap:5px}}
+
+.fleet-bar[hidden]{display:none}

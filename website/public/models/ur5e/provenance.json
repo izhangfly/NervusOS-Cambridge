@@ -1,0 +1,132 @@
+{
+  "source": "https://github.com/google-deepmind/mujoco_menagerie/tree/main/universal_robots_ur5e",
+  "license": "BSD-3-Clause",
+  "changes": [
+    "Added a procedural parallel gripper with touch sensors",
+    "Added gravity compensation and bounded position control",
+    "Excluded visual meshes from self-contact",
+    "Reduced visual meshes and exported binary STL; retained explicit body inertias and contact proxies"
+  ],
+  "web_meshes": [
+    {
+      "source": "base_0.obj",
+      "browser": "base_0_web-v2.stl",
+      "source_faces": 2240,
+      "browser_faces": 2240
+    },
+    {
+      "source": "base_1.obj",
+      "browser": "base_1_web-v2.stl",
+      "source_faces": 2598,
+      "browser_faces": 2500
+    },
+    {
+      "source": "shoulder_0.obj",
+      "browser": "shoulder_0_web-v2.stl",
+      "source_faces": 11435,
+      "browser_faces": 2500
+    },
+    {
+      "source": "shoulder_1.obj",
+      "browser": "shoulder_1_web-v2.stl",
+      "source_faces": 2268,
+      "browser_faces": 2268
+    },
+    {
+      "source": "shoulder_2.obj",
+      "browser": "shoulder_2_web-v2.stl",
+      "source_faces": 9587,
+      "browser_faces": 2499
+    },
+    {
+      "source": "upperarm_0.obj",
+      "browser": "upperarm_0_web-v2.stl",
+      "source_faces": 620,
+      "browser_faces": 620
+    },
+    {
+      "source": "upperarm_1.obj",
+      "browser": "upperarm_1_web-v2.stl",
+      "source_faces": 4255,
+      "browser_faces": 3841
+    },
+    {
+      "source": "upperarm_2.obj",
+      "browser": "upperarm_2_web-v2.stl",
+      "source_faces": 14489,
+      "browser_faces": 3123
+    },
+    {
+      "source": "upperarm_3.obj",
+      "browser": "upperarm_3_web-v2.stl",
+      "source_faces": 20756,
+      "browser_faces": 2500
+    },
+    {
+      "source": "forearm_0.obj",
+      "browser": "forearm_0_web-v2.stl",
+      "source_faces": 6540,
+      "browser_faces": 2499
+    },
+    {
+      "source": "forearm_1.obj",
+      "browser": "forearm_1_web-v2.stl",
+      "source_faces": 321,
+      "browser_faces": 321
+    },
+    {
+      "source": "forearm_2.obj",
+      "browser": "forearm_2_web-v2.stl",
+      "source_faces": 3696,
+      "browser_faces": 2500
+    },
+    {
+      "source": "forearm_3.obj",
+      "browser": "forearm_3_web-v2.stl",
+      "source_faces": 4499,
+      "browser_faces": 2500
+    },
+    {
+      "source": "wrist1_0.obj",
+      "browser": "wrist1_0_web-v2.stl",
+      "source_faces": 1149,
+      "browser_faces": 1149
+    },
+    {
+      "source": "wrist1_1.obj",
+      "browser": "wrist1_1_web-v2.stl",
+      "source_faces": 9513,
+      "browser_faces": 2500
+    },
+    {
+      "source": "wrist1_2.obj",
+      "browser": "wrist1_2_web-v2.stl",
+      "source_faces": 6626,
+      "browser_faces": 2499
+    },
+    {
+      "source": "wrist2_0.obj",
+      "browser": "wrist2_0_web-v2.stl",
+      "source_faces": 3451,
+      "browser_faces": 2499
+    },
+    {
+      "source": "wrist2_1.obj",
+      "browser": "wrist2_1_web-v2.stl",
+      "source_faces": 8310,
+      "browser_faces": 2499
+    },
+    {
+      "source": "wrist2_2.obj",
+      "browser": "wrist2_2_web-v2.stl",
+      "source_faces": 8519,
+      "browser_faces": 2499
+    },
+    {
+      "source": "wrist3.obj",
+      "browser": "wrist3_web-v2.stl",
+      "source_faces": 911,
+      "browser_faces": 911
+    }
+  ]
+}

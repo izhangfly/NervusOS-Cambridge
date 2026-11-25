@@ -1,0 +1,9 @@
+{
+  "source": "https://github.com/google-deepmind/mujoco_menagerie/tree/main/kinova_gen3",
+  "license": "BSD-3-Clause",
+  "changes": [
+    "Added a procedural parallel gripper with touch sensors",
+    "Added gravity compensation and bounded position control",
+    "Excluded visual meshes from self-contact"
+  ]
+}

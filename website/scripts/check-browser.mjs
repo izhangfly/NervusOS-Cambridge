@@ -18,7 +18,7 @@ try{
  page.on('console',m=>{if(m.type()==='error')errors.push(m.text())});
  page.on('requestfailed',r=>failures.push({url:r.url(),error:r.failure()?.errorText}));
  await page.goto(url,{waitUntil:'domcontentloaded'});
- await page.waitForFunction(()=>document.querySelectorAll('.cap-col h4').length===2&&[...document.querySelectorAll('.cap-col h4')].every(e=>e.textContent.includes('Ready')),null,{timeout:60000});
+ await page.waitForFunction(()=>document.querySelectorAll('.cap-col h4').length===4&&[...document.querySelectorAll('.cap-col h4')].every(e=>e.textContent.includes('Ready')),null,{timeout:60000});
  assert.equal(await page.evaluate(()=>typeof window.__nervusDemo),'undefined','production inspection hook must be absent');
  assert.equal(await page.locator('.wrist-camera').isVisible(),false,'fleet camera starts hidden');
  assert.equal(await page.locator('.telemetry').count(),0,'telemetry strip is removed');
@@ -68,10 +68,10 @@ try{
  finally{clearInterval(progressTimer)}
  assert.equal(await page.locator('.demo-error').count(),0,await page.locator('.demo-error').textContent().catch(()=>''));
  report.result=await page.locator('.task-status').textContent();
- if(task==='load'||task==='all'){const n=task==='all'?6:3;assert.equal((report.result.match(new RegExp(n+' garments in the washer','g'))||[]).length,2,report.result)}
- if(task==='inspect'){const batches=[...report.result.matchAll(/Batch inspected: (\d+) pass, (\d+) rework/g)];assert.equal(batches.length,2,report.result);for(const b of batches)assert.equal(+b[1]+ +b[2],6,report.result)}
- if(task==='sort')assert.equal((report.result.match(/All 13 toys sorted/g)||[]).length,2,report.result);
- if(task==='assemble')assert.equal((report.result.match(/6 wheel modules/g)||[]).length,2,report.result);report.states=await page.locator('.cap-col h4').allTextContents();
+ if(task==='load'||task==='all'){const n=task==='all'?6:3;assert.equal((report.result.match(new RegExp(n+' garments in the washer','g'))||[]).length,4,report.result)}
+ if(task==='inspect'){const batches=[...report.result.matchAll(/Batch inspected: (\d+) pass, (\d+) rework/g)];assert.equal(batches.length,4,report.result);for(const b of batches)assert.equal(+b[1]+ +b[2],6,report.result)}
+ if(task==='sort')assert.equal((report.result.match(/All 13 toys sorted/g)||[]).length,4,report.result);
+ if(task==='assemble')assert.equal((report.result.match(/6 wheel modules/g)||[]).length,4,report.result);report.states=await page.locator('.cap-col h4').allTextContents();
  report.layout=await page.evaluate(()=>({width:innerWidth,content:document.documentElement.scrollWidth,trace:!!document.querySelector('.cap-trace'),canvas:document.querySelector('.simulation-canvas')?.getBoundingClientRect().toJSON()}));
  const sections=await page.evaluate(()=>['.simulation-canvas','.cap-trace','.sim-toolbar'].map(sel=>document.querySelector(sel).getBoundingClientRect().toJSON()));
  assert.ok(sections[1].top>=sections[0].bottom-1&&sections[2].top>=sections[1].bottom-1,'scene, trace and controls use separate rows');
@@ -86,9 +86,9 @@ try{
  assert.equal(await page.locator('.wrist-camera').isVisible(),true,'single view shows its camera');
  await page.getByRole('button',{name:'Re-arm simulation',exact:true}).click();
  await page.waitForFunction(()=>document.querySelector('.cap-col h4').textContent.includes('Ready'));
- await page.getByRole('button',{name:'Fleet · PiPER + Panda',exact:true}).click();
- await page.waitForFunction(()=>document.querySelectorAll('.cap-col h4').length===2&&[...document.querySelectorAll('.cap-col h4')].every(e=>e.textContent.includes('Ready')));
- // Leaving the demo disposes the two physics workers and the WebGL renderers.
+ await page.getByRole('button',{name:'Fleet · 4 arms',exact:true}).click();
+ await page.waitForFunction(()=>document.querySelectorAll('.cap-col h4').length===4&&[...document.querySelectorAll('.cap-col h4')].every(e=>e.textContent.includes('Ready')),null,{timeout:90000});
+ // Leaving the demo disposes the physics workers and the WebGL renderers.
  await page.getByRole('link',{name:'Platform',exact:true}).first().click();
  await page.locator('.simulation-canvas').waitFor({state:'detached',timeout:15000});
  assert.equal(await page.locator('.simulation-canvas').count(),0);

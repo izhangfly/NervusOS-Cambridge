@@ -3,7 +3,7 @@
 // and the page only draws. Everything the page needs leaves through emit() (status, telemetry, trace)
 // and frame() (poses for drawing).
 import{createModel,objectPosition,attach,detach,moveRigid,garmentState,settleGarments}from'./model.js';
-import{toolPosition,inverseKinematics}from'./kinematics.js';
+import{toolPosition,inverseKinematics,motionRoute}from'./kinematics.js';
 import{makeScene,WASHER,BASKETS,classifyToy}from'./scene.js';import{planJobs,jobSteps,resultText,inWasher,inToyBasket,toyCounts,inQualityBasket,qualityCounts}from'./planner.js';import{apps}from'./apps/index.js';
 const round=(v,n=2)=>+v.toFixed(n);
 export class Cell{
@@ -20,7 +20,7 @@ export class Cell{
  telemetry(){const now=performance.now();if(!this.p||now-this.lastNotify<140)return;this.lastNotify=now;const d=this.p.data,a=this.action;
   this.emit({joints:Array.from(d.qpos).slice(0,this.p.profile.dof),position:toolPosition(this.p),time:d.time,gripperClosed:d.ctrl[this.p.profile.gripper]<.005,...(a&&a.duration?{status:this.paused?'paused':'running',step:this.currentStep,progress:(a.jobIndex+a.elapsed/a.duration)/a.total}:{}),lidAngle:this.p.lidAdr!==undefined?d.qpos[this.p.lidAdr]:null})}
  reset(){if(!this.p)return;this.cancel();const p=this.p;p.mj.mj_resetData(p.model,p.data);p.data.qpos.set(p.initial);p.data.ctrl.set(p.ctrlInitial);p.data.eq_active.set(p.eqInitial);p.mj.mj_forward(p.model,p.data);
-  for(const item of p.items.values()){if(item.garment){item.state=null;garmentState(p,item,'sleep')}item.onBelt=!!p.scene.items.find(x=>x.id===item.id)?.onBelt;delete item.failedPicks;delete item.graspAttempts;delete item.placed;delete item.module;delete item.joined;item.beltX0=item.position[0];item.beltPos=[...item.position]}
+  for(const item of p.items.values()){if(item.soft){item.state=null;garmentState(p,item,'sleep')}item.onBelt=!!p.scene.items.find(x=>x.id===item.id)?.onBelt;delete item.failedPicks;delete item.graspAttempts;delete item.placed;delete item.module;delete item.joined;item.beltX0=item.position[0];item.beltPos=[...item.position]}
   p.belt={offset:0};this.counts={};this.emit({status:this.stopped?'stopped':'idle',progress:0,step:null,result:null,counts:{},gripperClosed:false,vision:null,item:null})}
  cancel(){if(this.p){for(const id of this.p.adhere||[])this.p.data.ctrl[id]=0;for(let i=0;i<this.p.profile.dof;i++)this.p.data.ctrl[i]=this.p.data.qpos[i];for(const item of this.p.items.values()){this.p.data.eq_active[item.eq]=0;if(item.state==='held')garmentState(this.p,item,'free')}if(this.p.lidEq!==undefined)this.p.data.eq_active[this.p.lidEq]=0}this.action=null;this.activeItem=null;this.lidHeld=false;this.paused=false;this.emit({status:this.stopped?'stopped':'idle',step:null,result:null,progress:0,vision:null,item:null})}
  // shuffle-type actions rebuild the scene from the shared seed (both robots of a fleet get the same layout)
@@ -45,7 +45,8 @@ export class Cell{
     if(this.p.scene.id==='kitting')Object.assign(this.counts,toyCounts(this.p));
     if(this.p.scene.id==='quality')Object.assign(this.counts,qualityCounts(this.p));
     this.action=null;this.activeItem=null;
-    this.emit({status:'complete',progress:1,step:null,result:a.definition.result||resultText(this.p,this.counts),counts:{...this.counts},vision:null,item:null});return;
+    const incomplete=missing?.length||missedToys?.length||(this.p.scene.id==='quality'&&(this.counts.pass||0)+(this.counts.rework||0)<6)||(this.p.scene.id==='assembly'&&(this.counts.assembled||0)<6);
+    this.emit({status:incomplete?'error':'complete',progress:1,step:null,result:a.definition.result||resultText(this.p,this.counts),counts:{...this.counts},vision:null,item:null});return;
    }
   }
   const job=a.jobs[a.jobIndex];a.job=job;a.elapsed=0;a.si=-1;a.events=new Set();
@@ -54,7 +55,35 @@ export class Cell{
   let seed=Array.from(this.p.data.qpos).slice(0,this.p.profile.home.length),time=0;const planned=jobSteps(this.p,job);if(!planned.length){a.jobIndex++;this.emit({progress:a.jobIndex/a.total});return this.nextJob()}
   // a pose the arm can't reach with the fingers at the requested angle (a long hand close to its own base)
   // is tried again with the wrist free to turn, before the job gives up
-  a.steps=planned.map(s=>{let solved=inverseKinematics(this.p,s.target,seed,s.yaw);if(solved.error>.026&&s.yaw!==undefined){const free=inverseKinematics(this.p,s.target,seed);if(free.error<solved.error){solved=free;s={...s,yaw:undefined,freeYaw:true}}}if(solved.error>.026)throw Error(`Unreachable task point (${this.p.profile.short}, ${(solved.error*1000).toFixed(0)} mm at ${s.target.map(v=>v.toFixed(3)).join(',')})`);const st={...s,from:[...seed],to:solved.q,start:time,end:time+s.duration};time=st.end;seed=[...solved.q];return st});a.duration=time}
+  a.steps=planned.flatMap((s,si)=>{let solved=inverseKinematics(this.p,s.target,seed,s.yaw);if(solved.error>.026&&s.yaw!==undefined){const free=inverseKinematics(this.p,s.target,seed);if(free.error<solved.error){solved=free;s={...s,yaw:undefined,freeYaw:true}}}if(solved.error>.026)throw Error(`Unreachable or colliding task point (${this.p.profile.short}, ${(solved.error*1000).toFixed(0)} mm at ${s.target.map(v=>v.toFixed(3)).join(',')})`);
+   const previous=planned[si-1],distance=previous?Math.hypot(...s.target.map((v,j)=>v-previous.target[j])):0;
+   // While carrying, keep the tool on a Cartesian path rather than swinging the grasp through
+   // the table on a straight joint interpolation. The provider still solves its own joint poses.
+   let path=null;
+   if(['ur5e','gen3'].includes(this.p.profile.id)&&s.grip&&previous?.grip&&distance>.025){
+    path=[[...seed]];let initial=seed;
+    for(let k=1;k<=8;k++){
+     const x=k/8,target=s.target.map((v,j)=>previous.target[j]+(v-previous.target[j])*x);
+     let yaw=s.yaw;if(yaw!==undefined&&previous.yaw!==undefined){let d=yaw-previous.yaw;while(d>Math.PI/2)d-=Math.PI;while(d< -Math.PI/2)d+=Math.PI;yaw=previous.yaw+d*x}
+     const q=inverseKinematics(this.p,target,initial,yaw);if(q.error>.026)throw Error('No clear Cartesian carry path');
+     path.push(...motionRoute(this.p,initial,q.q));initial=q.q;
+    }
+   }
+   const route=path?[path.at(-1)]:motionRoute(this.p,seed,solved.q),segments=[];
+   for(let i=0;i<route.length;i++){const q=route[i],final=i===route.length-1,duration=path?Math.max(s.duration,distance/.25):route.length===1?s.duration:Math.max(.65,s.duration/route.length),st={...s,path,...(!final?{event:undefined,vision:undefined}:{}),from:[...seed],to:q,start:time,end:time+duration,duration};segments.push(st);time=st.end;seed=[...q]}
+   return segments;
+  });a.duration=time}
+ centerLoad(a,index){
+  const p=this.p,s=a.steps[index],center=objectPosition(p,s.centerItem),tool=toolPosition(p),xy=[WASHER[0]-(center[0]-tool[0]),WASHER[1]-(center[1]-tool[1])];
+  let seed=Array.from(p.data.qpos).slice(0,p.profile.home.length);
+  for(let i=index;i<a.steps.length;i++){
+   const st=a.steps[i];st.target=[...xy,st.target[2]];const q=inverseKinematics(p,st.target,seed,st.yaw);if(q.error>.026)throw Error('Cannot center the garment over the drum');
+   const route=motionRoute(p,seed,q.q);st.from=[...seed];st.to=q.q;st.path=route.length>1?[[...seed],...route]:null;
+   if(i===index&&['ur5e','gen3'].includes(p.profile.id)){const nodes=[[...seed]];let prev=seed;for(let k=1;k<=8;k++){const target=tool.map((v,j)=>v+(st.target[j]-v)*k/8),ik=inverseKinematics(p,target,prev,st.yaw);if(ik.error>.026)throw Error('Cannot center the garment over the drum');nodes.push(...motionRoute(p,prev,ik.q));prev=ik.q}st.path=nodes;st.to=nodes.at(-1)}
+   seed=st.to;st.centered=true;
+  }
+  this.emit({trace:[{cap:'Placement.Center',target:xy.map(v=>Math.round(v*1000))}]});
+ }
  pause(paused=!this.paused){if(!this.action)return;this.paused=paused;this.emit({status:this.paused?'paused':'running'})}
  stop(){this.cancel();this.stopped=true;if(this.p){this.p.data.ctrl.set(Array.from(this.p.data.qpos).slice(0,this.p.profile.dof+1));this.p.data.qvel.fill(0)}this.emit({status:'stopped',step:null,result:null,progress:0})}
  rearm(){this.stopped=false;this.emit({status:'idle',progress:0,result:null})}
@@ -75,21 +104,22 @@ export class Cell{
    // the garment now lies on the drum floor or the pile: the opening fingers draw out of it instead of hooking it
    garmentState(p,it,'free')}
   if(s.event==='lid-grip'){p.model.eq_data.fill(0,p.lidEq*p.mj.mjNEQDATA+3,p.lidEq*p.mj.mjNEQDATA+6);p.data.eq_active[p.lidEq]=1;this.lidHeld=true}
-  if(s.event==='lid-release'){this.lidHeld=false;if(p.data.qpos[p.lidAdr]<1.0)throw Error('The gripper did not open the washer lid')}}
+  if(s.event==='lid-release'){this.lidHeld=false;if(p.data.qpos[p.lidAdr]<1.0)throw Error('The gripper did not open the washer lid');p.model.eq_data[p.lidDetent*p.mj.mjNEQDATA]=p.data.qpos[p.lidAdr];p.data.eq_active[p.lidDetent]=1;this.emit({trace:[{cap:'Lid.Detent',text:'Open hinge latched after the physical handle pull'}]})}}
  finishJob(){const a=this.action,job=a.job,p=this.p;if(job.type==='transfer'){
    const item=p.items.get(job.id),pos=objectPosition(p,item),distance=job.category==='washer'?(inWasher(p,item)?0:1):p.scene.id==='kitting'?(inToyBasket(p,item,job.category)?0:1):p.scene.id==='quality'?(inQualityBasket(p,item,job.category)?0:1):job.carrier?(()=>{const cp=objectPosition(p,job.carrier);return Math.hypot(pos[0]-cp[0],pos[1]-cp[1])<.02&&Math.abs(pos[2]-cp[2])<.02?0:1})():Math.hypot(pos[0]-job.dest[0],pos[1]-job.dest[1]);
    if(!Number.isFinite(distance)||distance>.115){this.counts.missed=(this.counts.missed||0)+1;
     // laundry: the wrist camera sees the garment didn't land where it should, so the app queues one more pick (at most three)
-    if(job.pick&&(a.extra||0)<3){a.extra=(a.extra||0)+1;a.jobs.splice(a.jobIndex+1,0,{...job,id:undefined,tries:0});a.total++}}
+    if(job.pick&&(a.extra||0)<3){a.extra=(a.extra||0)+1;a.jobs.splice(a.jobIndex+1,0,{...job,id:undefined,tries:0});a.total++}
+    if(job.carrier&&(item.failedPicks||0)<2){item.failedPicks=(item.failedPicks||0)+1;const st=p.scene.conveyor.station;a.jobs.splice(a.jobIndex+1,0,{type:'index',id:job.carrier,dest:st},{...job});a.total+=2}}
    else{item.failedPicks=0;this.counts[job.category]=(this.counts[job.category]||0)+1;}a.retries=0;garmentState(p,item,'free')}
   a.jobIndex++;this.emit({counts:{...this.counts},progress:a.jobIndex/a.total});this.nextJob()}
- advance(dt){const p=this.p;if(!p||this.stopped||this.paused)return;try{this.substeps(Math.max(1,Math.round(dt*this.speed/p.model.opt.timestep)),24)}catch(e){this.cancel();this.emit({status:'error'});throw e}}
+ advance(dt,budgetMs=12){const p=this.p;if(!p||this.stopped||this.paused)return;try{this.substeps(Math.max(1,Math.round(dt*this.speed/p.model.opt.timestep)),budgetMs)}catch(e){this.cancel();this.emit({status:'error'});throw e}}
  substeps(n,budgetMs=Infinity){const p=this.p,DT=p.model.opt.timestep,began=performance.now();
   for(let k=0;k<n;k++){
    if(k>0&&performance.now()-began>=budgetMs)break;
    const a=this.action;if(a){a.elapsed+=DT;const job=a.job;if(job.type==='index'||job.type==='outfeed'){let x=Math.min(1,a.elapsed/a.duration);x=x*x*(3-2*x);p.data.ctrl[p.beltAct]=-(a.start+(a.target-a.start)*x);
-   }else{const index=a.steps.findIndex(s=>a.elapsed<=s.end),i=index<0?a.steps.length-1:index,s=a.steps[i];if(i!==a.si){a.si=i;this.traceStep(s,a.steps[i-1])}
-    let x=Math.max(0,Math.min(1,(a.elapsed-s.start)/s.duration));x=x*x*(3-2*x);for(let j=0;j<p.profile.dof;j++)p.data.ctrl[j]=s.from[j]+(s.to[j]-s.from[j])*x;const shut=s.closeTo??0;p.data.ctrl[p.profile.gripper]=s.grip?(s.ramp?shut+((s.openTo??p.profile.open)-shut)*(1-x):shut):(s.openTo??p.profile.open);for(const id of p.adhere||[])p.data.ctrl[id]=s.adhere?1:0;
+   }else{const index=a.steps.findIndex(s=>a.elapsed<=s.end),i=index<0?a.steps.length-1:index,s=a.steps[i];if(i!==a.si){a.si=i;if(s.centerItem&&!s.centered)this.centerLoad(a,i);this.traceStep(s,a.steps[i-1])}
+    let x=Math.max(0,Math.min(1,(a.elapsed-s.start)/s.duration));x=x*x*x*(10+x*(-15+6*x));let from=s.from,to=s.to,t=x;if(s.path){const z=x*(s.path.length-1),k=Math.min(s.path.length-2,Math.floor(z));from=s.path[k];to=s.path[k+1];t=z-k}for(let j=0;j<p.profile.dof;j++)p.data.ctrl[j]=from[j]+(to[j]-from[j])*t;const shut=s.closeTo??0;p.data.ctrl[p.profile.gripper]=s.grip?(s.ramp?shut+((s.openTo??p.profile.open)-shut)*(1-x):shut):(s.openTo??p.profile.open);for(const id of p.adhere||[])p.data.ctrl[id]=s.adhere?1:0;
     if(a.elapsed>s.start+s.duration*.82&&!a.events.has(s.start)){a.events.add(s.start);if(s.vision)this.emit({vision:s.vision,item:s.item||null});if(s.event)this.event(s);if(a.replan){const r=a.replan;a.replan=null;if(r==='skip'){const it=p.items.get(a.job.id);if(it)it.failedPicks=(it.failedPicks||0)+1;this.counts.missed=(this.counts.missed||0)+1;a.retries=0;a.jobIndex++}this.nextJob();break}}
     this.currentStep=s.label}}
    if(this.activeItem||this.lidHeld){const pos=toolPosition(p);p.data.mocap_pos.set([pos[0],pos[1],pos[2]-.012],p.mocap*3)}

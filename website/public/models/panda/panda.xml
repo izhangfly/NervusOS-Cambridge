@@ -92,46 +92,64 @@
                       <inertial mass="0.73" pos="-0.01 0 0.03" diaginertia="0.001 0.0025 0.0017" />
                       <body name="left_finger" pos="0 0 0.0584" gravcomp="1">
                         <inertial mass="0.015" pos="0 0 0" diaginertia="2.375e-6 2.375e-6 7.5e-7" />
-                        <joint name="finger_joint1" class="finger" /><geom name="pad_l" type="box" size=".0085 .004 .0085" pos="0 .0055 .0445" contype="8" conaffinity="1" condim="4" friction="1.6 .02 .002" solref=".004 1" solimp=".95 .99 .001" group="3" rgba="0 0 0 0" density="0" /><geom name="finger_l" type="box" size=".0095 .008 .021" pos="0 .0135 .026" contype="8" conaffinity="1" friction=".8 .02 .001" group="3" rgba="0 0 0 0" density="0" /><geom name="skin_l" type="box" size=".0085 .004 .0085" pos="0 .0055 .0445" contype="0" conaffinity="16" margin=".004" gap="0" friction="1.6 .02 .002" group="3" rgba="0 0 0 0" density="0" /><site name="pad_l" type="box" size=".0095 .0085 .0095" pos="0 .0045 .0445" rgba="0 0 0 0" />
+                        <joint name="finger_joint1" class="finger" />
+                        <geom name="pad_l" type="box" size=".0085 .004 .0085" pos="0 .0055 .0445" contype="8" conaffinity="1" condim="4" friction="1.6 .02 .002" solref=".004 1" solimp=".95 .99 .001" group="3" rgba="0 0 0 0" density="0" />
+                        <geom name="finger_l" type="box" size=".0095 .008 .021" pos="0 .0135 .026" contype="8" conaffinity="1" friction=".8 .02 .001" group="3" rgba="0 0 0 0" density="0" />
+                        <geom name="skin_l" type="box" size=".0085 .004 .0085" pos="0 .0055 .0445" contype="0" conaffinity="16" margin=".004" gap="0" friction="1.6 .02 .002" group="3" rgba="0 0 0 0" density="0" />
+                        <site name="pad_l" type="box" size=".0095 .0085 .0095" pos="0 .0045 .0445" rgba="0 0 0 0" />
                         <geom mesh="left_finger_off_white" material="off_white" class="visual" density="0" />
                         <geom mesh="left_finger_black" material="black" class="visual" density="0" />
                       </body>
                       <body name="right_finger" pos="0 0 0.0584" quat="0 0 0 1" gravcomp="1">
                         <inertial mass="0.015" pos="0 0 0" diaginertia="2.375e-6 2.375e-6 7.5e-7" />
-                        <joint name="finger_joint2" class="finger" /><geom name="pad_r" type="box" size=".0085 .004 .0085" pos="0 .0055 .0445" contype="8" conaffinity="1" condim="4" friction="1.6 .02 .002" solref=".004 1" solimp=".95 .99 .001" group="3" rgba="0 0 0 0" density="0" /><geom name="finger_r" type="box" size=".0095 .008 .021" pos="0 .0135 .026" contype="8" conaffinity="1" friction=".8 .02 .001" group="3" rgba="0 0 0 0" density="0" /><geom name="skin_r" type="box" size=".0085 .004 .0085" pos="0 .0055 .0445" contype="0" conaffinity="16" margin=".004" gap="0" friction="1.6 .02 .002" group="3" rgba="0 0 0 0" density="0" /><site name="pad_r" type="box" size=".0095 .0085 .0095" pos="0 .0045 .0445" rgba="0 0 0 0" />
+                        <joint name="finger_joint2" class="finger" />
+                        <geom name="pad_r" type="box" size=".0085 .004 .0085" pos="0 .0055 .0445" contype="8" conaffinity="1" condim="4" friction="1.6 .02 .002" solref=".004 1" solimp=".95 .99 .001" group="3" rgba="0 0 0 0" density="0" />
+                        <geom name="finger_r" type="box" size=".0095 .008 .021" pos="0 .0135 .026" contype="8" conaffinity="1" friction=".8 .02 .001" group="3" rgba="0 0 0 0" density="0" />
+                        <geom name="skin_r" type="box" size=".0085 .004 .0085" pos="0 .0055 .0445" contype="0" conaffinity="16" margin=".004" gap="0" friction="1.6 .02 .002" group="3" rgba="0 0 0 0" density="0" />
+                        <site name="pad_r" type="box" size=".0095 .0085 .0095" pos="0 .0045 .0445" rgba="0 0 0 0" />
                         <geom mesh="right_finger_off_white" material="off_white" class="visual" density="0" />
                         <geom mesh="right_finger_black" material="black" class="visual" density="0" />
                       </body>
                       <geom mesh="hand_off_white" material="off_white" class="visual" density="0" />
                       <geom mesh="hand_black" material="black" class="visual" density="0" />
                       <geom mesh="hand_white" material="white" class="visual" density="0" />
-                      <site name="tool" pos="0 0 .1034" size=".008" rgba=".2 .5 1 1" /><geom name="palm" type="box" size=".03 .1 .028" pos="0 0 .03" contype="8" conaffinity="1" friction=".8 .02 .001" group="3" rgba="0 0 0 0" density="0" />
+                      <site name="tool" pos="0 0 .1034" size=".008" rgba=".2 .5 1 1" />
+                      <geom name="palm" type="box" size=".03 .1 .028" pos="0 0 .03" contype="8" conaffinity="1" friction=".8 .02 .001" group="3" rgba="0 0 0 0" density="0" />
+                      <geom name="self_hand" type="box" size=".03 .09 .020" group="3" contype="4" conaffinity="4" margin=".003" solref=".008 1" density="0" rgba="0 0 0 0" pos="0 0 .03" />
                     </body>
                     <geom mesh="link7_white" material="white" class="visual" density="0" />
                     <geom mesh="link7_black" material="black" class="visual" density="0" />
+                    <geom name="self_link7" type="capsule" size=".03" group="3" contype="4" conaffinity="4" margin=".003" solref=".008 1" density="0" rgba="0 0 0 0" fromto="0 0 .015 0 0 .09" />
                   </body>
                   <geom mesh="link6_off_white" material="off_white" class="visual" density="0" />
                   <geom mesh="link6_white" material="white" class="visual" density="0" />
                   <geom mesh="link6_black" material="black" class="visual" density="0" />
                   <geom mesh="link6_light_blue" material="light_blue" class="visual" density="0" />
                   <geom mesh="link6_green" material="green" class="visual" density="0" />
+                  <geom name="self_link6" type="capsule" size=".03" group="3" contype="4" conaffinity="4" margin=".003" solref=".008 1" density="0" rgba="0 0 0 0" fromto=".012 0 0 .075 0 0" />
                 </body>
                 <geom mesh="link5_black" material="black" class="visual" density="0" />
                 <geom mesh="link5_white" material="white" class="visual" density="0" />
+                <geom name="self_link5" type="sphere" size=".035" group="3" contype="4" conaffinity="4" margin=".003" solref=".008 1" density="0" rgba="0 0 0 0" pos="0 0 0" />
               </body>
               <geom mesh="link4_white" material="white" class="visual" density="0" />
               <geom mesh="link4_black" material="black" class="visual" density="0" />
+              <geom name="self_link4" type="capsule" size=".038" group="3" contype="4" conaffinity="4" margin=".003" solref=".008 1" density="0" rgba="0 0 0 0" fromto="-.015 .045 0 -.067 .32 0" />
             </body>
             <geom mesh="link3_white" material="white" class="visual" density="0" />
             <geom mesh="link3_black" material="black" class="visual" density="0" />
+            <geom name="self_link3" type="sphere" size=".042" group="3" contype="4" conaffinity="4" margin=".003" solref=".008 1" density="0" rgba="0 0 0 0" pos="0 0 0" />
           </body>
           <geom mesh="link2_white" material="white" class="visual" density="0" />
+          <geom name="self_link2" type="capsule" size=".035" group="3" contype="4" conaffinity="4" margin=".003" solref=".008 1" density="0" rgba="0 0 0 0" fromto="0 -.04 0 0 -.27 0" />
         </body>
         <geom mesh="link1_white" material="white" class="visual" density="0" />
+        <geom name="self_link1" type="capsule" size=".045" group="3" contype="4" conaffinity="4" margin=".003" solref=".008 1" density="0" rgba="0 0 0 0" fromto="0 0 -.14 0 0 -.025" />
       </body>
       <geom mesh="link0_off_white" material="off_white" class="visual" density="0" />
       <geom mesh="link0_black" material="black" class="visual" density="0" />
       <geom mesh="link0_white" material="white" class="visual" density="0" />
+      <geom name="self_link0" type="capsule" size=".055" group="3" contype="4" conaffinity="4" margin=".003" solref=".008 1" density="0" rgba="0 0 0 0" fromto="0 0 .035 0 0 .17" />
     </body>
   </worldbody>
   <equality>
@@ -146,5 +164,15 @@
     <position name="joint6" joint="joint6" kp="550" kv="65" forcerange="-100 100" inheritrange="1" />
     <position name="joint7" joint="joint7" kp="550" kv="65" forcerange="-100 100" inheritrange="1" />
     <position name="gripper" joint="finger_joint1" kp="900" kv="25" forcerange="-20 20" ctrlrange="0 .04" />
-  <adhesion name="adhere_l" body="left_finger" ctrlrange="0 1" gain="3" /><adhesion name="adhere_r" body="right_finger" ctrlrange="0 1" gain="3" /></actuator>
-<contact><exclude body1="left_finger" body2="right_finger" /></contact><sensor><touch name="touch_l" site="pad_l" /><touch name="touch_r" site="pad_r" /></sensor></mujoco>
+    <adhesion name="adhere_l" body="left_finger" ctrlrange="0 1" gain="3" />
+    <adhesion name="adhere_r" body="right_finger" ctrlrange="0 1" gain="3" />
+  </actuator>
+  <contact>
+    <exclude body1="link0" body2="link1" />
+    <exclude body1="left_finger" body2="right_finger" />
+  </contact>
+  <sensor>
+    <touch name="touch_l" site="pad_l" />
+    <touch name="touch_r" site="pad_r" />
+  </sensor>
+</mujoco>

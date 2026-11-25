@@ -1,0 +1,7 @@
+import{engine}from'./physics-fixture.mjs';import{Cell}from'../src/demo/cell.js';import{selfContacts}from'../src/demo/kinematics.js';
+const soft=process.argv.includes('--soft'),selected=process.argv.slice(2).filter(s=>s!=='--soft'),ids=selected.length?selected:['piper','panda','ur5e','gen3'];let failed=0;
+for(const id of ids)for(const [app,action] of (soft?[['laundry','all'],['kitting','sort']]:[['quality','inspect'],['assembly','assemble'],['teach','tray-to-jig']])){
+ const events=[],c=new Cell(engine(id,{physicsOnly:true}),e=>events.push(e));let steps=0,worst=0;
+ try{c.setApp(app,true,42);c.start(action,42);while(c.action&&steps<100000){c.substeps(25);steps+=25;if(['panda','ur5e'].includes(id))worst=Math.max(worst,selfContacts(c.p,Array.from(c.p.data.qpos).slice(0,c.p.profile.home.length),-.001))}const n=app==='laundry'?c.counts.washer:app==='kitting'?(c.counts.blocks||0)+(c.counts.cars||0)+(c.counts.plush||0):app==='quality'?(c.counts.pass||0)+(c.counts.rework||0):app==='assembly'?c.counts.assembled:6;if(c.action||n!==(app==='kitting'?13:6)||worst)throw Error('Incomplete physical task');console.log(JSON.stringify({id,app,status:'PASS',steps,counts:c.counts,worstSelfContacts:worst}))}
+ catch(e){failed++;console.log(JSON.stringify({id,app,status:'FAIL',error:e.message,steps,counts:c.counts}))}finally{c.p?.dispose()}
+}console.log(JSON.stringify({failed,status:failed?'FAIL':'PASS'}));process.exitCode=failed?1:0;

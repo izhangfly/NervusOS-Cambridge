@@ -5,15 +5,15 @@ export const nameId=(p,type,name)=>p.mj.mj_name2id(p.model,p.mj.mjtObj[type].val
 export function createModel(engine,scene){
  const{mj,xml,meshes}=engine,profile=robotProfile(engine.id),vfs=new mj.MjVFS();Object.entries(meshes).forEach(([n,b])=>vfs.addBuffer(n,b));
  let base=xml.replace('meshdir="assets"','meshdir=""');const stripped=base.replace(/<mesh\b[^>]*\/>/g,'').replace(/<geom\b[^>]*type="mesh"[^>]*\/>/g,'').replace(/<geom\b[^>]*mesh="[^"]+"[^>]*\/>/g,'');const kmodel=mj.MjModel.from_xml_string(stripped,vfs),ghost=new mj.MjData(kmodel);
- let combined=base.replace(/<option\b[^>]*\/>/,`<option integrator="${scene.items.some(x=>x.soft)?'discrete':'implicitfast'}" timestep="${scene.id==='laundry'?'.002':'.004'}" iterations="${scene.id==='laundry'?50:30}" tolerance="1e-7" jacobian="sparse" cone="elliptic" impratio="10"/>`);
+ let combined=base.replace(/<option\b[^>]*\/>/,`<option integrator="${scene.items.some(x=>x.soft)?'discrete':'implicitfast'}" timestep="${['laundry','kitting'].includes(scene.id)?'.002':'.004'}" iterations="${['laundry','kitting'].includes(scene.id)?50:30}" tolerance="1e-7" jacobian="sparse" cone="elliptic" impratio="10"/>`);
  let world=primitiveXML({shape:'box',size:[1.20,.94,.06],position:[.24,0,-.03],color:'#c1bdb3'})+scene.static.map(primitiveXML).join('');
  world+='<body name="grasp_anchor" mocap="true" pos=".3 0 .25"><geom type="sphere" size=".001" contype="0" conaffinity="0" rgba="0 0 0 0"/></body>';
  let equality='';
  if(scene.id==='laundry'){
   // stiff hinge (0.12 N m of friction, under 1 N at the handle): the lid stays where the gripper leaves it, and a
   // hanging garment brushing past can't swing it shut
-  world+='<body name="washer_lid" pos=".34 .29 .132" gravcomp="1"><joint name="lid_hinge" axis="-1 0 0" range="0 1.60" damping=".04" frictionloss=".12"/><inertial pos="0 -.074 .004" mass=".045" diaginertia=".00016 .00016 .00016"/><geom type="box" pos="0 -.077 .002" size=".100 .077 .005" rgba=".88 .92 .94 1"/><geom type="capsule" fromto="-.026 -.140 .016 .026 -.140 .016" size=".005" mass=".008"/></body>';
-  equality+='<connect name="grasp_lid" body1="washer_lid" body2="grasp_anchor" anchor="0 -.140 .016" active="false" solref=".012 1"/>';
+  world+='<body name="washer_lid" pos=".34 .29 .132" gravcomp="1"><joint name="lid_hinge" axis="-1 0 0" range="0 1.95" damping=".04" frictionloss=".12"/><inertial pos="0 -.074 .004" mass=".045" diaginertia=".00016 .00016 .00016"/><geom type="box" pos="0 -.077 .002" size=".100 .077 .005" rgba=".88 .92 .94 1"/><geom type="capsule" fromto="-.026 -.140 .016 .026 -.140 .016" size=".005" mass=".008"/></body>';
+  equality+='<joint name="lid_detent" joint1="lid_hinge" polycoef="1.52 0 0 0 0" active="false" solref=".008 1"/><connect name="grasp_lid" body1="washer_lid" body2="grasp_anchor" anchor="0 -.140 .016" active="false" solref=".012 1"/>';
  }
  if(scene.conveyor){
   // The belt: a long plate on a slide joint, driven by a position actuator. Parts rest on it and are carried
@@ -29,7 +29,10 @@ export function createModel(engine,scene){
    equality+=`<weld name="grasp_${item.id}" body1="${item.id}" body2="grasp_anchor" active="false" solref=".010 1" torquescale=".05"/>`;
    continue;
   }
-  if(item.soft){world+=`<flexcomp name="${item.id}" type="direct" dim="${item.kind==='plush'?3:2}" point="${v(item.mesh.points.flat())}" element="${(item.mesh.volumeIndices||item.mesh.indices).join(' ')}" mass="${item.mass}" radius="${item.kind==='plush'?'.0018':'.004'}" rgba="${rgba(item.color)}"><edge equality="${item.kind==='plush'?'false':'true'}" solref="${item.kind==='plush'?'.025':'.012'} 1"/><elasticity young="${item.bend}" poisson=".3" thickness="${item.kind==='plush'?'.003':'.0015'}" ${item.kind==='plush'?'':'elastic2d="bend"'} damping=".003"/><contact selfcollide="${item.kind==='plush'?'none':'auto'}" ${item.kind==='plush'?'':'contype="2" conaffinity="3"'} friction="${item.kind==='plush'?'.7':'.42'} .015 .001" solref=".014 1"/></flexcomp>`;
+  if(item.soft){
+   const plush=item.kind==='plush',points=plush?item.mesh.points.map(q=>q.map((v,j)=>v-item.position[j])):item.mesh.points;
+   if(plush)world+=`<body name="${item.id}_core" pos="${v(item.position)}"><freejoint name="free_${item.id}_core"/><geom name="${item.id}_core_geom" type="ellipsoid" size=".019 .015 .019" mass=".020" contype="2" conaffinity="3" friction="1.8 .02 .002" solref=".008 1" rgba="0 0 0 0"/>`;
+   world+=`<flexcomp name="${item.id}" type="direct" dim="${item.kind==='plush'?3:2}" point="${v(points.flat())}" element="${(item.mesh.volumeIndices||item.mesh.indices).join(' ')}" mass="${plush?.005:item.mass}" radius="${item.kind==='plush'?'.0018':'.004'}" rgba="${rgba(item.color)}"><edge equality="${item.kind==='plush'?'false':'true'}" solref="${item.kind==='plush'?'.025':'.012'} 1"/><elasticity young="${item.bend}" poisson=".3" thickness="${item.kind==='plush'?'.003':'.0015'}" ${item.kind==='plush'?'':'elastic2d="bend"'} damping="${item.kind==='plush'?'.02':'.003'}"/><contact selfcollide="${item.kind==='plush'?'none':'auto'}" contype="2" conaffinity="3" friction="${item.kind==='plush'?'.7':'.42'} .015 .001" solref=".014 1"/>${plush?`<pin id="${item.mesh.points.length-1}"/>`:""}</flexcomp>`;if(plush)world+=`</body>`;
    // A body per mesh vertex allows a pinch to hold one vertex while the rest of the fabric remains free.
    equality+=`<connect name="grasp_${item.id}" body1="${item.id}_0" body2="grasp_anchor" anchor="${v(item.mesh.points[0])}" active="false" solref=".008 1"/>`;
   }else{
@@ -42,8 +45,8 @@ export function createModel(engine,scene){
  let model;try{model=mj.MjModel.from_xml_string(combined,vfs)}catch(e){ghost.delete();kmodel.delete();vfs.delete();throw e}vfs.delete();
  const data=new mj.MjData(model),p={mj,model,data,scene,profile,kin:{model:kmodel,ghost,tool:mj.mj_name2id(kmodel,mj.mjtObj.mjOBJ_SITE.value,'tool')},tool:mj.mj_name2id(model,mj.mjtObj.mjOBJ_SITE.value,'tool'),items:new Map(),xml:combined};
  data.qpos.set(profile.home);data.ctrl.set(profile.home.slice(0,profile.dof+1));ghost.qpos.set(profile.home);mj.mj_forward(model,data);mj.mj_forward(kmodel,ghost);
- for(const item of scene.items){const obj={...item,eq:nameId(p,'mjOBJ_EQUALITY','grasp_'+item.id)};if(item.soft){obj.flex=nameId(p,'mjOBJ_FLEX',item.id);obj.vertexAdr=model.flex_vertadr[obj.flex];obj.vertexNum=model.flex_vertnum[obj.flex];obj.bodies=Array.from({length:obj.vertexNum},(_,i)=>nameId(p,'mjOBJ_BODY',item.id+'_'+i));obj.garment=item.kind!=='plush';}else{obj.body=nameId(p,'mjOBJ_BODY',item.id);const j=nameId(p,'mjOBJ_JOINT','free_'+item.id);obj.qadr=model.jnt_qposadr[j];obj.vadr=model.jnt_dofadr[j];}p.items.set(item.id,obj)}
- if(scene.conveyor){p.beltAct=nameId(p,'mjOBJ_ACTUATOR','belt_drive');p.beltAdr=model.jnt_qposadr[nameId(p,'mjOBJ_JOINT','belt_slide')]}p.adhere=['adhere_l','adhere_r'].map(n=>nameId(p,'mjOBJ_ACTUATOR',n)).filter(i=>i>=0);p.touch=['touch_l','touch_r'].map(n=>{const id=nameId(p,'mjOBJ_SENSOR',n);return id<0?-1:model.sensor_adr[id]});p.anchor=nameId(p,'mjOBJ_BODY','grasp_anchor');p.mocap=model.body_mocapid[p.anchor];if(scene.id==='laundry'){p.lid=nameId(p,'mjOBJ_BODY','washer_lid');p.lidEq=nameId(p,'mjOBJ_EQUALITY','grasp_lid');const j=nameId(p,'mjOBJ_JOINT','lid_hinge');p.lidAdr=model.jnt_qposadr[j];}
+ for(const item of scene.items){const obj={...item,eq:nameId(p,'mjOBJ_EQUALITY','grasp_'+item.id)};if(item.soft){obj.flex=nameId(p,'mjOBJ_FLEX',item.id);obj.vertexAdr=model.flex_vertadr[obj.flex];obj.vertexNum=model.flex_vertnum[obj.flex];obj.bodies=Array.from({length:obj.vertexNum},(_,i)=>nameId(p,'mjOBJ_BODY',item.id+'_'+i)).filter(id=>id>=0);if(item.kind==='plush'){obj.core=nameId(p,'mjOBJ_GEOM',item.id+'_core_geom');obj.coreBody=nameId(p,'mjOBJ_BODY',item.id+'_core');}obj.garment=item.kind!=='plush';}else{obj.body=nameId(p,'mjOBJ_BODY',item.id);const j=nameId(p,'mjOBJ_JOINT','free_'+item.id);obj.qadr=model.jnt_qposadr[j];obj.vadr=model.jnt_dofadr[j];}p.items.set(item.id,obj)}
+ if(scene.conveyor){p.beltAct=nameId(p,'mjOBJ_ACTUATOR','belt_drive');p.beltAdr=model.jnt_qposadr[nameId(p,'mjOBJ_JOINT','belt_slide')]}p.adhere=['adhere_l','adhere_r'].map(n=>nameId(p,'mjOBJ_ACTUATOR',n)).filter(i=>i>=0);p.touch=['touch_l','touch_r'].map(n=>{const id=nameId(p,'mjOBJ_SENSOR',n);return id<0?-1:model.sensor_adr[id]});p.anchor=nameId(p,'mjOBJ_BODY','grasp_anchor');p.mocap=model.body_mocapid[p.anchor];if(scene.id==='laundry'){p.lid=nameId(p,'mjOBJ_BODY','washer_lid');p.lidEq=nameId(p,'mjOBJ_EQUALITY','grasp_lid');p.lidDetent=nameId(p,'mjOBJ_EQUALITY','lid_detent');const j=nameId(p,'mjOBJ_JOINT','lid_hinge');p.lidAdr=model.jnt_qposadr[j];}
  p.initial=Array.from(data.qpos);p.ctrlInitial=Array.from(data.ctrl);p.eqInitial=Array.from(data.eq_active);
  p.dispose=()=>{data.delete();ghost.delete();model.delete();kmodel.delete()};return p;
 }
@@ -54,9 +57,9 @@ export function createModel(engine,scene){
 // Collision remains active when sleeping: removing it allowed layers to intersect before a lift.
 // Contact bits: world 1/1, hand 8/1, grip skin 0/16, garments by state below.
 const BITS={sleep:[2,3],free:[2,3],held:[18,11]};
-export function garmentState(p,item,state){if(!item?.garment||item.state===state)return;const m=p.model,v=p.data.qvel,k=item.flex;item.state=state;item.still=0;item.free=0;
- [m.flex_contype[k],m.flex_conaffinity[k]]=BITS[state];const sleep=state==='sleep';
- for(const b of item.bodies){m.body_gravcomp[b]=sleep?1:0;const a=m.body_dofadr[b];for(let j=0;j<3;j++){m.dof_damping[a+j]=sleep?5:0;if(sleep)v[a+j]=0}}}
+export function garmentState(p,item,state){if(!item?.soft||item.state===state)return;const m=p.model,v=p.data.qvel,k=item.flex;item.state=state;item.still=0;item.free=0;
+ [m.flex_contype[k],m.flex_conaffinity[k]]=BITS[state];const sleep=state==='sleep';if(item.core!==undefined){[m.geom_contype[item.core],m.geom_conaffinity[item.core]]=BITS[state];m.body_gravcomp[item.coreBody]=sleep?1:0;const a=m.body_dofadr[item.coreBody];for(let j=0;j<6;j++)m.dof_damping[a+j]=sleep?5:.002}
+ for(const b of item.bodies){m.body_gravcomp[b]=sleep?1:0;const a=m.body_dofadr[b];for(let j=0;j<3;j++){m.dof_damping[a+j]=sleep?5:item.kind==='plush'?.008:0;if(sleep)v[a+j]=0}}}
 // a free garment goes back to sleep once it has lain still for half a second
 // (judged by its mean vertex speed: two free garments resting on each other keep a little contact jitter), or
 // after 4 s free once it is no longer really moving
